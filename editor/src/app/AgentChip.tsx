@@ -23,16 +23,16 @@ export function AgentChip() {
   const shown = presence ?? last.current;
   if (!mounted || !shown) return null;
   return (
-    <div className="at-chip" data-state={open ? 'open' : 'closed'} role="status" aria-label={open ? `${shown.name} is working on the canvas` : undefined} data-testid="agent-chip">
-      <div className="at-chip__inner">
-        <span className="at-chip__disc" aria-hidden="true">
-          <span className="at-chip__bars">
+    <div className="at-presence" data-state={open ? 'open' : 'closed'} role="status" aria-label={open ? `${shown.name} is working on the canvas` : undefined} data-testid="agent-chip">
+      <div className="at-presence__inner">
+        <span className="at-presence__disc" aria-hidden="true">
+          <span className="at-presence__bars">
             <i />
             <i />
             <i />
           </span>
         </span>
-        <span className="at-chip__name">{shown.name}</span>
+        <span className="at-presence__name">{shown.name}</span>
       </div>
     </div>
   );

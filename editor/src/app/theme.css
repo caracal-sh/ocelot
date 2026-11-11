@@ -312,34 +312,35 @@ body {
 }
 .at-writing--inside .at-writing__ticker { bottom: auto; top: 0; margin: calc(4px / var(--at-zoom, 1)); }
 /* Three bars, our own mark: level-meter breathing, 900 ms, phase-offset 120 ms. */
-.at-writing__bars, .at-chip__bars { display: flex; align-items: center; gap: calc(2px / var(--at-zoom, 1)); height: calc(10px / var(--at-zoom, 1)); }
-.at-chip__bars { gap: 2px; height: 10px; }
-.at-writing__bars i, .at-chip__bars i { display: block; width: calc(2px / var(--at-zoom, 1)); height: 100%; border-radius: 1px; background: currentColor; transform: scaleY(0.65); }
-.at-chip__bars i { width: 2px; }
-.at-writing__bars i:nth-child(1), .at-chip__bars i:nth-child(1) { transform: scaleY(0.4); }
-.at-writing__bars i:nth-child(3), .at-chip__bars i:nth-child(3) { transform: scaleY(1); }
+.at-writing__bars, .at-presence__bars { display: flex; align-items: center; gap: calc(2px / var(--at-zoom, 1)); height: calc(10px / var(--at-zoom, 1)); }
+.at-presence__bars { gap: 2px; height: 10px; }
+.at-writing__bars i, .at-presence__bars i { display: block; width: calc(2px / var(--at-zoom, 1)); height: 100%; border-radius: 1px; background: currentColor; transform: scaleY(0.65); }
+.at-presence__bars i { width: 2px; }
+.at-writing__bars i:nth-child(1), .at-presence__bars i:nth-child(1) { transform: scaleY(0.4); }
+.at-writing__bars i:nth-child(3), .at-presence__bars i:nth-child(3) { transform: scaleY(1); }
 @media (prefers-reduced-motion: no-preference) {
-  .at-writing__bars i, .at-chip__bars i { animation: at-bar 900ms var(--at-ease-in-out) infinite; }
-  .at-writing__bars i:nth-child(2), .at-chip__bars i:nth-child(2) { animation-delay: 120ms; }
-  .at-writing__bars i:nth-child(3), .at-chip__bars i:nth-child(3) { animation-delay: 240ms; }
+  .at-writing__bars i, .at-presence__bars i { animation: at-bar 900ms var(--at-ease-in-out) infinite; }
+  .at-writing__bars i:nth-child(2), .at-presence__bars i:nth-child(2) { animation-delay: 120ms; }
+  .at-writing__bars i:nth-child(3), .at-presence__bars i:nth-child(3) { animation-delay: 240ms; }
 }
 @keyframes at-bar { 0%, 100% { transform: scaleY(0.3); } 50% { transform: scaleY(1); } }
 
-/* Presence chip in the toolbar: the agent's colour and name while it works. Enters with width 0 → auto (grid fr), opacity and scale .6 → 1
-   over 400 ms; leaves the same way. Reduced motion: opacity only. */
-.at-chip { display: grid; grid-template-columns: 1fr; opacity: 0; transition: opacity 400ms ease; flex: none; }
-.at-chip[data-state="open"] { opacity: 1; }
-@starting-style { .at-chip[data-state="open"] { opacity: 0; } }
-.at-chip__inner { min-width: 0; overflow: hidden; display: flex; align-items: center; gap: 6px; padding: 2px; transform-origin: left center; }
-.at-chip__disc { flex: none; width: 18px; height: 18px; display: grid; place-items: center; border-radius: 50%; background: var(--at-agent); color: var(--at-on-agent); }
-.at-chip__name { font: var(--at-type-small); font-weight: 500; color: var(--at-text); white-space: nowrap; padding-right: 4px; }
+/* Presence indicator in the toolbar: the agent's colour and name while it works (status, not a control: no border or fill).
+   Enters with width 0 → auto (grid fr), opacity and scale .6 → 1 over 400 ms; leaves the same way. Reduced motion: opacity only.
+   Its own class names: `.at-chip` belongs to the attachment and token chips. */
+.at-presence { display: grid; grid-template-columns: 1fr; opacity: 0; transition: opacity 400ms ease; flex: none; }
+.at-presence[data-state="open"] { opacity: 1; }
+@starting-style { .at-presence[data-state="open"] { opacity: 0; } }
+.at-presence__inner { min-width: 0; overflow: hidden; display: flex; align-items: center; gap: 6px; padding: 2px; transform-origin: left center; }
+.at-presence__disc { flex: none; width: 18px; height: 18px; display: grid; place-items: center; border-radius: 50%; background: var(--at-agent); color: var(--at-on-agent); }
+.at-presence__name { font: var(--at-type-small); font-weight: 500; color: var(--at-text); white-space: nowrap; padding-right: 4px; }
 @media (prefers-reduced-motion: no-preference) {
-  .at-chip { grid-template-columns: 0fr; transition: opacity 400ms ease, grid-template-columns 400ms ease; }
-  .at-chip[data-state="open"] { grid-template-columns: 1fr; }
-  @starting-style { .at-chip[data-state="open"] { grid-template-columns: 0fr; } }
-  .at-chip__inner { transform: scale(0.6); transition: transform 400ms ease; }
-  .at-chip[data-state="open"] .at-chip__inner { transform: scale(1); }
-  @starting-style { .at-chip[data-state="open"] .at-chip__inner { transform: scale(0.6); } }
+  .at-presence { grid-template-columns: 0fr; transition: opacity 400ms ease, grid-template-columns 400ms ease; }
+  .at-presence[data-state="open"] { grid-template-columns: 1fr; }
+  @starting-style { .at-presence[data-state="open"] { grid-template-columns: 0fr; } }
+  .at-presence__inner { transform: scale(0.6); transition: transform 400ms ease; }
+  .at-presence[data-state="open"] .at-presence__inner { transform: scale(1); }
+  @starting-style { .at-presence[data-state="open"] .at-presence__inner { transform: scale(0.6); } }
 }
 
 /* ---------- Phase 3: editing UI ---------- */
