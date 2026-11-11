@@ -5,13 +5,13 @@
 import { errorMessage } from '../bridge/rpc';
 import type { Editor } from '../editor/Editor';
 import type { DeckAction } from '../editor/deckKeys';
-import type { LinkOutcome } from '../editor/present';
+import { MAX_PRESENT_WIDTH, MIN_PRESENT_WIDTH, type LinkOutcome } from '../editor/present';
 import { toggleFullScreen } from '../editor/presentShortcuts';
 import { DEVICE_ORDER } from '../model/arrange';
 import { ToolError, bool, enumArg, json, num, str, type Args, type ToolContext, type ToolDef } from './toolkit';
 
 const ACTIONS = [
-  'next', 'prev', 'first', 'last', 'goto', 'device', 'back', 'forward', 'follow_link', 'fit_width', 'fit_100', 'scroll',
+  'next', 'prev', 'first', 'last', 'goto', 'device', 'width', 'phone_frame', 'back', 'forward', 'follow_link', 'fit_width', 'fit_100', 'scroll',
   'pause_animations', 'resume_animations', 'full_screen', 'notes', 'black', 'white', 'unblank', 'stop',
 ] as const;
 type Action = (typeof ACTIONS)[number];
@@ -43,6 +43,7 @@ function stateOf(editor: Editor) {
     can_forward: present.canForward,
     ...(present.isDeck ? { blank: snap?.blank ?? 'none', notes_open: present.notesOpen, pending_digits: present.pendingDigits } : {}),
     ...(devices.length ? { devices: Object.fromEntries(devices.map((v) => [v.device, v.artboardId])) } : {}),
+    ...(present.isDeck ? {} : { render_width: present.renderWidth, ...(present.customWidth !== null ? { custom_width: true } : {}), phone_frame: present.phoneFramed }),
   };
 }
 
@@ -134,6 +135,23 @@ async function perform(action: Action, args: Args, ctx: ToolContext): Promise<{ 
       if (!variant?.artboardId) throw new ToolError(`The screen on show has no ${device} version. Devices here: ${listed}. Siblings are matched by name: "<same name> — ${device[0]!.toUpperCase()}${device.slice(1)}".`);
       return { changed: present.showDevice(device) };
     }
+    case 'width': {
+      if (present.isDeck) throw new ToolError('Slides always show at their own size; width is for prototype screens.');
+      const raw = args['width'];
+      if (raw !== null && typeof raw !== 'number') throw new ToolError(`width needs "width": a number of CSS px (${MIN_PRESENT_WIDTH}-${MAX_PRESENT_WIDTH}, e.g. 375 or 1280), or null for the screen's designed width.`);
+      const frameWidth = present.artboardId ? editor.doc.get(present.artboardId)?.frame?.width : undefined;
+      const before = present.renderWidth;
+      present.setWidth(raw === null || raw === frameWidth ? null : raw);
+      return { changed: present.renderWidth !== before };
+    }
+    case 'phone_frame': {
+      const on = bool(args, 'open');
+      const next = on ?? !present.deviceFrame;
+      const was = present.deviceFrame;
+      present.setDeviceFrame(next);
+      const note = present.phoneFramed || !next ? undefined : 'The phone frame is on, but it only shows around phone-sized screens (narrower than 600 px): switch to a mobile screen or a phone width.';
+      return { changed: was !== next, ...(note ? { note } : {}) };
+    }
     case 'back':
       return { changed: present.back() };
     case 'forward':
@@ -200,6 +218,7 @@ export const PRESENT_TOOLS: ToolDef[] = [
       'It moves what they see: use it while they are watching (they asked for a walkthrough), not as a way to look at screens (get_screenshot does that without touching their view). Not an undo step; nothing in the document changes. ' +
       'action: next | prev (the next / previous slide in a deck, else the screen in reading order; on a blanked slide the first one only brings the slide back) | first | last | goto {artboard_id, or slide: 1-based number} | ' +
       'device {device: desktop | tablet | mobile} (the bar\'s Desktop / Tablet / Mobile: the same screen in another size, matched by name "Flow / Step — Device"; the state lists devices with each one\'s artboard, null when this screen has none) | ' +
+      `width {width: ${MIN_PRESENT_WIDTH}-${MAX_PRESENT_WIDTH} CSS px, or null for the designed width} (the bar's width menu: the screen renders at that width and its layout reflows as far as the design allows) | phone_frame {open?: true | false; omit to toggle} (the bar's phone frame around phone-sized screens, on by default) | ` +
       'back | forward (the link history, ⌘[ ⌘]) | follow_link {node_id: a layer on the screen on show that has a link; like clicking it, an external URL opens in their browser} | ' +
       'fit_width | fit_100 (Fit / 100%) | scroll {direction: up | down | left | right | page_up | page_down | top | bottom, or dx / dy in screen pixels} | ' +
       'pause_animations | resume_animations | full_screen (toggles the editor window; app only) | ' +
@@ -217,7 +236,8 @@ export const PRESENT_TOOLS: ToolDef[] = [
         direction: { type: 'string', enum: [...DIRECTIONS], description: 'scroll: arrow keys (48 px), pages (90% of the view) or the top / bottom edge.' },
         dx: { type: 'number', description: 'scroll: horizontal screen pixels (positive = right).' },
         dy: { type: 'number', description: 'scroll: vertical screen pixels (positive = down).' },
-        open: { type: 'boolean', description: 'notes: true opens the presenter view, false closes it; omit to toggle.' },
+        open: { type: 'boolean', description: 'notes: true opens the presenter view, false closes it; phone_frame: true shows the phone frame, false hides it; omit to toggle.' },
+        width: { type: ['number', 'null'], description: `width: CSS px to render the screen at (${MIN_PRESENT_WIDTH}-${MAX_PRESENT_WIDTH}), or null for its designed width.` },
       },
       required: ['action'],
       additionalProperties: false,

@@ -16,7 +16,32 @@ import { useAssetDrop } from './assetDrop';
 import { useComponentDrop } from './componentDrop';
 import { CanvasContextMenu } from './CanvasContextMenu';
 import { TextFormatBar } from './TextFormatBar';
-import { presentLayout } from './presentLayout';
+import { PHONE, presentLayout } from './presentLayout';
+
+/**
+ * Renders a Preview screen at `width` (the bar's width; the layout inside reflows as far as the design allows) and returns its
+ * size: the height follows the content at that width, never below the designed height. The designed width restores the box.
+ * Presentation only: the document's frame never changes.
+ */
+function sizeScreen(el: HTMLElement, frame: { width: number; height: number }, width: number): { width: number; height: number } {
+  const iframe = el.querySelector<HTMLIFrameElement>('iframe.at-artboard__frame');
+  const set = (w: number, h: number) => {
+    el.style.width = `${w}px`;
+    el.style.height = `${h}px`;
+    if (iframe) {
+      iframe.width = String(w);
+      iframe.height = String(h);
+    }
+  };
+  if (width === frame.width) {
+    set(frame.width, frame.height);
+    return frame;
+  }
+  set(width, frame.height);
+  const height = Math.max(frame.height, iframe?.contentDocument?.documentElement.scrollHeight ?? 0);
+  if (height !== frame.height) set(width, height);
+  return { width, height };
+}
 
 /** Preview enter / exit crossfade (ms). */
 const PRESENT_FADE_MS = 200;
@@ -56,6 +81,7 @@ export function Canvas() {
   const deckMode = presenting && editor.present.isDeck;
   const consoleOpen = presenting && editor.present.consoleOpen;
   const lockWorldRef = useRef<HTMLDivElement>(null);
+  const phoneRef = useRef<HTMLDivElement>(null);
 
   // Apply the camera transform directly (no React re-render per frame). Preview has no camera.
   useLayoutEffect(() => {
@@ -82,10 +108,21 @@ export function Canvas() {
     const world = worldRef.current!;
     const boxes = () => Array.from(world.querySelectorAll<HTMLElement>(':scope > .at-artboard'));
     const lockWorld = lockWorldRef.current!;
+    const phone = phoneRef.current!;
+    /** Back to the designed size, unclipped (a screen that is not on show, or Preview ended). */
+    const restore = (el: HTMLElement) => {
+      const frame = editor.doc.get(el.dataset.artboardId ?? '')?.frame;
+      if (frame && el.style.width !== `${frame.width}px`) sizeScreen(el, frame, frame.width);
+      el.style.clipPath = '';
+    };
     if (!presenting) {
-      for (const el of boxes()) el.style.transform = '';
+      for (const el of boxes()) {
+        el.style.transform = '';
+        restore(el);
+      }
       lockWorld.style.transform = '';
       lockWorld.style.removeProperty('--at-zoom');
+      phone.hidden = true;
       return;
     }
     const present = editor.present;
@@ -96,23 +133,43 @@ export function Canvas() {
       for (const el of boxes()) {
         const elId = el.dataset.artboardId;
         if (elId === id && frame) continue;
-        if (elId !== present.leavingId) el.style.transform = '';
+        if (elId !== present.leavingId) {
+          el.style.transform = '';
+          restore(el);
+        }
       }
-      if (!id || !frame) return;
+      const el = boxes().find((b) => b.dataset.artboardId === id);
+      if (!id || !frame || !el) {
+        phone.hidden = true;
+        return;
+      }
       // The presenter console (deck mode) takes the right side of the stage; the slide is letterboxed in what is left.
       const reserve = present.consoleOpen ? (surface.parentElement?.querySelector('.at-console')?.getBoundingClientRect().width ?? 0) : 0;
       const area = { width: Math.max(1, r.width - reserve), height: r.height };
-      const box = presentLayout(frame, area, present.fit, present.scroll);
+      const size = present.isDeck ? sizeScreen(el, frame, frame.width) : sizeScreen(el, frame, present.renderWidth || frame.width);
+      const box = presentLayout(size, area, present.fit, present.scroll, present.phoneFramed);
       present.setExtent({ maxX: box.maxScrollX, maxY: box.maxScrollY, viewH: r.height });
-      const el = boxes().find((b) => b.dataset.artboardId === id);
-      if (el) el.style.transform = `translate(${box.x - frame.x}px, ${box.y - frame.y}px) scale(${box.scale})`;
+      el.style.transform = `translate(${box.x - frame.x}px, ${box.y - frame.y}px) scale(${box.scale})`;
+      // In a phone the screen shows through the phone's window only: the clip is in the box's own (unscaled) pixels.
+      const win = box.window;
+      if (win) {
+        const top = (win.y - box.y) / box.scale;
+        const bottom = Math.max(0, size.height - top - win.height / box.scale);
+        el.style.clipPath = `inset(${top}px 0 ${bottom}px 0 round ${win.radius / box.scale}px)`;
+      } else el.style.clipPath = '';
+      phone.hidden = !box.phone;
+      if (box.phone) {
+        Object.assign(phone.style, { left: `${box.phone.x}px`, top: `${box.phone.y}px`, width: `${box.phone.width}px`, height: `${box.phone.height}px` });
+        phone.style.setProperty('--s', String(box.phone.scale));
+      }
       lockWorld.style.transform = `translate(${box.x - frame.x * box.scale}px, ${box.y - frame.y * box.scale}px) scale(${box.scale})`;
       lockWorld.style.setProperty('--at-zoom', String(box.scale));
     };
     layout();
     const ro = new ResizeObserver(layout);
     ro.observe(surface);
-    const offs = [present.onScroll(layout), editor.on('change', layout), editor.on('document', layout)];
+    // Scroll, the document, and the bar's width and phone-frame choices all move the screen.
+    const offs = [present.onScroll(layout), present.subscribe(layout), editor.on('change', layout), editor.on('document', layout)];
     return () => {
       ro.disconnect();
       offs.forEach((off) => off());
@@ -272,6 +329,15 @@ export function Canvas() {
           <BuildOutline />
           <WritingIndicator />
         </div>
+      </div>
+      {/* The phone a phone-sized Preview screen sits in (drawn over the screen; clicks pass through to it). */}
+      <div ref={phoneRef} className="at-phone" hidden aria-hidden style={{ '--bezel': `${PHONE.bezel}px`, '--screen-radius': `${PHONE.screenRadius}px` } as React.CSSProperties} data-testid="present-phone">
+        <div className="at-phone__island" />
+        <span className="at-phone__key at-phone__key--action" />
+        <span className="at-phone__key at-phone__key--up" />
+        <span className="at-phone__key at-phone__key--down" />
+        <span className="at-phone__key at-phone__key--power" />
+        <span className="at-phone__key at-phone__key--camera" />
       </div>
       {!presenting && visibleCount === 0 && <div className="at-canvas__empty">{artboards.length ? 'No artboards on this page. Add one from the toolbar.' : 'No artboards. Add one from the toolbar.'}</div>}
       {!presenting && <BackToContent />}

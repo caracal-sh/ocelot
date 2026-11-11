@@ -162,6 +162,8 @@ const PATHS = {
   history: <path d="M2.5 8a5.5 5.5 0 1 0 1.6-3.9M2.5 2.8v2.6h2.6M8 5.2V8l1.9 1.2" />,
   // Compact the conversation: two lines pressed together by arrows from above and below.
   compact: <path d="M3 6.5h10M3 9.5h10M8 1.5v3M6.5 3.5 8 5l1.5-1.5M8 14.5v-3M6.5 12.5 8 11l1.5 1.5" />,
+  // A phone seen from the front, with its island: the Preview bar's phone frame toggle.
+  phone: <path d="M5.5 1.5h5A1.5 1.5 0 0 1 12 3v10a1.5 1.5 0 0 1-1.5 1.5h-5A1.5 1.5 0 0 1 4 13V3a1.5 1.5 0 0 1 1.5-1.5zM7 3.5h2" />,
   askAgent: <path d="M4 3h8a1.5 1.5 0 0 1 1.5 1.5v5A1.5 1.5 0 0 1 12 11H8.2L5.5 13.5V11H4A1.5 1.5 0 0 1 2.5 9.5v-5A1.5 1.5 0 0 1 4 3zM8 5.2v3.1M6.45 6.75h3.1" />,
   trash: <path d="M3 4.5h10M6.5 4.5V3h3v1.5M4.5 4.5l.6 8.2a1 1 0 0 0 1 .8h3.8a1 1 0 0 0 1-.8l.6-8.2M7 7v4M9 7v4" />,
   // Document components: the main is four diamonds, an instance one diamond around a smaller one.

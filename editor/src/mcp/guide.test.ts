@@ -99,6 +99,8 @@ describe('guide topics', () => {
   it('keeps each guide inside its word budget', () => {
     // motion-guide is the exception that grew on purpose: it holds the design-engineering mindset and the recipes, and agents fetch it
     // only when they animate (SERVER_INSTRUCTIONS and the design-guide point to it), so its length costs nothing on other tasks.
+    // motion-guide: +100 words for the default micro-interaction kit of website mockups (states on every interactive layer, one hero
+    // entrance, one signature code layer), which the server instructions and the sidebar prompt now require.
     // design-guide: +75 words for the first-pixels workflow (build early, one group per write in reading order, review every 2-3 groups)
     // and the canvas reveal note (data-name shows in the marker).
     // design-guide: +250 words for the property-to-tool rows of the app tools, preferences, sidebar chat, present/timeline/viewport
@@ -107,7 +109,7 @@ describe('guide topics', () => {
     // Reuse (document components) was added to the server instructions (one line) and the design-guide (a short section and the tool-map rows) without raising
     // a budget: the same words were trimmed from copy that repeated itself, and the design-system-guide got one cross-reference.
     // product-guide: its own topic (1,700 words) because the design-guide is at its cap; agents fetch it only for app screens.
-    const budget: Record<string, number> = { 'design-guide': 5950, 'motion-guide': 2800, 'slides-guide': 1900, 'video-guide': 2300, 'theme-guide': 1470, 'design-system-guide': 1550, 'product-guide': 1750 };
+    const budget: Record<string, number> = { 'design-guide': 5950, 'motion-guide': 2900, 'slides-guide': 1900, 'video-guide': 2300, 'theme-guide': 1470, 'design-system-guide': 1550, 'product-guide': 1750 };
     for (const [topic, max] of Object.entries(budget)) expect(words(readGuide(topic)), topic).toBeLessThanOrEqual(max);
     expect(words(SERVER_INSTRUCTIONS)).toBeLessThanOrEqual(1250);
   });

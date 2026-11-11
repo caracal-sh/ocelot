@@ -21,6 +21,10 @@ import { DEVICE_ORDER, deviceClassOfWidth, parseArtboardName, type DeviceClass }
 /** Link navigation crossfade (ms); `.at-present .at-artboard` in theme.css has the same. */
 export const PRESENT_LINK_MS = 150;
 
+/** The range of widths the Preview bar renders a screen at (a phone in portrait to a 4K desktop). */
+export const MIN_PRESENT_WIDTH = 240;
+export const MAX_PRESENT_WIDTH = 3840;
+
 /** `contain` letterboxes a slide inside the area (and may scale above 1:1); only deck mode uses it, as its `fit`. */
 export type PresentFit = 'fit' | 'actual' | 'contain';
 
@@ -85,6 +89,10 @@ export class PresentSession {
   #fadeMs = PRESENT_LINK_MS;
   #moveListeners = new Set<(move: DeckMove) => void>();
   #audience: AudienceLinkHandle | null = null;
+  /** The width the screen on show is rendered at (a responsive check); null = its designed width. */
+  #width: number | null = null;
+  /** Phone-sized screens show inside a phone frame (the bar's Phone frame toggle). */
+  #deviceFrame = true;
 
   constructor(editor: Editor) {
     this.#editor = editor;
@@ -241,7 +249,52 @@ export class PresentSession {
   /** Shows the screen on show in another device class (the bar's Desktop / Tablet / Mobile). False when it has no such version. */
   showDevice(device: DeviceClass): boolean {
     const target = this.devices().find((v) => v.device === device)?.artboardId;
-    return !!target && target !== this.artboardId && this.goTo(target);
+    if (!target || target === this.artboardId) return false;
+    // A designed size replaces a width the person was trying out.
+    this.#width = null;
+    return this.goTo(target);
+  }
+
+  /** The width the screen on show is rendered at: the one picked in the bar, else its designed width. 0 when nothing shows. */
+  get renderWidth(): number {
+    const frame = this.artboardId ? this.#editor.doc.get(this.artboardId)?.frame : null;
+    return this.#width ?? frame?.width ?? 0;
+  }
+
+  /** The width picked in the bar (null: the screen's designed width). */
+  get customWidth(): number | null {
+    return this.#width;
+  }
+
+  /**
+   * Renders the screen on show at `width` CSS px (the layout reflows as far as the design allows), or at its designed width
+   * with null. Decks always show slides at their size. Throws a ModelError that names the range.
+   */
+  setWidth(width: number | null): void {
+    if (width !== null && (!Number.isFinite(width) || width < MIN_PRESENT_WIDTH || width > MAX_PRESENT_WIDTH)) {
+      throw new ModelError('invalid_argument', `The preview width must be between ${MIN_PRESENT_WIDTH} and ${MAX_PRESENT_WIDTH} px; got ${width}.`);
+    }
+    const next = width === null ? null : Math.round(width);
+    if (this.#width === next) return;
+    this.#width = next;
+    this.#scroll = { x: 0, y: 0 };
+    this.#emit();
+  }
+
+  get deviceFrame(): boolean {
+    return this.#deviceFrame;
+  }
+
+  setDeviceFrame(on: boolean): void {
+    if (this.#deviceFrame === on) return;
+    this.#deviceFrame = on;
+    this.#scroll = { x: 0, y: 0 };
+    this.#emit();
+  }
+
+  /** The screen on show sits in a phone frame: the toggle is on and it renders at a phone width (not a deck slide). */
+  get phoneFramed(): boolean {
+    return this.#deviceFrame && !this.isDeck && this.renderWidth > 0 && deviceClassOfWidth(this.renderWidth) === 'mobile';
   }
 
   // ---------- host ----------
@@ -283,6 +336,7 @@ export class PresentSession {
     this.#startedOn = target;
     this.#fit = 'fit';
     this.#scroll = { x: 0, y: 0 };
+    this.#width = null;
     this.#blank = 'none';
     this.#digits = '';
     this.#notesOpen = false;
@@ -306,6 +360,7 @@ export class PresentSession {
     this.#blank = 'none';
     this.#digits = '';
     this.#notesOpen = false;
+    this.#width = null;
     this.#audience?.close();
     this.#audience = null;
     clearTimeout(this.#leaveTimer);

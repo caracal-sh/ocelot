@@ -107,6 +107,26 @@ describe('present_control', () => {
     expect(textOf(r)).toMatch(/no mobile version.*— Mobile/);
   });
 
+  it('width renders the screen at another width until a designed size is picked; a phone-width screen sits in the phone frame unless it is turned off', async () => {
+    const { callJson, call, editor, textOf } = setupMcp();
+    const desktop = editor.doc.artboardIds()[0]!;
+    await call('update_artboard', { artboard_id: desktop, name: 'Home — Desktop', width: 1440 });
+    const mobile = (await callJson('create_artboard', { name: 'Home — Mobile', preset: 'mobile' })).artboard_id as string;
+    await callJson('start_presentation', { artboard_id: desktop });
+    expect(await callJson('present_control', { action: 'width', width: 390 })).toMatchObject({ changed: true, render_width: 390, custom_width: true, phone_frame: true });
+    expect(await callJson('present_control', { action: 'phone_frame', open: false })).toMatchObject({ changed: true, phone_frame: false });
+    expect(await callJson('present_control', { action: 'width', width: 1280 })).toMatchObject({ render_width: 1280, phone_frame: false });
+    // Its own width is the designed width again.
+    expect(await callJson('present_control', { action: 'width', width: 1440 })).toMatchObject({ render_width: 1440 });
+    expect(editor.present.customWidth).toBeNull();
+    expect(textOf(await call('present_control', { action: 'width', width: 100 }))).toMatch(/between 240 and 3840/);
+    // A designed size replaces a width being tried out; the frame toggle is remembered.
+    await callJson('present_control', { action: 'width', width: 800 });
+    await callJson('present_control', { action: 'phone_frame', open: true });
+    expect(await callJson('present_control', { action: 'device', device: 'mobile' })).toMatchObject({ artboard_id: mobile, render_width: 375, phone_frame: true });
+    expect(editor.present.customWidth).toBeNull();
+  });
+
   it('fit, scroll and animation pause change the shared view state', async () => {
     const { callJson, call, editor, home, textOf } = await flow();
     await callJson('start_presentation', { artboard_id: home });

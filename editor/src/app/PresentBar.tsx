@@ -1,19 +1,33 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import type { Host } from '../host/host';
 import { useEditor } from '../editor/context';
+import { MAX_PRESENT_WIDTH, MIN_PRESENT_WIDTH, type PresentSession } from '../editor/present';
 import { toggleFullScreen } from '../editor/presentShortcuts';
-import { DEVICE_LABEL } from '../model/arrange';
+import { DEVICE_LABEL, deviceClassOfWidth } from '../model/arrange';
+import { ContextMenu, type ContextMenuItem } from './ContextMenu';
 import { Icon } from './Icon';
 
 /** The floating bar hides after this long without pointer movement. */
 export const PRESENT_BAR_HIDE_MS = 1500;
 
+/** Widths the bar offers besides the screen's own and a custom one. */
+const WIDTH_PRESETS = [
+  { width: 375, label: 'Phone' },
+  { width: 402, label: 'Phone Pro' },
+  { width: 768, label: 'Tablet' },
+  { width: 1024, label: 'Laptop' },
+  { width: 1280, label: 'Desktop' },
+  { width: 1440, label: 'Desktop L' },
+  { width: 1920, label: 'Full HD' },
+];
+
 /**
  * Preview's floating bar: previous / next screen in reading order, the screen's name and size, Desktop / Tablet / Mobile
- * (the same screen in another size, when the prototype has several), Back / Forward through the link history, Fit / 100%,
- * pause / resume animations, hide / show sidebar, full screen and Exit. It fades out after 1.5 s without pointer movement
- * (not while the pointer or keyboard focus is on it) and wakes on any movement over the stage, including over the artboard
- * frame (which reports it through `present.pulse()`), and on every navigation.
+ * (the same screen in another size, when the prototype has several), the width it renders at (its own, a preset or a custom
+ * one: the layout reflows as far as the design allows), the phone frame for phone-sized screens, Back / Forward through the
+ * link history, Fit / 100%, pause / resume animations, hide / show sidebar, full screen and Exit. It fades out after 1.5 s
+ * without pointer movement (not while the pointer or keyboard focus is on it, or a menu of it is open) and wakes on any
+ * movement over the stage, including over the artboard frame (which reports it through `present.pulse()`), and on every navigation.
  */
 export function PresentBar({ host }: { host: Host }) {
   const editor = useEditor();
@@ -125,6 +139,21 @@ export function PresentBar({ host }: { host: Host }) {
             <span className="at-presentbar__sep" />
           </>
         )}
+        <WidthControl present={present} designWidth={node.frame.width} onHold={hold} />
+        {deviceClassOfWidth(present.renderWidth) === 'mobile' && (
+          <button
+            type="button"
+            className="at-btn at-btn--icon"
+            aria-pressed={present.deviceFrame}
+            onClick={() => present.setDeviceFrame(!present.deviceFrame)}
+            data-tip={present.deviceFrame ? 'Hide the phone frame' : 'Show the screen in a phone'}
+            aria-label="Phone frame"
+            data-testid="present-phone-frame"
+          >
+            <Icon name="phone" />
+          </button>
+        )}
+        <span className="at-presentbar__sep" />
         <button type="button" className="at-btn at-btn--icon" onClick={() => present.back()} disabled={!present.canBack} data-tip="Back (⌘[)" aria-label="Back" data-testid="present-back">
           <Icon name="historyBack" />
         </button>
@@ -161,5 +190,89 @@ export function PresentBar({ host }: { host: Host }) {
         <kbd>Esc</kbd>
       </button>
     </div>
+  );
+}
+
+/** The width the screen renders at: its own, a preset, or a number typed in (Enter applies, Esc cancels). */
+function WidthControl({ present, designWidth, onHold }: { present: PresentSession; designWidth: number; onHold(on: boolean): void }) {
+  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
+  const [typing, setTyping] = useState(false);
+  const [error, setError] = useState('');
+  const custom = present.customWidth;
+  const close = () => {
+    setMenu(null);
+    onHold(false);
+  };
+  const apply = (text: string) => {
+    const width = Number(text);
+    if (!Number.isFinite(width) || width < MIN_PRESENT_WIDTH || width > MAX_PRESENT_WIDTH) {
+      setError(`${MIN_PRESENT_WIDTH}–${MAX_PRESENT_WIDTH} px`);
+      return;
+    }
+    present.setWidth(width === designWidth ? null : width);
+    setTyping(false);
+    setError('');
+  };
+  if (typing) {
+    return (
+      <input
+        autoFocus
+        type="number"
+        className="at-input at-presentbar__width"
+        min={MIN_PRESENT_WIDTH}
+        max={MAX_PRESENT_WIDTH}
+        defaultValue={present.renderWidth}
+        aria-label="Preview width in pixels"
+        aria-invalid={!!error || undefined}
+        data-tip={error || 'Width in px: Enter applies, Esc cancels'}
+        data-testid="present-width-input"
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') apply(e.currentTarget.value);
+          if (e.key === 'Escape') {
+            e.stopPropagation();
+            setTyping(false);
+            setError('');
+          }
+        }}
+        onBlur={() => {
+          setTyping(false);
+          setError('');
+        }}
+      />
+    );
+  }
+  const presets = WIDTH_PRESETS.filter((p) => p.width !== designWidth);
+  const items: ContextMenuItem[] = [
+    { id: 'width-design', label: `Designed width · ${designWidth} px`, checked: custom === null, onSelect: () => present.setWidth(null) },
+    ...presets.map((p, i) => ({ id: `width-${p.width}`, label: `${p.label} · ${p.width} px`, checked: custom === p.width, separatorBefore: i === 0, onSelect: () => present.setWidth(p.width) })),
+    {
+      id: 'width-custom',
+      label: custom !== null && !presets.some((p) => p.width === custom) ? `Custom width · ${custom} px…` : 'Custom width…',
+      checked: custom !== null && !presets.some((p) => p.width === custom),
+      separatorBefore: true,
+      onSelect: () => setTyping(true),
+    },
+  ];
+  return (
+    <>
+      <button
+        type="button"
+        className="at-btn"
+        aria-haspopup="menu"
+        aria-expanded={!!menu}
+        aria-pressed={custom !== null}
+        onClick={(e) => {
+          const r = e.currentTarget.getBoundingClientRect();
+          if (menu) return close();
+          onHold(true);
+          setMenu({ x: r.left, y: r.top - 8 - 36 * (items.length + 1) });
+        }}
+        data-tip="Width the screen renders at: its layout reflows as far as the design allows"
+        data-testid="present-width"
+      >
+        {present.renderWidth} px
+      </button>
+      {menu && <ContextMenu x={menu.x} y={menu.y} items={items} onClose={close} label="Preview width" />}
+    </>
   );
 }

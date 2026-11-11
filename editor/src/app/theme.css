@@ -1426,6 +1426,33 @@ body {
   /* A deck slide change is played by the View Transition (present/transitions.ts), or by the fade above where there is none. */
   .at-canvas--deck .at-artboard--shown { transition-duration: 0ms; }
 }
+/* The phone a phone-sized Preview screen sits in (canvas/presentLayout.ts PHONE): a black rim drawn as the border, so the inside is
+   the window the screen shows through, a thin metal edge, the island and the side keys. Scaled with the screen (--s); clicks pass
+   through to the screen. */
+.at-phone {
+  --s: 1;
+  position: absolute; z-index: 2; pointer-events: none; box-sizing: border-box;
+  border: calc(var(--bezel) * var(--s)) solid #050506;
+  border-radius: calc((var(--screen-radius) + var(--bezel)) * var(--s));
+  box-shadow:
+    0 0 0 calc(1.5px * var(--s)) #55565b,
+    0 0 0 calc(3px * var(--s)) #2a2b2f,
+    0 calc(30px * var(--s)) calc(80px * var(--s)) oklch(0 0 0 / 0.35);
+}
+.at-phone[hidden] { display: none; }
+.at-phone__island {
+  position: absolute; left: 50%; top: calc(11px * var(--s)); translate: -50% 0;
+  width: calc(124px * var(--s)); height: calc(36px * var(--s)); border-radius: 999px; background: #000;
+}
+.at-phone__key { position: absolute; width: calc(3px * var(--s)); border-radius: calc(2px * var(--s)); background: #3b3c41; }
+.at-phone__key--action, .at-phone__key--up, .at-phone__key--down { left: calc((-1 * var(--bezel) - 4.5px) * var(--s)); }
+.at-phone__key--power, .at-phone__key--camera { right: calc((-1 * var(--bezel) - 4.5px) * var(--s)); }
+.at-phone__key--action { top: calc(118px * var(--s)); height: calc(32px * var(--s)); }
+.at-phone__key--up { top: calc(178px * var(--s)); height: calc(58px * var(--s)); }
+.at-phone__key--down { top: calc(248px * var(--s)); height: calc(58px * var(--s)); }
+.at-phone__key--power { top: calc(198px * var(--s)); height: calc(92px * var(--s)); }
+.at-phone__key--camera { top: calc(560px * var(--s)); height: calc(54px * var(--s)); }
+.at-presentbar__width { width: 76px; height: 24px; padding: 0 6px; font-variant-numeric: tabular-nums; }
 .at-presentbar {
   position: absolute; left: 50%; bottom: 18px; z-index: 40; translate: -50% 0;
   display: flex; align-items: center; gap: 2px; max-width: calc(100% - 24px); padding: 4px 6px;
