@@ -6,6 +6,17 @@
     <description>Ocelot updates</description>
     <language>en</language>
     <item>
+      <title>Ocelot 0.3.4</title>
+      <pubDate>Wed, 11 Nov 2026 08:59:53 +0000</pubDate>
+      <sparkle:version>1010</sparkle:version>
+      <sparkle:shortVersionString>0.3.4</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <description><![CDATA[<ul>
+<li>A long paste in the agent sidebar becomes a tidy one-line chip again: &quot;Paste as text&quot; no longer wraps onto two lines.</li>
+</ul>]]></description>
+      <enclosure url="https://github.com/caracal-sh/ocelot/releases/download/v0.3.4/Ocelot-0.3.4.dmg" length="16997938" type="application/octet-stream" sparkle:edSignature="zH3aFbySIsnO5xG/WPdH8VabB400eohvuFJ/oP8yfD2eUTa4T3LVmSRSkbDIUnte+cB23ZEdrL8qJMMl/ZE1BA=="/>
+    </item>
+    <item>
       <title>Ocelot 0.3.3</title>
       <pubDate>Wed, 11 Nov 2026 08:34:49 +0000</pubDate>
       <sparkle:version>1009</sparkle:version>
