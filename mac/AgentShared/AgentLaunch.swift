@@ -77,10 +77,14 @@ enum AgentLaunch {
         SHA256.hash(data: Data(text.utf8)).map { String(format: "%02x", $0) }.joined()
     }
 
-    /// Only the MCP tools: no built-in tools, skills, rules, context files or extensions.
-    static func ompArguments(configFile: String, systemPromptFile: String, model: String?, thinking: String?) -> [String] {
-        var args = [
-            "--mode", "rpc", "--no-session", "--no-tools", "--no-skills", "--no-rules",
+    /// Only the MCP tools: no built-in tools, skills, rules, context files or extensions. The session lives in
+    /// `sessionDirectory` (one directory per conversation, `AgentConversationPaths`); `resume` continues the session already
+    /// there (`--continue`) instead of starting one. Mirrored by `ompArgs` in editor/e2e/omp-runner.mjs.
+    static func ompArguments(configFile: String, systemPromptFile: String, model: String?, thinking: String?, sessionDirectory: String, resume: Bool) -> [String] {
+        var args = ["--mode", "rpc", "--session-dir", sessionDirectory]
+        if resume { args.append("--continue") }
+        args += [
+            "--no-tools", "--no-skills", "--no-rules",
             "--no-context-files", "--no-extensions", "--no-lsp", "--no-title",
             "--config", configFile, "--system-prompt", systemPromptFile,
         ]

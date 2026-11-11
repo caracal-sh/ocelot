@@ -13,7 +13,7 @@ import { buildRegistry } from '../designsystem/export/registry';
 import { radiusValue, type DesignSystemRecord } from '../designsystem/model';
 import { loadStyle } from '../designsystem/snapshot';
 import { useEditor, usePages } from '../editor/context';
-import { themeById } from '../themes/catalog';
+import { themeOfRef } from '../themes/custom';
 import { truncate2 } from '../themes/contrast';
 import { DsBlocks } from './DsBlocks';
 import { openDsStudio, useDesignSystem, useDsAgentLock, useInstanceCount } from './dsStudioState';
@@ -191,22 +191,24 @@ function Summary({ record }: { record: DesignSystemRecord }) {
   );
 }
 
-/** The document's theme id as a stable value, re-read on every document change. */
-function useThemeId(): string | null {
+/** The document's theme name as a stable value, re-read on every document change. */
+function useThemeName(): string | null {
   const editor = useEditor();
   return useSyncExternalStore(
     (cb) => {
       const offs = [editor.on('change', cb), editor.on('document', cb)];
       return () => offs.forEach((off) => off());
     },
-    () => editor.doc.theme()?.id ?? null,
+    () => {
+      const ref = editor.doc.theme();
+      return ref ? (themeOfRef(ref)?.name ?? ref.id) : null;
+    },
   );
 }
 
 function Empty() {
   const editor = useEditor();
-  const themeId = useThemeId();
-  const themeName = themeId ? (themeById(themeId)?.name ?? themeId) : null;
+  const themeName = useThemeName();
   return (
     <div className="ds-empty" data-testid="ds-empty">
       <p className="ds-empty__lead">Real shadcn components and their tokens on every artboard: change one colour, the whole design follows. Agents build from the same system.</p>

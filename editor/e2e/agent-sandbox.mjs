@@ -122,12 +122,13 @@ export const MACH_LOOKUPS = ['com.apple.logd', 'com.apple.system.notification_ce
  *
  * - Reads: system libraries, the omp binary, the session's private home, and `readOnly` subpaths (omp's
  *   unpacked natives; read-only so one session cannot plant code another loads).
- * - Writes: the session's private home and a few device files.
+ * - Writes: the session's private home, the `writable` directories (the conversation's own omp session files, which outlive the process)
+ *   and a few device files.
  * - Network: loopback to the listed ports only (the gateway and the MCP endpoint).
  * - Exec: omp itself only: no shells, no git, no stdio MCP servers. Signals only to itself.
  * - Everything else (other Mach services, IPC, sysctl beyond the list above, process inspection) is denied.
  */
-export function seatbeltProfile({ ompPath, home, loopbackPorts, readOnly = [] }) {
+export function seatbeltProfile({ ompPath, home, loopbackPorts, readOnly = [], writable = [] }) {
   if (!loopbackPorts.length || loopbackPorts.some((p) => !Number.isInteger(p) || p < 1 || p > 65535)) {
     throw new Error('The agent sandbox needs the gateway and MCP ports to allow.');
   }
@@ -140,8 +141,8 @@ export function seatbeltProfile({ ompPath, home, loopbackPorts, readOnly = [] })
     `(allow mach-lookup ${MACH_LOOKUPS.map((n) => `(global-name ${JSON.stringify(n)})`).join(' ')})`,
     `(allow file-read* ${SYSTEM_READ_SUBPATHS.map((p) => `(subpath ${sbString(p)})`).join(' ')} ${SYSTEM_READ_LITERALS.map((p) => `(literal ${sbString(p)})`).join(' ')})`,
     '(allow file-read-metadata (literal "/var") (literal "/tmp") (literal "/etc"))',
-    `(allow file-read* (literal ${sbString(ompPath)}) (subpath ${sbString(home)}) ${readOnly.map((p) => `(subpath ${sbString(p)})`).join(' ')})`,
-    `(allow file-write* (subpath ${sbString(home)}) (literal "/dev/null") (literal "/dev/tty") (subpath "/dev/fd"))`,
+    `(allow file-read* (literal ${sbString(ompPath)}) (subpath ${sbString(home)}) ${readOnly.concat(writable).map((p) => `(subpath ${sbString(p)})`).join(' ')})`,
+    `(allow file-write* ${[home, ...writable].map((p) => `(subpath ${sbString(p)})`).join(' ')} (literal "/dev/null") (literal "/dev/tty") (subpath "/dev/fd"))`,
     ...[...new Set(loopbackPorts)].map((p) => `(allow network-outbound (remote ip "localhost:${p}"))`),
     '',
   ];

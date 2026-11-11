@@ -78,6 +78,31 @@ final class AgentRunner {
             self?.stop(params.processId)
             return Empty()
         }
+        // The sidebar's saved conversations: the host only stores them (summary and transcript are the editor's own JSON).
+        host.register(HostMethods.AgentHistoryList.self) { [weak self] params in
+            guard let self else { throw BridgeFailure(.hostUnavailable, "Ocelot is shutting down.") }
+            return AgentHistoryEntries(entries: try await self.history { try $0.list(projectId: params.projectId) })
+        }
+        host.register(HostMethods.AgentHistoryRead.self) { [weak self] params in
+            guard let self else { throw BridgeFailure(.hostUnavailable, "Ocelot is shutting down.") }
+            return try await self.history { try $0.read(projectId: params.projectId, id: params.id) }
+        }
+        host.register(HostMethods.AgentHistoryWrite.self) { [weak self] params in
+            guard let self else { throw BridgeFailure(.hostUnavailable, "Ocelot is shutting down.") }
+            try await self.history { try $0.write(projectId: params.projectId, id: params.id, meta: params.meta, transcript: params.transcript) }
+            return Empty()
+        }
+        host.register(HostMethods.AgentHistoryDelete.self) { [weak self] params in
+            guard let self else { throw BridgeFailure(.hostUnavailable, "Ocelot is shutting down.") }
+            try await self.history { try $0.remove(projectId: params.projectId, id: params.id) }
+            return Empty()
+        }
+    }
+
+    /// Runs file work on the saved conversations off the main actor (transcripts can be megabytes).
+    private func history<T: Sendable>(_ work: @escaping @Sendable (AgentHistoryStore) throws -> T) async throws -> T {
+        let store = AgentHistoryStore(root: try OmpCLI.agentDirectory())
+        return try await Task.detached { try work(store) }.value
     }
 
     /// Stops every agent, the sandbox service connection and the credential path (app quit, or the
@@ -203,6 +228,9 @@ final class AgentRunner {
         guard let cli = await OmpLocator.shared.cli() else {
             throw BridgeFailure(.hostUnavailable, "omp was not found. Install it with \"bun install -g @oh-my-pi/pi-coding-agent\".")
         }
+        // The conversation's own session directory (omp's memory of it); created before anything else starts.
+        let sessionDirectory = try await history { try $0.sessionDirectory(projectId: params.projectId, conversationId: params.conversationId) }
+        let resume = params.resume ?? false
         let mcp = MCPService.shared
         guard mcp.statusForEditor.running else {
             throw BridgeFailure(.hostUnavailable, "The MCP server is not running (\(mcp.statusForEditor.error ?? "stopped")). Check Ocelot > Settings.")
@@ -225,7 +253,7 @@ final class AgentRunner {
                 try mcpConfig.write(to: dir.appendingPathComponent(".mcp.json"))
                 try AgentLaunch.configOverlay().write(to: overlay, atomically: true, encoding: .utf8)
                 try params.systemPrompt.write(to: prompt, atomically: true, encoding: .utf8)
-                let args = AgentLaunch.ompArguments(configFile: overlay.path, systemPromptFile: prompt.path, model: params.model, thinking: params.thinking)
+                let args = AgentLaunch.ompArguments(configFile: overlay.path, systemPromptFile: prompt.path, model: params.model, thinking: params.thinking, sessionDirectory: sessionDirectory.path, resume: resume)
                 handle = try LocalAgentProcess.spawn(cli, arguments: args, directory: dir, sink: sink)
                 cleanupDirectory = dir
             } else {
@@ -248,7 +276,8 @@ final class AgentRunner {
                     mcpConfig: String(decoding: try AgentLaunch.confinedMCPConfig(url: mcp.url(for: .window(windowId))), as: UTF8.self),
                     modelsYml: try AgentLaunch.modelsYml(baseURL: gateway.baseURL, providers: AgentModels.providers(picker.selectors)),
                     overlay: AgentLaunch.configOverlay(defaultModel: picker.defaultModel, thinkingLevel: picker.thinking, extraDisabled: AgentLaunch.confinedModelProvidersOff),
-                    gatewayToken: client.token, mcpToken: mcpToken, temporaryDirectory: tmp.path)
+                    gatewayToken: client.token, mcpToken: mcpToken, temporaryDirectory: tmp.path,
+                    sessionDirectory: sessionDirectory.resolvingSymlinksInPath().path, resume: resume)
                 handle = try await XPCAgentProcess.start(request, sink: sink)
             }
         } catch {

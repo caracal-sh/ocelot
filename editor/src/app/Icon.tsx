@@ -159,6 +159,8 @@ const PATHS = {
   stop: <rect x="4" y="4" width="8" height="8" rx="1.5" fill="currentColor" stroke="none" />,
   arrowUp: <path d="M8 13V3.5M4.5 7 8 3.5 11.5 7" />,
   arrowDown: <path d="M8 3v9.5M4.5 9 8 12.5 11.5 9" />,
+  history: <path d="M2.5 8a5.5 5.5 0 1 0 1.6-3.9M2.5 2.8v2.6h2.6M8 5.2V8l1.9 1.2" />,
+  trash: <path d="M3 4.5h10M6.5 4.5V3h3v1.5M4.5 4.5l.6 8.2a1 1 0 0 0 1 .8h3.8a1 1 0 0 0 1-.8l.6-8.2M7 7v4M9 7v4" />,
 } satisfies Record<string, ReactNode>;
 
 export type IconName = keyof typeof PATHS;

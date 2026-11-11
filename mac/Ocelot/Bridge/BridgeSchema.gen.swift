@@ -230,6 +230,38 @@ struct AgentStartParams: Codable, Sendable, Equatable {
     var systemPrompt: String
     var model: String? = nil
     var thinking: String? = nil
+    var projectId: String
+    var conversationId: String
+    var resume: Bool? = nil
+}
+
+struct AgentHistoryProject: Codable, Sendable, Equatable {
+    var projectId: String
+}
+
+struct AgentHistoryKey: Codable, Sendable, Equatable {
+    var projectId: String
+    var id: String
+}
+
+struct AgentHistoryEntry: Codable, Sendable, Equatable {
+    var id: String
+    var meta: String
+}
+
+struct AgentHistoryEntries: Codable, Sendable, Equatable {
+    var entries: [AgentHistoryEntry]
+}
+
+struct AgentHistoryTranscript: Codable, Sendable, Equatable {
+    var text: String? = nil
+}
+
+struct AgentHistoryWriteParams: Codable, Sendable, Equatable {
+    var projectId: String
+    var id: String
+    var meta: String
+    var transcript: String? = nil
 }
 
 struct AgentSendParams: Codable, Sendable, Equatable {
@@ -610,6 +642,26 @@ enum HostMethods {
         typealias Result = Empty
         static let name = "host.agentStop"
     }
+    enum AgentHistoryList: BridgeMethod {
+        typealias Params = AgentHistoryProject
+        typealias Result = AgentHistoryEntries
+        static let name = "host.agentHistoryList"
+    }
+    enum AgentHistoryRead: BridgeMethod {
+        typealias Params = AgentHistoryKey
+        typealias Result = AgentHistoryTranscript
+        static let name = "host.agentHistoryRead"
+    }
+    enum AgentHistoryWrite: BridgeMethod {
+        typealias Params = AgentHistoryWriteParams
+        typealias Result = Empty
+        static let name = "host.agentHistoryWrite"
+    }
+    enum AgentHistoryDelete: BridgeMethod {
+        typealias Params = AgentHistoryKey
+        typealias Result = Empty
+        static let name = "host.agentHistoryDelete"
+    }
     enum AssetsList: BridgeMethod {
         typealias Params = Empty
         typealias Result = AssetList
@@ -685,7 +737,7 @@ enum HostMethods {
         typealias Result = Empty
         static let name = "host.exportVideoCancel"
     }
-    static let allNames: [String] = ["host.ping","host.getInfo","host.log","host.documentChanged","host.renderSnapshot","host.listFonts","host.getMcpStatus","host.getMcpClientConfig","host.copyText","host.openURL","host.windowToggleFullScreen","host.presenterListScreens","host.presenterOpenAudience","host.presenterPush","host.presenterClose","host.windowDrag","host.windowTitlebarDoubleClick","host.agentStatus","host.agentLogin","host.agentInstall","host.agentStart","host.agentSend","host.agentStop","host.assetsList","host.assetsRead","host.assetsImport","host.assetsDelete","host.imageProviders","host.imageGenerate","host.imageCancel","host.imageSetKey","host.imageSetDefault","host.exportSave","host.exportRun","host.exportWriteFile","host.exportCancel","host.exportVideoRun","host.exportVideoCancel"]
+    static let allNames: [String] = ["host.ping","host.getInfo","host.log","host.documentChanged","host.renderSnapshot","host.listFonts","host.getMcpStatus","host.getMcpClientConfig","host.copyText","host.openURL","host.windowToggleFullScreen","host.presenterListScreens","host.presenterOpenAudience","host.presenterPush","host.presenterClose","host.windowDrag","host.windowTitlebarDoubleClick","host.agentStatus","host.agentLogin","host.agentInstall","host.agentStart","host.agentSend","host.agentStop","host.agentHistoryList","host.agentHistoryRead","host.agentHistoryWrite","host.agentHistoryDelete","host.assetsList","host.assetsRead","host.assetsImport","host.assetsDelete","host.imageProviders","host.imageGenerate","host.imageCancel","host.imageSetKey","host.imageSetDefault","host.exportSave","host.exportRun","host.exportWriteFile","host.exportCancel","host.exportVideoRun","host.exportVideoCancel"]
 }
 
 /// Methods implemented by the editor, called by the Swift host.

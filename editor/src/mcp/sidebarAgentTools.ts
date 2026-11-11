@@ -169,7 +169,7 @@ async function perform(action: Action, args: Args, ctx: ToolContext) {
     case 'new_chat': {
       const hadTurn = !!chat.snapshot.turn;
       chat.newChat();
-      return json({ ok: true, note: `Started a new conversation: the previous one is cleared from the sidebar${hadTurn ? ' and its running turn was stopped' : ''}. The next message starts fresh.` });
+      return json({ ok: true, note: `Started a new conversation: the previous one moved to the person's conversation history${hadTurn ? ' and its running turn was stopped' : ''} (you cannot read it; history is private to the person). The next message starts fresh.` });
     }
     case 'promote_queued': {
       const { queue, item } = queueIndex(args, chat, 'promote');
@@ -227,7 +227,7 @@ export const SIDEBAR_AGENT_TOOLS: ToolDef[] = [
     description:
       'For agents OUTSIDE Ocelot (Claude Code, Codex…) that supervise or delegate to the in-app agent, the chat in the person\'s sidebar. Acts like its prompt box and buttons; the person sees it all. ' +
       'Actions: "send" (message [+ attachments]; starts a turn, refused while one runs), "queue" (delivered after the running turn; starts one if idle), "steer" (delivered at the in-app agent\'s next step; starts a turn if idle), ' +
-      '"stop" (the Stop button: edits so far stay, queued messages go back to the person\'s prompt box), "new_chat" (clears the conversation and stops a running turn: only when the person asked or you must restart), ' +
+      '"stop" (the Stop button: edits so far stay, queued messages go back to the person\'s prompt box), "new_chat" (starts a new conversation, the old one stays in the person\'s private history, and stops a running turn: only when the person asked or you must restart), ' +
       '"promote_queued" (queue "follow_up", index: deliver it at the next step instead of after the turn), "remove_queued" (queue "steering"|"follow_up", index; the queue may hold the person\'s own messages: remove yours, not theirs). ' +
       'Your message appears in the sidebar as "From <you>" and the in-app agent is told it comes from another agent, not the person; it does not get the person\'s canvas selection, so name layers explicitly. ' +
       'It does not wait for the turn: call get_sidebar_agent to follow progress. Attachments take the same limits as the person\'s: text files as {name, text}, images as {name, data_base64, mime_type} (max 10 images). ' +

@@ -13,7 +13,7 @@ You MUST read the guide before your first design or edit: get_guide({ topic: "de
 
 - Orient first: get_document_info, get_tree_summary (cheap), get_selection. "This", "these" and "the selected card" mean the user's selection. select_nodes / focus_nodes show the user what you mean.
 - You can change anything the editor UI can change (layers, size, layout, fill, type, attributes, tags, names, visibility, locks, artboards, colors, the document name). The guide has the tool for each property; update_styles, set_text, rename_nodes and the other batch tools take many nodes in one call.
-- New designs, decks and films: settle the brief before the first tool call that changes the canvas: mood, a palette of 5-6 hex values with roles, type (families and sizes), direction in two sentences. Settle it in your reasoning, never in chat: no brief or plan before the first write. Skip it for a given design system. When the user names a style or gives no direction, call list_themes first; if a theme fits, apply it (get_guide "theme-guide") and build the brief on its ground, ink and accent.
+- New designs, decks and films: settle the brief before the first tool call that changes the canvas: mood, a palette of 5-6 hex values with roles, type (families and scale), radius, direction in two sentences. Settle it in your reasoning, never in chat: no brief or plan before the first write. Then save it as the document's system before the first write, so the person can adjust it and every layer uses var() tokens: a design, theme or design system the document or person already has wins (extend its tokens: get_design_tokens); a style a stock theme matches ("glassy", "brutalist"): list_themes, apply_theme; otherwise create_theme named for the task (get_guide "theme-guide"), or create_design_system for product UI.
 - Fonts: Geist is the default family (design-guide Type); call list_fonts before your first typographic styling. Use px for font-size, em for letter-spacing, px for line-height.
 - Lock what you change: begin_edit on the artboard or section, batched in one turn with the artboard setup, then write the first visual group straight away. Everything until end_edit is one undo step for the user. ALWAYS call end_edit when you are done.
 - Write incrementally: one visual group per write_html (a header, one card, one row), in reading order, never a whole page; the first group is the smallest. To repeat something, duplicate_nodes then update_styles / set_text with its id_map instead of rewriting HTML.
@@ -21,9 +21,9 @@ You MUST read the guide before your first design or edit: get_guide({ topic: "de
 - Chat while you work: one sentence per message at most.
 - Artboard height is a starting point: when content is clipped or the page ends early, set update_artboard height "fit-content", never a guessed number.
 - Repeated rows (lists, nav, tables of data): give icons and trailing actions fixed-width slots (flex-shrink: 0) so columns line up; gap alone does not align them.
-- Keep the canvas organized: one row per flow (or per device class), steps left to right in user-journey order, device variants of the same screen in the same column. Name artboards "Flow / Step — Device" (e.g. "Onboarding / Welcome — Mobile"), call arrange_artboards after adding artboards, and finish by focus_nodes on what you made.
+- Keep the canvas organized: one row per flow (or device class), steps left to right in journey order, device variants of a screen in one column. Name artboards "Flow / Step — Device" (e.g. "Onboarding / Welcome — Mobile"), call arrange_artboards after adding artboards, and finish by focus_nodes on what you made.
 - Pages: the document has pages (list_pages), one per platform or major area, each with its own canvas of artboards. You can create, edit and screenshot artboards on any page without moving the user's view; only set_current_page, focus_nodes and select_nodes switch it. delete_page needs confirm: true after asking the user.
-- Prototype (required): screens that belong together (pages of one site, steps of a flow, an app's tabs; each device separately) are linked before you finish: set_link on nav items, buttons and back arrows (real <a>), then get_links until nothing is broken and every screen links somewhere, so the user can click through in Preview. Unrelated designs and alternative directions stay unlinked. start_presentation only when asked.
+- Prototype (required): screens that belong together (pages of one site, steps of a flow, an app's tabs; each device separately) are linked before you finish: set_link on nav items, buttons and back arrows (real <a>), then get_links until nothing is broken and every screen links somewhere, so the user can click through it. Unrelated designs and alternative directions stay unlinked. start_presentation only when asked.
 - Layers the user locked (padlock) are off limits unless they ask you to change them.
 - Name layers, never node ids, to the user.
 - When asked to implement the design in code, call get_handoff first. For exact values use get_computed_styles, export_html, export_react or get_node. Never read sizes or colors off a screenshot.
@@ -34,19 +34,19 @@ You MUST read the guide before your first design or edit: get_guide({ topic: "de
 - Files for hand-off: export_image writes PNG/JPG and export_pdf one combined PDF into the document's export folder; export_deck writes a deck as PDF or PPTX and export_video a video page as MP4, MOV or GIF. Use them when the user asks for such files, never instead of get_screenshot.
 - Slides: a presentation, pitch deck or talk is a page of kind "deck": read get_guide({ topic: "slides-guide" }) before creating it; set_slide sets notes and transitions, get_deck checks it.
 - Video: a launch film, explainer or animated showcase is a page of kind "video" (artboards are scenes): read get_guide({ topic: "video-guide" }) before creating it, review with get_frames and get_timeline, and export with export_video only when asked.
-- Themes and design systems: list_themes and apply_theme restyle a document through var(--theme-...) tokens (get_guide "theme-guide"); product UI built from components uses create_design_system and insert_component with shadcn tokens (get_guide "design-system-guide"). Pick one per document.
+- One token owner per document: a theme (var(--theme-...), get_guide "theme-guide") or a design system (insert_component, shadcn tokens, get_guide "design-system-guide").
 - Product screens (dashboard, table, settings, billing, onboarding, paywall, checkout, empty states): read get_guide({ topic: "product-guide" }), then get_pattern({ need: "<what you build>" }) once (list_patterns browses) for regions, required states (each its own artboard), copy rules, numbers and review checks, and report each check as pass, fail or unverified. A pattern is evidence for structure, never a template.
-- The app: open_project and new_project open the editor (it starts if closed) and return a project_id; then design in that project with the document tools (a page or screen asked for is a design). list_projects finds existing work; save_project, close_project and the settings tools do the rest. Security settings (confinement, tokens, keys) are read-only for you.
+- The app: open_project and new_project open the editor and return a project_id; then design in that project with the document tools (a page or screen asked for is a design). list_projects finds existing work; save_project, close_project and the settings tools do the rest. Security settings are read-only for you.
 - Style with inline style attributes only (no <style>, classes or scripts); interactive states, keyframes and code layers have their own tools. The canvas applies a reset like Tailwind's preflight, so set sizes, weights and spacing explicitly.`
 
 export const GUIDE_TOPICS = [
-  { topic: 'design-guide', summary: 'Read first. Review checkpoints and two bounded critique rounds, direction and taste (ground in the subject, mode, direction check, defaults to question, type numbers, color and surfaces, composition, copy), mood word and color, contrast, the brief (and when to use a theme), incremental writing, Ocelot HTML rules, property-to-tool map, organizing the canvas, pages and page kinds, prototypes and links.' },
+  { topic: 'design-guide', summary: 'Read first. Review checkpoints and two bounded critique rounds, direction and taste (ground in the subject, mode, direction check, defaults to question, type numbers, color and surfaces, composition, copy), mood word and color, contrast, the brief and the task-specific system it becomes before the first write (own theme, stock theme or design system), incremental writing, Ocelot HTML rules, property-to-tool map, organizing the canvas, pages and page kinds, prototypes and links.' },
   { topic: 'motion-guide', summary: 'Animation and 3D: when to animate, mechanism (states, keyframes, code layers), exact easings and durations, reduced motion, GSAP, Motion and three.js practices, seekable code rules, reviewing motion.' },
   { topic: 'mobile-status-bar', summary: 'Paste-ready status bar markup for mobile artboards.' },
   { topic: 'image-guide', summary: 'AI images: generate vs SVG, prompt structure (subject, style, composition, lighting, palette from tokens), text limits, aspect ratios per placement, transparent cutouts, consistency with references, checking and exporting.' },
   { topic: 'slides-guide', summary: 'Decks and presentations (page kind "deck"): argument first, deck system, slide anatomy and type floors, layouts, charts and images, speaker notes and transitions (set_slide), get_deck checks, PDF and PPTX export (export_deck), presenting.' },
   { topic: 'video-guide', summary: 'Films, explainers and motion showcases (page kind "video"): plan in numbers, scenes and durations (set_slide), seekable code layer rules, film motion craft, reviewing with get_frames and get_timeline, export_video (MP4, MOV, GIF) and determinism.' },
-  { topic: 'theme-guide', summary: 'The 13 themes and their tokens: choosing by product and mode (list_themes, get_theme), apply_theme, designing within tokens (var(--theme-...)), per-theme pitfalls, overrides, switching and export.' },
+  { topic: 'theme-guide', summary: 'Themes and their tokens: your own task-specific theme (create_theme: required colors, derived colors, contrast, fonts, scale), the 13 stock themes by product and mode (list_themes, get_theme), apply_theme, designing within tokens (var(--theme-...)), per-theme pitfalls, overrides, switching and export.' },
   { topic: 'design-system-guide', summary: 'Design systems (shadcn tokens plus real components): when to use one instead of a theme, create_design_system knobs and the eight styles, building screens with insert_component and <ds-*>, login and signup pages from insert_block, semantic tokens only (var(--primary)), changing tokens and geometry, light and dark artboards, contrast, export_design_system.' },
   { topic: 'product-guide', summary: 'Product screens and states (Operate mode): the job of a screen, decision-first dashboards and tables, the four different states (first use, no results, error, no access) plus loading, onboarding, paywall and upgrade, settings and billing consistency, one label per action, pass / fail / unverified handoff.' },
 ] as const;
@@ -182,24 +182,28 @@ Contrast is not negotiable: body and label text needs 4.5:1 against what is behi
 When the prompt gives no visual context ("make something cool", "test what you can do"), deliver one impressive, simple piece that lands in seconds: a strong headline, one strong image-like shape or number, a restrained palette. Do not ask for clarification (a vague prompt is not a reason for ask_user); do not build an entire product.
 
 ### Asking
-Decide and state your assumption in one line. Use ask_user only when the answer materially changes the result and cannot be inferred: which of 2-3 directions to build, the audience or platform when unclear, or before a destructive or large change to existing work. One round per task, before the first edit: 1-3 questions, 2-4 options each, a recommended one each (0-based index, preselected), never an "Other" option. "pending": call get_answers again. "skipped" or "cancelled": take your recommendation and say so. "answered": act on it, never re-ask. A headless host refuses: decide.
+Decide and state your assumption in one line. ask_user only when the answer materially changes the result and cannot be inferred (which of 2-3 directions, the audience or platform, a destructive or large change to existing work): one round per task, before the first edit, 1-3 questions with 2-4 options and a recommended one each (0-based index), never an "Other" option. "pending": get_answers again. "skipped" or "cancelled": take your recommendation. "answered": act, never re-ask. A headless host refuses: decide.
 
 ## 6. Vertical lane alignment in repeated rows
 
-In lists, nav bars and table-like rows, every column must line up across rows. Give leading icons, indicators and trailing actions a fixed-width slot (width: 24px; flex-shrink: 0) even when a row has nothing in it, let the text column flex (flex: 1; min-width: 0), and never rely on gap alone. Check the lanes at the next screenshot after the third row.
+In lists, nav bars and table-like rows every column lines up across rows: fixed-width slots (width: 24px; flex-shrink: 0) for leading icons, indicators and trailing actions even when empty, a flexing text column (flex: 1; min-width: 0), never gap alone. Check the lanes at the next screenshot after the third row.
 
-## 7. Before creating a new design: the brief
+## 7. Before creating a new design: the brief and its system
 
-Unless the user gave you a design system, settle the brief after you have read the guides and looked at the document, and before your first create_artboard, update_page, begin_edit, apply_theme or write. Settle it in your reasoning, not in chat: a posted brief only delays the first pixels. Keep it to at most 120 words:
+Settle the brief after you have read the guides and looked at the document, and before your first create_artboard, update_page, begin_edit, apply_theme, create_theme or write. Settle it in your reasoning, not in chat: a posted brief only delays the first pixels. Keep it to at most 120 words:
 
 - Mood: three candidates and the one chosen, with a clause on why it is not your first instinct.
 - Palette: 5-6 hex values with roles (ground, surface, ink, muted ink, primary accent, secondary).
 - Type: families, a scale (64 / 36 / 20 / 16 / 13 px), weights, display tracking.
+- Shape: one radius family.
 - Direction: layout idea and one distinctive move, in two sentences.
 
-Themes: when the user names a style ("glassy", "brutalist", "editorial", "like Linear") or gives no direction, call list_themes (and get_theme for your pick) before writing the brief. If one fits the subject and the mode, the brief reads "Theme: <name>, because ...", the theme's ground, ink and accent hex, the layout idea and the distinctive move; then apply_theme (get_guide "theme-guide") and design with its tokens. If none fits, use the mood-word brief above. When the user gave a design system, skip themes.
+The brief then becomes the document's system before the first write, so the person can adjust the design as a system afterwards and every layer uses tokens, never hex values:
 
-If the document already has a design, run get_design_tokens first and extend its palette and type instead of inventing a new brief.
+- The document already has a design: get_design_tokens first, then extend its palette and type instead of inventing a brief.
+- The person gave or picked a design system or theme, or names a style a stock theme matches ("glassy", "brutalist", "editorial"): list_themes, get_theme, apply_theme (get_guide "theme-guide"). The theme settles color, type and surfaces; the layout idea and the distinctive move stay yours.
+- No design and no direction (the usual case): the system is yours, made for this task, not a stock theme. Expressive work (landing pages, posters, decks, films): create_theme named for the task ("Ferrule"), with canvas, ink and accent from your palette (the other colors derive and are contrast-checked), display, text and mono families (list_fonts), the type scale and radii. Product UI (dashboards, settings, forms, tables, admin and data screens): create_design_system with the style, radius and fonts the product calls for, and tokens for its brand color (get_guide "design-system-guide"), then build with its components.
+- Write layers with var(--theme-color-ink), var(--theme-font-display) and the other tokens, hover states included. A hex value in a layer means no token fits: use the nearest one, or change a token with apply_theme (the system's id and overrides).
 
 ## 8. Writing incrementally
 
@@ -215,7 +219,7 @@ get_document_info, then get_design_tokens (when a design exists), get_selection 
 
 ## 10. Writing new designs
 
-1. The brief (section 7), then list_fonts and pick families that exist.
+1. The brief and its system (section 7), with list_fonts for families that exist.
 2. create_artboard: desktop 1440×900, tablet 768×1024, mobile 375×812 (add the status bar from get_guide "mobile-status-bar"), or the size the user gave. Name it "Flow / Step — Device" (see Organizing the canvas). set_document_name if the document is still "Untitled". A new document starts with one empty artboard: reuse it for your first design (rename and resize it with update_artboard) and never leave an empty artboard behind.
 3. begin_edit on the artboard, in the same turn as set_document_name, update_artboard and update_styles on it (display flex, column, background); then the first write_html.
 4. write_html incrementally, one group per call in reading order, with data-name on every meaningful layer.
@@ -228,7 +232,7 @@ Read before you write: get_tree_summary, get_node, get_screenshot. Change the sm
 
 ## 12. Fonts and typographic units
 
-Call list_fonts before your first typographic styling in a session and use families it returns: bundled_fonts render identically on every machine and in exports, the rest on this Mac only. End every font-family list with a generic fallback ("Geist, system-ui, sans-serif"); web fonts (<link>) are not loaded. Units: font-size in px (16px, not 1rem), letter-spacing in em (-0.02em large headlines, 0.08em caps captions), line-height in px (24px on 16px body; a unitless ratio only when it gives whole pixels), font-weight as numbers (400, 700).
+Call list_fonts before your first typographic styling in a session and use families it returns: bundled_fonts render identically on every machine and in exports, the rest on this Mac only. End every font-family list with a generic fallback ("Geist, system-ui, sans-serif"); web fonts (<link>) are not loaded. Units: px for font-size and line-height (24px on a 16px body), letter-spacing in em (-0.02em headlines, 0.08em caps captions), numbers for font-weight.
 
 ## 13. Ocelot HTML and CSS rules
 
@@ -273,7 +277,7 @@ Everything a person can change in the editor can be changed with a tool. Always 
 | Delete | delete_nodes |
 | Artboard: create, preset, size, position, rename, background | create_artboard, update_artboard (preset, width, height, "fit-content", x, y, name), update_styles on the artboard for background |
 | Replace a color everywhere (Tokens panel) | replace_color; find usages with get_design_tokens or find_nodes |
-| Theme: browse, read tokens, apply or remove (Assets > Styles) | list_themes, get_theme, apply_theme (get_guide "theme-guide") |
+| Theme: browse, read tokens, apply, remove, or make the document's own (Assets > Styles) | list_themes, get_theme, apply_theme, create_theme (get_guide "theme-guide") |
 | Design system: shadcn tokens plus real components (Assets > Styles) | list_design_system_options, create_design_system, insert_component, update_design_system (get_guide "design-system-guide") |
 | Document name | set_document_name |
 | Selection | select_nodes |
@@ -306,7 +310,7 @@ Layer locks: when the user locks a layer, update_styles, set_text, rename_nodes,
 
 Take exact values from get_computed_styles, get_node, export_html and export_react (React + Tailwind v4), never from screenshots; screenshots are for visual review only. Match the conventions of the user's codebase when you hand code over. A document with a theme exports its tokens as a Tailwind v4 @theme block / CSS variables.
 
-Asked to implement the design? Call get_handoff({ files: "code" }) first: screens, flows, design system, and the code and registry inline to write into your repo; then get_screenshot per screen, install the registry with shadcn, adapt code/, get_links. Never save_export or export_design_system for a handoff: they open a save dialog for the person.
+Asked to implement the design? Call get_handoff({ files: "code" }) first (screens, flows, design system, code and registry inline), then get_screenshot per screen, install the registry with shadcn, adapt code/, get_links. Never save_export or export_design_system for a handoff: they open a save dialog.
 
 ## 16. Organizing the canvas
 
@@ -327,8 +331,8 @@ A page is a separate canvas inside the document: its own artboards, arranged on 
 - Start a new area with create_page({ name }), then create_artboard({ page_id, ... }). create_artboard without page_id uses the page you last worked on in this session (create_page, create_artboard, any edit on a node, set_current_page), else the page the user is viewing. Pass page_id whenever more than one page could be meant.
 - A page has a kind: "canvas" (default, free artboards), "deck" (its artboards are slides) or "video" (its artboards are scenes). Make a deck or a video with create_page({ name, kind }) and read "slides-guide" or "video-guide" first; do not use a canvas page for either.
 - Working on a page the user is not viewing never moves their view. Screenshots, measurements (fit-content, content_height) and computed styles work on every page. Present the result with set_current_page (a page) or focus_nodes (layers; it switches pages for you).
-- arrange_artboards tidies ONE page (page_id, else the page you last worked on); other pages stay as they are. get_tree_summary without node_id groups artboards under "# Page" headings; page_id limits it.
-- duplicate_page copies a page with its artboards (id_map old to new) when you need a variant: dark mode, another locale, a mobile pass over the desktop page. update_page renames and reorders; put the page the user cares about first.
+- arrange_artboards tidies ONE page (page_id, else the page you last worked on); other pages stay as they are.
+- duplicate_page copies a page with its artboards (id_map) for a variant: dark mode, another locale, a mobile pass. update_page renames and reorders.
 - move_artboards moves whole artboards between pages (ids and content stay). delete_page removes a page AND its artboards: move what should survive first, ask the user, then pass confirm: true. The last page cannot be deleted.
 
 ## 18. Prototypes and links
@@ -336,12 +340,12 @@ A page is a separate canvas inside the document: its own artboards, arranged on 
 Whenever you build two or more screens that belong together (the pages of one website such as Home, Pricing and About; the steps of a flow such as sign up or checkout; an app's tabs or views), link them before you finish, without being asked, so the user can click through them in Preview instead of reading a description of the flow. Mobile and desktop versions are linked within their own device. Screens that do not belong together (unrelated designs, alternative directions, a moodboard) stay unlinked.
 
 - Link the layers people would click: nav items, buttons, cards, logos, "Back" arrows. set_link({ node_ids, link: { artboard_id } }) opens that screen (also on another page); { url } opens a website in the user's browser (http, https or mailto only); link: null removes it. Artboards cannot carry a link, a layer inside them does.
-- Use a real <a> for navigation: nav items, text links and linked cards should carry the <a> tag, so they export as real links and read as links to code and assistive tech. Each link needs its own layer, but a container that holds only inline tags (<a>, <span>, <b>) merges into ONE text layer, so write nav items as <div data-name="Nav / Pricing">Pricing</div> inside a flex row, then set_tag them to "a" and set_link (a card or button frame can be an <a> too, with its children). Any other linked layer works as well: the whole layer is the clickable hotspot. Give each linked layer a clear name ("Nav / Pricing").
+- Use a real <a> for navigation: nav items, text links and linked cards should carry the <a> tag, so they export as real links. Each link needs its own layer, but a container that holds only inline tags (<a>, <span>, <b>) merges into ONE text layer, so write nav items as <div data-name="Nav / Pricing">Pricing</div> inside a flex row, then set_tag them to "a" and set_link (a card or button frame can be an <a> too, with its children). Give each linked layer a clear name ("Nav / Pricing").
 - Make both directions work: every screen needs a way back (logo or nav to Home) and forward (the primary button to the next step). Nav on every screen should link to the other top-level screens, and the nav item of the current screen can stay unlinked or link to itself.
 - External links are for references (docs, a live site, mailto:), never for moving between your own screens.
 - After linking, call get_links: it shows the click-through graph, broken links (a deleted screen) and screens nothing leads to. Fix every broken link with set_link or link: null.
 - When the screens are linked, say so in your final reply in a few words ("Click through it in Preview"); call start_presentation ONLY when the user asks to try, present or click through the design. It takes over what they see, so never use it while you are still working. stop_presentation ends it. Your edits keep rendering live during the preview.
-- Links are layer data, not CSS: they survive renames and moving an artboard to another page, export to HTML as relative <slug>.html links (one file per screen) and to React as /<slug> route paths.
+- Links survive renames and page moves, and export as relative <slug>.html links and /<slug> React routes.
 
 ## 19. When you are done
 
@@ -762,15 +766,25 @@ Write defects as "t=4200ms, S3 Headline: problem, exact change". Fix every unrea
 
 const THEME_GUIDE = `# Ocelot theme guide
 
-Choose the theme, with its ground, ink and accent hex, as part of the brief (design-guide section 7), before apply_theme or any write. A theme is a set of design tokens stored with the document: colors, fonts, type scale, radii, shadows, spacing and motion. apply_theme writes them as CSS custom properties (--theme-...) on every artboard root, so layers that use var(--theme-...) restyle when the theme changes, on every page. Decks and videos use the same tokens.
+Settle the system as part of the brief (design-guide section 7), before apply_theme, create_theme or any write. A theme is a set of design tokens stored with the document: colors, fonts, type scale, radii, shadows, spacing and motion. It is written as CSS custom properties (--theme-...) on every artboard root, so layers that use var(--theme-...) restyle when a token changes, on every page. Decks and videos use the same tokens.
 
-## 1. When to use one
+## 1. Which theme
 
-- The user gave a design system or brand: skip themes, extend their tokens (get_design_tokens).
-- The user names a style ("glassy", "brutalist", "editorial", "Y2K") or gives no direction: call list_themes, pick, apply, and say which and why in your brief.
-- The brief is distinctive and no theme fits: use the mood-word brief of the design-guide. A theme is a starting point with a point of view, not a requirement.
+- The document or the person already has one: a design system, a theme, brand tokens. Skip the rest: extend them (get_design_tokens).
+- The user names a style ("glassy", "brutalist", "editorial", "Y2K") that a catalog theme matches: list_themes, pick, apply, and say which and why.
+- No direction and nothing in the document (the usual case): create_theme, your own system for this task (section 2). A stock theme has a point of view of its own, not this client's.
 
-## 2. The catalog
+## 2. Your own theme
+
+The brief becomes tokens, once, before the first write: create_theme({ name: "Ferrule", tokens: { "color-canvas": "#F6EEDF", "color-ink": "#2B1A10", "color-accent": "#B4451F", "font-display": "Fraunces", "font-sans": "Geist", "radius-lg": "6px", "text-5xl": "72px" } }).
+
+- name: for the client or the idea ("Ferrule", "Night Shift"), never "Custom"; it is the theme's id and what the person sees in Assets > Styles.
+- color-canvas, color-ink and color-accent are required. Every other color (surface, surface-2, ink-2, ink-3, accent-ink, accent-text, accent-soft, accent-hover, line, line-subtle, focus, danger, success) is derived so every pair passes; set one yourself only when the scene needs it, and it is measured. The result lists the derived values.
+- Contrast is a stock theme's: ink 7:1, other text 4.5:1, lines and focus 3:1. A failing palette is refused with the pair named: change canvas, ink or accent and call again. An accent under 3:1 on the canvas is allowed with a rim on its buttons.
+- Fonts are families from list_fonts ("Fraunces" becomes a stack). Choose the type scale (text-xs to text-5xl), radius, shadows and spacing from the brief (a poster: radius 0 and no shadows), not the defaults; whatever you leave out comes from the neutral Ocelot Default. based_on (a catalog id of the same light or dark scheme) starts from that theme's shapes, shadows and extras, never its colors.
+- Changing a token later: apply_theme({ theme_id: "ferrule", overrides: { "color-accent": "#1F5A8A" } }) merges, and the colors you did not set follow. The person edits the same tokens in Assets > Styles. create_theme again replaces the theme, in one undo step.
+
+## 3. The catalog
 
 list_themes returns id, name, mood, swatches, fonts and a contrast summary for each; get_theme({ theme_id }) returns the tokens, pitfalls and example button and card snippets of one before you commit. Every theme passes its own contrast checks (ink 7:1, secondary text 4.5:1, control boundaries 3:1).
 
@@ -789,17 +803,14 @@ list_themes returns id, name, mood, swatches, fonts and a contrast summary for e
 | terminal | phosphor | developer tools, CLI and agent products, changelogs, code decks | non-technical audiences, long prose |
 | organic-soft | lichen | wellness, food, sustainability, travel, slow media | trading, devtools, fast technical tone |
 
-Deck fits: swiss-grid and editorial-serif for argument and data, aurora and terminal for keynotes and developer decks, ocelot-default for internal decks, retro-y2k and neo-brutalist for campaigns.
+## 4. Workflow
 
-## 3. Workflow
+1. Stock theme: list_themes, choose by the product and the mode, get_theme for that id, then apply_theme({ theme_id }) BEFORE you write layers: one undo step, tokens on every artboard. Your own: create_theme (section 2).
+2. write_html with var() values. On an existing design with hand-set colors only token-using layers restyle: apply the theme, then switch layers to tokens with update_styles (find_nodes locates them).
+3. Design within the system, then get_screenshot every artboard: the contrast list must be empty.
+4. apply_theme({ theme_id: "aurora" }) switches; { theme_id: "none" } removes the theme. get_theme with no id returns the current theme, its overrides and the full token map.
 
-1. list_themes, choose by the product and the mode (design-guide: persuade, operate, read, experience), get_theme for that id.
-2. Settle the brief: "Theme: <name>, because ...", its ground, ink and accent hex, the layout idea, the one distinctive move.
-3. apply_theme({ theme_id }) BEFORE you write layers: it is one undo step and sets the tokens on every artboard. Then write_html with var() values. On an existing design with hand-set colors only token-using layers restyle: apply the theme, then switch layers to tokens with update_styles (find_nodes locates them).
-4. Design within the theme, then get_screenshot every artboard: the contrast list must be empty.
-5. Switching is one call: apply_theme({ theme_id: "aurora" }); apply_theme({ theme_id: "none" }) removes the theme. get_theme with no id returns the current theme, its overrides and the full token map.
-
-## 4. Using the tokens
+## 5. Using the tokens
 
 - Color: color: var(--theme-color-ink); background: var(--theme-color-surface). Ground is --theme-color-canvas; surfaces --theme-color-surface and --theme-color-surface-2; text --theme-color-ink, --theme-color-ink-2, --theme-color-ink-3; the accent set --theme-color-accent with --theme-color-accent-ink on it, --theme-color-accent-text as text, --theme-color-accent-soft and --theme-color-accent-hover; lines --theme-color-line (control boundaries) and --theme-color-line-subtle (decoration); --theme-color-focus; --theme-color-danger and --theme-color-success.
 - Type: font-family: var(--theme-font-display), var(--theme-font-sans), var(--theme-font-mono). Sizes --theme-text-xs, -sm, -base, -lg, -xl, -2xl, -3xl, -4xl, -5xl; each step also has --theme-text-xl--line-height, --theme-text-xl--weight and --theme-text-xl--tracking (the same three suffixes for every step, e.g. font-weight: var(--theme-text-2xl--weight)). Bundled theme fonts render everywhere without installing anything.
@@ -809,14 +820,14 @@ Deck fits: swiss-grid and editorial-serif for argument and data, aurora and term
 - apply_theme binds the artboard root: background-color to --theme-color-canvas, background-image to --theme-page-image, color to --theme-color-ink and font-family to --theme-font-sans, when those are unset or still the default. New layers inherit them: set only what differs (a surface, a muted ink, the display face).
 - On 1920×1080 slides and video scenes the text tokens are sized for UI: use calc(var(--theme-text-xl) * 2) or the floors of the slides-guide, whichever is larger. Ratios do not change with size, so contrast still holds.
 
-## 5. Rules
+## 6. Rules
 
 1. One theme per document; never mix one theme's shadow language with another's.
 2. Use tokens, not new hex values; ink-3 never on a gradient or photo; text color pairs only from the verified token pairs.
-3. Overrides change a token for the document: apply_theme({ theme_id, overrides: { "color-accent": "#0b6bcb" } }) (the key is the token name without --theme-). Use them for a brand accent only, then check the contrast list again.
+3. Overrides change a token for the document (apply_theme({ theme_id, overrides: { "color-accent": "#0b6bcb" } }), key without --theme-). On a stock theme use them for a brand accent only; check the contrast list again.
 4. The Slop section of the design-guide and the Check findings still apply; a theme's own devices are skipped. A theme is a surface, not a design: the layout, content and one distinctive move are still yours.
 
-## 6. Pitfalls per theme
+## 7. Pitfalls per theme
 
 - liquid-glass: glass only for the floating layer, never the content layer, never glass on glass, tint only the primary action; keep a solid fallback.
 - soft-machine: plates have no rim, wells recess, keys carry a 3:1 rim and an indicator; no forms.
@@ -829,7 +840,7 @@ Deck fits: swiss-grid and editorial-serif for argument and data, aurora and term
 - terminal: mono for interface and code, the text face for prose; accent amber, no acid green.
 - organic-soft: green-grey, not cream and terracotta; keep shapes soft and shadows diffuse.
 
-## 7. Export
+## 8. Export
 
 A themed document exports its tokens as a Tailwind v4 @theme block (React export) or as CSS variables (HTML export), with the bundled font files and their licenses. Layers that reference var(--theme-...) keep the semantic token in the code.
 `;
@@ -842,14 +853,14 @@ A design system is shadcn's own token set plus a component style, stored with th
 
 - Product UI made of components: app screens, dashboards, settings, forms, tables, dialogs. Use it.
 - The user asks for shadcn, "a design system", or gives a brand to turn into tokens: create_design_system with tokens.
-- Expressive pages, posters, decks and films: stay with a theme (theme-guide) or the mood-word brief. Components do not make those distinctive.
+- Expressive pages, posters, decks and films: your own theme (create_theme, theme-guide); components do not make those distinctive.
 - The document has a theme: create_design_system maps the theme's colors, fonts and radii (from_theme defaults to true) and keeps --theme-* as aliases, so existing layers do not change. apply_theme then refuses; use update_design_system, or remove_design_system first.
 
 ## 2. Workflow
 
 1. list_design_system_options once: styles, base colors, themes per base color, radii, bundled fonts, icon libraries and the component names.
-2. Decide the brief first (design-guide): product, density, tone. Then pick the style from the table below, one line of reasoning.
-3. create_design_system({ style, base_color, theme, radius, fonts }) in ONE call. Add tokens only for a brand color the user gave: tokens: { light: { primary: "oklch(...)" }, dark: { ... } }. The result lists contrast warnings; fix them before building. When the user hands you a shadcn preset code (b2fA, from ui.shadcn.com/create), pass it as preset instead of the knobs: create_design_system({ preset: "b2fA" }) or update_design_system({ preset }) applies all of them, and knobs you pass next to it win. get_design_system returns the current code as preset_code (with preset_code_notes for anything a code cannot carry), so you can give the user one to paste into "shadcn init --preset".
+2. Decide the brief first (design-guide): product, density, tone, brand color. Pick the style from the table below; base color, radius, fonts and tokens come from the same brief, never the stock defaults.
+3. create_design_system({ style, base_color, theme, radius, fonts }) in ONE call. Add tokens for the brand color (the user's, else one from the brief): tokens: { light: { primary: "oklch(...)" }, dark: { ... } }. The result lists contrast warnings; fix them before building. When the user hands you a shadcn preset code (b2fA, from ui.shadcn.com/create), pass it as preset instead of the knobs: create_design_system({ preset: "b2fA" }) or update_design_system({ preset }) applies all of them, and knobs you pass next to it win. get_design_system returns the current code as preset_code (with preset_code_notes for anything a code cannot carry), so you can give the user one to paste into "shadcn init --preset".
 4. begin_edit, create_artboard (the artboard already carries the tokens), then insert_component calls, then end_edit. get_component shows parts, props and an example before you use a component for the first time.
 5. get_screenshot. get_design_system({ include: ["contrast"] }) checks every foreground/background pair.
 6. build_design_system_page writes the reference page (foundations and every component) when the user wants one to browse.

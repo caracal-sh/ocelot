@@ -49,7 +49,9 @@ export function inspectArtboard(editor: Editor, artboardId: string, opts: { kind
   const root = editor.renderers.get(artboardId)?.root as Element | undefined;
   const name = ab?.name ?? artboardId;
   if (!ab?.frame || !root || !root.isConnected) return { artboard_id: artboardId, name, kind: opts.kind ?? 'page', measured: false, findings: [], skipped: [] };
-  const themeId = doc.theme()?.id ?? null;
+  const themeRef = doc.theme();
+  // The document's own theme carries the devices of the theme it starts from (its blobs, glass, rims), not its name.
+  const themeId = themeRef ? (themeRef.base ?? themeRef.id) : null;
   const probed = probeSlop({ root, width: ab.frame.width, height: ab.frame.height, kind: opts.kind ?? kindOf(editor, artboardId) });
   const kind = probed.kind;
   // Interaction states, transitions and keyframes live in the model, not in a rest-state computed style: linted from the document.

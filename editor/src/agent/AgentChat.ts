@@ -12,6 +12,7 @@ import { isOmpClient, type QuestionRecord } from '../editor/questions';
 import { editorEndpoint, type Host } from '../host/host';
 import { attachmentErrors, browserImageCodec, buildMessage, DEFAULT_ATTACHMENT_PROMPT, firstAttachmentError, ingestPayload, type Attachment, type ImageCodec } from './attachments';
 import { modelShortName } from './agentName';
+import { newConversationId, parseMeta, parseTranscript, serializeMeta, serializeTranscript, sortConversations, titleFromPrompt, upsertConversation, type ConversationMeta } from './conversations';
 import { FrameDecoder } from './frames';
 import { LiveWriteTracker } from './liveWrite';
 import { applyEvent, emptyTranscript, isAuthError, isObj, settle, type AnswerEntry, type ChatItem, type TranscriptState } from './transcript';
@@ -61,11 +62,37 @@ export interface AgentSnapshot {
   effort: string;
   /** What is queued or steering while the agent works: omp's `queue_update` snapshots. */
   queue: QueueSnapshot;
+  /** The conversation on screen (kept once it has a message). */
+  conversationId: string;
+  /** This document's kept conversations, newest activity first (the current one among them once it has a message). */
+  conversations: ConversationMeta[];
+}
+
+/** The conversation on screen: what the host needs to find its session, and what the history keeps of it. */
+interface Conversation {
+  id: string;
+  /** The document it belongs to: set with its first message, so it is kept under that document even if the window later shows another one. */
+  projectId: string;
+  title: string;
+  createdAt: number;
+  updatedAt: number;
+  /** Messages the person sent in it. */
+  turns: number;
+  /** omp has a session for it on disk: the next process continues it (`--continue`) instead of starting one. */
+  resume: boolean;
+  /** Read back from the history: check that omp still remembers it before the first new message. */
+  verifyMemory: boolean;
+  /** The host has a copy (written at least once). */
+  saved: boolean;
 }
 
 const MODEL_KEY = 'ocelot.agent.model';
 const EFFORT_KEY = 'ocelot.agent.effort';
 const STOP_GRACE_MS = 5000;
+/** The conversation is written at most this often while the agent streams (and at once when a turn ends). */
+const SAVE_DEBOUNCE_MS = 1500;
+/** A process that is leaving mid-turn gets this long to record its aborted turn before it is stopped. */
+const RETIRE_GRACE_MS = 4000;
 const REQUEST_TIMEOUT_MS = 15_000;
 const OCELOT_TOOL_PREFIX = 'mcp__ocelot_';
 
@@ -88,6 +115,7 @@ export class AgentChat {
   #frame = 0;
   #offEndpoint: () => void;
   #offQuestions: () => void;
+  #offDocument: () => void;
   #detach: () => void;
   #decoder = new FrameDecoder();
   /** Reads the agent's streaming write calls: where they are headed (the writing indicator) and, for `write_html`, a live preview (editor.liveWrites). */
@@ -102,6 +130,16 @@ export class AgentChat {
   /** What the person typed for the messages in omp's queue, by the text omp lists. */
   #queued = new QueueTracker();
   #restoreListeners = new Set<(draft: RestoredDraft) => void>();
+  #current: Conversation = blankConversation();
+  /** Host writes run one after another, so a delete never overtakes the save before it. */
+  #writing: Promise<void> = Promise.resolve();
+  #saveTimer: number | undefined;
+  #saveFailed = false;
+  /** The transcript of a conversation being opened is on its way: nothing is sent meanwhile. */
+  #loading = false;
+  #switchSeq = 0;
+  /** Processes of conversations that were left mid-turn: aborted, then stopped. A new process waits for them (one omp per window, and the session file must be complete). */
+  #retiring = new Map<string, { abortSettled: () => void; exited: () => void; closed: Promise<void> }>();
 
   constructor(
     private readonly editor: Editor,
@@ -117,6 +155,8 @@ export class AgentChat {
       model: readSetting(MODEL_KEY),
       effort: readSetting(EFFORT_KEY),
       queue: EMPTY_QUEUE,
+      conversationId: this.#current.id,
+      conversations: [],
     };
     this.#live = new LiveWriteTracker({
       agent: () => this.#agentName() || 'The agent',
@@ -133,6 +173,7 @@ export class AgentChat {
       return {};
     });
     this.#offQuestions = editor.questions.onResolved((r) => this.#onQuestionResolved(r));
+    this.#offDocument = editor.on('document', () => this.#onDocumentReplaced());
     this.#detach = attachSidebarAgent(editor, this);
   }
 
@@ -154,13 +195,16 @@ export class AgentChat {
   }
 
   dispose(): void {
+    void this.#save();
     this.#stopProcess();
     this.#live.dispose();
     this.#offQuestions();
+    this.#offDocument();
     this.#offEndpoint();
     this.#detach();
     cancelAnimationFrame(this.#frame);
     clearTimeout(this.#stopTimer);
+    clearTimeout(this.#saveTimer);
   }
 
   /** The person's answer to a question the agent asked becomes a row in the transcript (a closed card leaves no row). */
@@ -241,7 +285,7 @@ export class AgentChat {
    */
   async send(text: string, attachments: readonly Attachment[] = [], mode: SendMode = 'queue', from?: string): Promise<boolean> {
     const prompt = text.trim();
-    if ((!prompt && !attachments.length) || this.#snapshot.turn?.stopping || this.#snapshot.availability.kind !== 'ready') return false;
+    if ((!prompt && !attachments.length) || this.#loading || this.#snapshot.turn?.stopping || this.#snapshot.availability.kind !== 'ready') return false;
     const problem = firstAttachmentError(attachments);
     if (problem) {
       this.#push({ kind: 'notice', id: `n-${Date.now()}`, tone: 'error', text: problem });
@@ -259,6 +303,11 @@ export class AgentChat {
     const turnId = `t-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
     const item: ChatItem = { kind: 'user', id: turnId, text: prompt || DEFAULT_ATTACHMENT_PROMPT, ...(from ? { from } : {}), ...(context ? { context: context.label } : {}), ...(attachments.length ? { attachments: [...attachments] } : {}) };
     this.#transcript = { ...this.#transcript, items: [...this.#transcript.items, item] };
+    const conversation = this.#current;
+    conversation.turns += 1;
+    conversation.updatedAt = Date.now();
+    if (!conversation.title) conversation.title = titleFromPrompt(item.text);
+    if (!conversation.projectId) conversation.projectId = this.#projectId();
     this.#update({ items: this.#transcript.items, turn: { id: turnId, startedAt: Date.now(), stopping: false } });
     // A new document's empty artboard shows the agent planning from the first moment, whichever way the turn starts.
     if (!this.editor.locks.planning) this.#showPlanning();
@@ -269,6 +318,16 @@ export class AgentChat {
   #retractTurn(turnId: string): void {
     if (this.#snapshot.turn?.id !== turnId) return;
     this.#transcript = { ...this.#transcript, items: this.#transcript.items.filter((it) => it.id !== turnId) };
+    const conversation = this.#current;
+    conversation.turns = Math.max(0, conversation.turns - 1);
+    if (!conversation.turns) {
+      // Nothing was ever said in it: it is not a conversation to keep.
+      clearTimeout(this.#saveTimer);
+      this.#saveTimer = undefined;
+      conversation.title = '';
+      conversation.projectId = '';
+      if (conversation.saved) this.#discard(conversation);
+    }
     this.#update({ items: this.#transcript.items, turn: null });
   }
 
@@ -278,17 +337,22 @@ export class AgentChat {
       await this.#ensureProcess();
       // Fail closed: the host disables omp's other config sources by name, so verify that
       // the process really sees nothing but Ocelot's tools before handing it a prompt.
-      const foreign = foreignTools(await this.#request({ type: 'get_state' }));
+      const state = await this.#request({ type: 'get_state' });
+      const foreign = foreignTools(state);
       if (foreign.length) {
         this.#stopProcess();
         const names = foreign.length > 3 ? `${foreign.slice(0, 3).join(', ')} and ${foreign.length - 3} more` : foreign.join(', ');
         this.#finishTurn(turnId, `The agent was stopped before your message reached it: it had tools besides Ocelot's (${names}). Update Ocelot, or report this; your other tools stay out of design chats.`);
         return false;
       }
+      this.#checkMemory(state);
       const stored = await this.#storeImages(attachments);
       const { message, images } = buildMessage(prompt, stored);
       if (attachments.length) this.#patchUser(turnId, stored);
       await this.#sendCommand({ id: turnId, type: 'prompt', message: withLead(message, from, context), ...(images.length ? { images } : {}) });
+      // omp has a session file for the conversation from here on: a later process continues it.
+      this.#current.resume = true;
+      void this.#save();
       return true;
     } catch (err) {
       this.#finishTurn(turnId, `The agent did not start: ${errorMessage(err)}`);
@@ -393,13 +457,186 @@ export class AgentChat {
     }
   }
 
-  /** Starts a new conversation (stops the current process; the next message starts a fresh one). */
+  // ---------- Conversations ----------
+
+  /**
+   * Starts a new conversation. The one on screen is kept in the history (a conversation with a message in it); if the agent
+   * is working it is aborted first so its session records the stop. Callers that act for the person ask them before
+   * stopping a working agent (the sidebar's "+").
+   */
   newChat(): void {
-    this.#stopProcess();
+    this.#leave(true);
+    this.#current = blankConversation();
+    this.#showEmpty();
+  }
+
+  /** The kept conversations of this document, newest first. Failing to read them leaves the list as it was. */
+  async refreshConversations(): Promise<void> {
+    try {
+      const projectId = this.#projectId();
+      const { entries } = await this.host.call('host.agentHistoryList', { projectId });
+      if (projectId !== this.#projectId()) return; // another document was loaded meanwhile: its own refresh follows
+      const kept = (entries ?? []).flatMap((e) => parseMeta(e) ?? []);
+      const current = this.#current.turns && this.#current.projectId === projectId ? [this.#meta(this.#current)] : [];
+      this.#update({ conversations: current.reduce(upsertConversation, sortConversations(kept)) });
+    } catch {
+      // The history is a convenience: the chat works without it.
+    }
+  }
+
+  /**
+   * Shows a kept conversation again; the next message continues it with the model's full memory (omp `--continue` on
+   * its session). The one on screen is kept first. False when it is not in the list or could not be opened.
+   */
+  async openConversation(id: string): Promise<boolean> {
+    if (id === this.#current.id) return true;
+    const meta = this.#snapshot.conversations.find((c) => c.id === id);
+    if (!meta) return false;
+    this.#leave(true); // also retires any conversation still being opened
+    const seq = ++this.#switchSeq;
+    this.#current = { ...meta, projectId: this.#projectId(), resume: true, verifyMemory: true, saved: true };
+    this.#loading = true;
+    this.#showEmpty();
+    let items: ChatItem[] | null = null;
+    let failure = '';
+    try {
+      const { text } = await this.host.call('host.agentHistoryRead', { projectId: this.#projectId(), id });
+      items = text ? parseTranscript(text) : null;
+      if (!items) failure = 'The messages of this conversation could not be read. The agent still remembers it: ask for a recap.';
+    } catch (err) {
+      failure = `The messages of this conversation could not be read: ${errorMessage(err)}`;
+    }
+    if (seq !== this.#switchSeq) return false; // the person moved on to another conversation while this one loaded
+    this.#loading = false;
+    const shown: ChatItem[] = items ?? [{ kind: 'notice', id: `n-read-${id}`, tone: 'error', text: failure }];
+    if (meta.interrupted) shown.push({ kind: 'notice', id: `n-interrupted-${id}`, tone: 'info', text: 'Stopped. Edits made so far stay on the canvas.' });
+    this.#transcript = emptyTranscript(shown);
+    this.#update({ items: shown });
+    // Looking at a conversation is not activity: it is written again when something happens in it.
+    clearTimeout(this.#saveTimer);
+    this.#saveTimer = undefined;
+    return true;
+  }
+
+  /** Deletes a kept conversation for good: its messages and the agent's memory of it. Deleting the one on screen leaves a new, empty one. */
+  async deleteConversation(id: string): Promise<void> {
+    const kept = this.#snapshot.conversations.find((c) => c.id === id);
+    if (id === this.#current.id) {
+      const conversation = this.#current;
+      this.#leave(false);
+      this.#current = blankConversation();
+      this.#showEmpty();
+      this.#discard(conversation);
+    } else if (kept) {
+      this.#discard({ id, projectId: this.#projectId() });
+    } else {
+      return;
+    }
+    this.#update({ conversations: this.#snapshot.conversations.filter((c) => c.id !== id) });
+    await this.#writing;
+  }
+
+  /** Puts the on-screen conversation away: written to the history, its agent stopped (aborted first when it was working). `keep` false drops it (a delete follows). */
+  #leave(keep: boolean): void {
+    clearTimeout(this.#saveTimer);
+    this.#saveTimer = undefined;
+    const working = !!this.#snapshot.turn;
+    if (keep) void this.#save();
+    this.#stopProcess(working);
     clearTimeout(this.#stopTimer);
     this.#queued.clear();
     this.#transcript = emptyTranscript();
-    this.#update({ items: [], thinking: false, turn: null, queue: EMPTY_QUEUE });
+    this.#switchSeq++;
+    this.#loading = false;
+  }
+
+  /**
+   * The window shows another document (opened into this window, or switched by an app tool): a conversation with messages stays
+   * with the document it was had in, and this one starts clean with its own history.
+   */
+  #onDocumentReplaced(): void {
+    const projectId = this.#projectId();
+    const conversation = this.#current;
+    if (conversation.turns && conversation.projectId && conversation.projectId !== projectId) {
+      this.#leave(true);
+      this.#current = blankConversation();
+      this.#showEmpty();
+    }
+    this.#update({ conversations: [] });
+    void this.refreshConversations();
+  }
+
+  #showEmpty(): void {
+    this.#update({ items: [], thinking: false, turn: null, queue: EMPTY_QUEUE, conversationId: this.#current.id });
+  }
+
+  #projectId(): string {
+    return this.editor.doc.ensureProjectId();
+  }
+
+  #meta(c: Conversation): ConversationMeta {
+    return { id: c.id, title: c.title || 'Untitled conversation', createdAt: c.createdAt, updatedAt: c.updatedAt, turns: c.turns, ...(c === this.#current && this.#snapshot.turn ? { interrupted: true } : {}) };
+  }
+
+  /**
+   * Writes the conversation on screen to the host (its summary and transcript), at once. A conversation without a message is
+   * not kept. Saved while the agent works it is marked interrupted: if the window closes or the app quits now, that is how
+   * it is found again.
+   */
+  #save(): Promise<void> {
+    clearTimeout(this.#saveTimer);
+    this.#saveTimer = undefined;
+    const conversation = this.#current;
+    if (!conversation.turns || this.#loading) return this.#writing; // while its transcript is still being read there is nothing of it to write
+    const meta = this.#meta(conversation);
+    const params = { projectId: conversation.projectId, id: conversation.id, meta: serializeMeta(meta), transcript: serializeTranscript(this.#transcript.items) };
+    conversation.saved = true;
+    this.#update({ conversations: upsertConversation(this.#snapshot.conversations, meta) });
+    this.#writing = this.#writing
+      .then(() => this.host.call('host.agentHistoryWrite', params))
+      .then(
+        () => {
+          this.#saveFailed = false;
+        },
+        (err: unknown) => {
+          // One notice per failure streak: the next successful write ends it.
+          if (this.#saveFailed) return;
+          this.#saveFailed = true;
+          this.#push({ kind: 'notice', id: `n-save-${Date.now()}`, tone: 'error', text: `This conversation could not be saved to the history: ${errorMessage(err)}` });
+        },
+      );
+    return this.#writing;
+  }
+
+  #scheduleSave(): void {
+    if (this.#saveTimer !== undefined) return;
+    this.#saveTimer = window.setTimeout(() => {
+      this.#saveTimer = undefined;
+      void this.#save();
+    }, SAVE_DEBOUNCE_MS);
+  }
+
+  /** Removes a conversation from the host (summary, transcript and the agent's session), after any write still on its way. */
+  #discard(conversation: Pick<Conversation, 'id' | 'projectId'>): void {
+    const projectId = conversation.projectId || this.#projectId();
+    this.#writing = this.#writing
+      .then(() => this.host.call('host.agentHistoryDelete', { projectId, id: conversation.id }))
+      .then(
+        () => undefined,
+        (err: unknown) => {
+          this.#push({ kind: 'notice', id: `n-delete-${Date.now()}`, tone: 'error', text: `The conversation could not be deleted: ${errorMessage(err)}` });
+          void this.refreshConversations();
+        },
+      );
+  }
+
+  /** A conversation read back from the history runs on omp's session file: if omp finds nothing in it, say so instead of pretending the agent remembers. */
+  #checkMemory(state: unknown): void {
+    const conversation = this.#current;
+    if (!conversation.verifyMemory) return;
+    conversation.verifyMemory = false;
+    if (!isObj(state) || state['messageCount'] !== 0) return;
+    this.#push({ kind: 'notice', id: `n-memory-${conversation.id}`, tone: 'info', text: "The agent's memory of this conversation is gone (its session file was removed), so it only knows what you tell it from here." });
   }
 
   // ---------- Process ----------
@@ -416,19 +653,25 @@ export class AgentChat {
     this.#process = { id, ready, resolveReady, rejectReady };
     this.#decoder = new FrameDecoder();
     const { model, effort } = this.#snapshot;
+    const { id: conversationId, resume } = this.#current;
+    const leaving = [...this.#retiring.values()].map((r) => r.closed);
     // The first start of a session may start the host's credential broker and gateway (they are not started for a status probe):
     // that waits for both to answer and for the gateway to admit the agent's token (it re-reads its clients file every 10 s), well past the default 10 s call timeout.
-    this.host
-      .call(
+    const start = () =>
+      this.host.call(
         'host.agentStart',
         {
           processId: id,
           systemPrompt: SYSTEM_PROMPT,
           ...(model ? { model } : {}),
           ...(effort ? { thinking: effort } : {}),
+          projectId: this.#current.projectId || this.#projectId(),
+          conversationId,
+          ...(resume ? { resume: true } : {}),
         },
         { timeoutMs: 120_000 },
-      )
+      );
+    (leaving.length ? Promise.all(leaving).then(start) : start())
       .catch((err: unknown) => {
         if (this.#process?.id !== id) return;
         this.#process = null;
@@ -437,7 +680,8 @@ export class AgentChat {
     return ready;
   }
 
-  #stopProcess(): void {
+  /** `abortFirst`: a turn is running; its process is aborted (so the session records it) and stopped when that settles, in the background. */
+  #stopProcess(abortFirst = false): void {
     const p = this.#process;
     this.#closeQuestions();
     this.#live.abortAll('closed');
@@ -445,7 +689,37 @@ export class AgentChat {
     this.#process = null;
     p.rejectReady(new Error('The agent was stopped.'));
     this.#rejectRequests(new Error('The agent was stopped.'));
-    this.host.call('host.agentStop', { processId: p.id }).catch(() => {});
+    if (abortFirst) this.#retire(p.id);
+    else this.host.call('host.agentStop', { processId: p.id }).catch(() => {});
+  }
+
+  #retire(processId: string): void {
+    let stopped = false;
+    let finish!: () => void;
+    const closed = new Promise<void>((resolve) => (finish = resolve));
+    const stop = () => {
+      if (stopped) return;
+      stopped = true;
+      this.host.call('host.agentStop', { processId }).catch(() => {});
+    };
+    const timer = window.setTimeout(stop, RETIRE_GRACE_MS);
+    const forget = window.setTimeout(() => entry.exited(), RETIRE_GRACE_MS + 3500);
+    const entry = {
+      closed,
+      abortSettled: () => {
+        window.clearTimeout(timer);
+        stop();
+      },
+      exited: () => {
+        window.clearTimeout(timer);
+        window.clearTimeout(forget);
+        stopped = true;
+        this.#retiring.delete(processId);
+        finish();
+      },
+    };
+    this.#retiring.set(processId, entry);
+    this.host.call('host.agentSend', { processId, command: { type: 'abort' } as unknown as JsonValue }).catch(stop);
   }
 
   async #sendCommand(command: RpcCommand): Promise<void> {
@@ -481,10 +755,16 @@ export class AgentChat {
 
   #onEvent({ processId, lines, done, exitCode, stderr }: AgentEventParams): void {
     const p = this.#process;
+    const leaving = this.#retiring.get(processId);
+    if (leaving) {
+      if (done) leaving.exited();
+      else if (lines.some((l) => l.includes('"prompt_result"'))) leaving.abortSettled();
+      return;
+    }
     if (!p || p.id !== processId) return; // a stopped or replaced process
     for (const line of lines) {
       const frame = this.#decoder.push(line);
-      if (frame) this.#onFrame(frame);
+      if (frame) this.#onFrame(scopedToProcess(frame, processId));
     }
     if (done) {
       this.#process = null;
@@ -593,7 +873,9 @@ export class AgentChat {
     cancelAnimationFrame(this.#frame);
     this.#frame = 0;
     this.#queued.clear();
+    this.#current.updatedAt = Date.now();
     this.#update({ items: this.#transcript.items, thinking: false, turn: null, queue: EMPTY_QUEUE });
+    void this.#save();
   }
 
   /**
@@ -724,6 +1006,7 @@ export class AgentChat {
 
   #update(patch: Partial<AgentSnapshot>): void {
     this.#snapshot = { ...this.#snapshot, ...patch };
+    if (patch.items && this.#current.turns) this.#scheduleSave();
     this.#syncPresence();
     for (const cb of this.#listeners) cb();
   }
@@ -752,6 +1035,21 @@ export class AgentChat {
     const empty = this.editor.pageArtboardIds.find((id) => this.editor.doc.childIds(id).length === 0);
     if (empty) this.editor.locks.setPlanning({ agentName: this.#agentName() || 'The agent', nodeIds: [empty] });
   }
+}
+
+/**
+ * omp numbers its messages per process ("msg-2"), so a conversation continued in a new process (resumed from the history, or after the
+ * agent restarted) would reuse the ids of the messages already on screen and overwrite them. The process id is unique for good, so
+ * the ids the transcript keeps are too.
+ */
+function scopedToProcess(frame: Record<string, unknown>, processId: string): Record<string, unknown> {
+  const id = frame['messageId'];
+  return typeof id === 'string' ? { ...frame, messageId: `${processId}/${id}` } : frame;
+}
+
+function blankConversation(): Conversation {
+  const now = Date.now();
+  return { id: newConversationId(), projectId: '', title: '', createdAt: now, updatedAt: now, turns: 0, resume: false, verifyMemory: false, saved: false };
 }
 
 /** What the agent reads before the person's words: who really sent the message (an external agent), then the selection line. */

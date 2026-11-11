@@ -268,7 +268,7 @@ export async function startHeadlessHost(opts = {}) {
     'host.agentStatus': () => agentHost.status(),
     'host.agentLogin': async () => ({ ...(await agentHost.status()), error: 'Sign in from a terminal with "omp login", then check again.' }),
     'host.agentInstall': async () => ({ ...(await agentHost.status()), error: 'Run "bun install -g @oh-my-pi/pi-coding-agent" in a terminal, then check again.' }),
-    'host.agentStart': async ({ processId, systemPrompt, model, thinking }) => {
+    'host.agentStart': async ({ processId, systemPrompt, model, thinking, projectId, conversationId, resume }) => {
       for (const [id, agent] of agents) (agent.stop(), agents.delete(id)); // one conversation per window
       // Deliver batches strictly in order, one editor call at a time.
       let chain = Promise.resolve();
@@ -277,6 +277,9 @@ export async function startHeadlessHost(opts = {}) {
         systemPrompt,
         model,
         thinking,
+        projectId,
+        conversationId,
+        resume,
         // A token for this window only (never the master token), at the window-pinned URL.
         mcp: (() => {
           tokens.revokeAll({ scope: 'window', id: HEADLESS_WINDOW_ID });
@@ -298,6 +301,11 @@ export async function startHeadlessHost(opts = {}) {
       return {};
     },
     'host.agentStop': ({ processId }) => (agents.get(processId)?.stop(), agents.delete(processId), {}),
+    // The sidebar's saved conversations: the host only stores them (summary and transcript are the editor's own JSON).
+    'host.agentHistoryList': async ({ projectId }) => ({ entries: await agentHost.history.list(projectId) }),
+    'host.agentHistoryRead': ({ projectId, id }) => agentHost.history.read(projectId, id),
+    'host.agentHistoryWrite': async ({ projectId, id, meta, transcript }) => (await agentHost.history.write(projectId, id, meta, transcript ?? undefined), {}),
+    'host.agentHistoryDelete': async ({ projectId, id }) => (await agentHost.history.remove(projectId, id), {}),
     ...assetsHost.handlers,
     ...exportHost.handlers,
     ...videoHost.handlers,

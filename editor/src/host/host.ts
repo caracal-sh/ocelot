@@ -113,6 +113,10 @@ export function createBrowserHost(opts: { assets?: MemoryHostOptions } = {}): Ho
     throw new BridgeError('host_unavailable', noAgent);
   });
   server.register('host.agentStop', () => ({}));
+  server.register('host.agentHistoryList', () => ({ entries: [] }));
+  server.register('host.agentHistoryRead', () => ({}));
+  server.register('host.agentHistoryWrite', () => ({}));
+  server.register('host.agentHistoryDelete', () => ({}));
   server.register('host.exportRun', () => {
     throw new BridgeError('host_unavailable', 'Exporting PNG, JPG and PDF files needs the Ocelot app or the headless host (editor/e2e/headless-host.mjs); a plain browser tab cannot render or save them.');
   });

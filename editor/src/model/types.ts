@@ -90,9 +90,16 @@ export interface SlideData {
   durationMs?: number;
 }
 
-/** The document's theme (see themes/): a catalog id plus token overrides. */
+/**
+ * The document's theme (see themes/): a catalog id plus token overrides, or the document's own theme (`base` set): `id` is the slug
+ * of `name`, `base` the catalog theme whose tokens it starts from, and `overrides` hold everything that makes it this document's.
+ */
 export interface ThemeRef {
   id: string;
+  /** The document's own theme: its name ("Ferrule"). */
+  name?: string;
+  /** The document's own theme: the catalog theme it starts from. */
+  base?: string;
   overrides?: Record<string, string>;
 }
 

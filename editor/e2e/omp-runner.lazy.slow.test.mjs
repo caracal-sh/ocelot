@@ -30,7 +30,7 @@ async function setup() {
 
 const exists = (p) => stat(p).then(() => true, () => false);
 const mcp = { url: 'http://127.0.0.1:1/mcp', token: 'mcp-token' };
-const startArgs = (processId, model) => ({ processId, systemPrompt: 'test', model, mcp, onEvent: () => {} });
+const startArgs = (processId, model) => ({ processId, systemPrompt: 'test', model, projectId: 'project-1', conversationId: processId, mcp, onEvent: () => {} });
 
 describe('agent host lazy start', () => {
   it('a status probe answers (installed, signed in, models) without spawning a broker, a gateway or a home', async () => {

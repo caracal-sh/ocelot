@@ -105,7 +105,7 @@ final class AgentProcessService: NSObject, OcelotAgentServiceProtocol, @unchecke
 
         let process = Process()
         process.executableURL = URL(fileURLWithPath: omp)
-        process.arguments = AgentLaunch.ompArguments(configFile: configFile.path, systemPromptFile: promptFile.path, model: start.model, thinking: start.thinking)
+        process.arguments = AgentLaunch.ompArguments(configFile: configFile.path, systemPromptFile: promptFile.path, model: start.model, thinking: start.thinking, sessionDirectory: try sessionDirectory(start.sessionDirectory), resume: start.resume)
         process.environment = AgentLaunch.confinedEnvironment(home: home, agentDir: agentDir.path, temporaryDirectory: try temporaryDirectory(start.temporaryDirectory), token: start.gatewayToken, mcpToken: start.mcpToken)
         process.currentDirectoryURL = directory
         let stdin = Pipe(), stdout = Pipe(), stderr = Pipe()
@@ -178,6 +178,16 @@ final class AgentProcessService: NSObject, OcelotAgentServiceProtocol, @unchecke
         if let current = try? FileManager.default.destinationOfSymbolicLink(atPath: link.path), current == real { return }
         try? FileManager.default.removeItem(at: link)
         try FileManager.default.createSymbolicLink(atPath: link.path, withDestinationPath: real)
+    }
+
+    /// The conversation directory the app made, only if it is one (`Agent/conversations/<project>/<conversation>`): the one place
+    /// outside the container the entitlements let omp write. A path anywhere else would fail inside the sandbox anyway; refuse it by name.
+    private func sessionDirectory(_ requested: String) throws -> String {
+        let agentFolder = AgentSelfTest.realHomeDirectory() + "/Library/Application Support/Ocelot/Agent"
+        guard AgentConversationPaths.isSessionDirectory(requested, agentFolder: agentFolder) else {
+            throw AgentLaunch.Failure("The agent's conversation directory must be a folder under \(agentFolder)/conversations.")
+        }
+        return requested
     }
 
     /// The app's agent TMPDIR, only if it is where the entitlements allow writing.

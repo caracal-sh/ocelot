@@ -3,9 +3,11 @@ import { useEditor } from '../editor/context';
 import type { Editor } from '../editor/Editor';
 import type { ThemeRef } from '../model/types';
 import { applyThemeAsHuman, revertTarget, setThemeOverride } from '../themes/actions';
-import { COLOR_TOKENS, THEMES, themeById, type ThemeDefinition } from '../themes/catalog';
+import { cssValueProblem } from '../model/motion';
+import { COLOR_TOKENS, TEXT_STEPS, THEMES, type ThemeDefinition } from '../themes/catalog';
 import { contrastReport, truncate2, type ContrastReport } from '../themes/contrast';
-import { BUNDLED_FONT_FACE_CSS } from '../themes/fonts';
+import { isOwnTheme, REQUIRED_COLORS, swapFamily, themeOfRef } from '../themes/custom';
+import { BUNDLED_FONT_FACE_CSS, BUNDLED_FONTS, familiesOf } from '../themes/fonts';
 import { effectiveColors, themeTokens, THEME_PREFIX } from '../themes/tokens';
 import { toHex } from './colors';
 
@@ -130,13 +132,86 @@ function ColorRow({ editor, token, value, overridden }: { editor: Editor; token:
   );
 }
 
+const FONT_ROLES = [
+  ['display', 'Display'],
+  ['sans', 'Text'],
+  ['mono', 'Mono'],
+] as const;
+
+/** One font token: the family as a picker over the bundled fonts (they render everywhere); the stack's fallbacks stay. */
+function FontRow({ editor, role, label, value, overridden }: { editor: Editor; role: string; label: string; value: string; overridden: boolean }) {
+  const token = `${THEME_PREFIX}font-${role}`;
+  const family = familiesOf(value)[0] ?? '';
+  const options = BUNDLED_FONTS.some((f) => f.family === family) ? BUNDLED_FONTS.map((f) => f.family) : [family, ...BUNDLED_FONTS.map((f) => f.family)];
+  return (
+    <div className="at-token" data-testid={`theme-font-${role}`}>
+      <span className="at-token__value">{label}</span>
+      <select
+        className="at-input at-token__field"
+        value={family}
+        aria-label={`${label} font`}
+        onChange={(e) => setThemeOverride(editor, token, swapFamily(value, e.target.value, role))}
+        style={{ fontFamily: value }}
+      >
+        {options.map((f) => (
+          <option key={f} value={f}>
+            {f}
+          </option>
+        ))}
+      </select>
+      {overridden ? (
+        <button type="button" className="at-btn at-btn--icon" onClick={() => setThemeOverride(editor, token, null)} data-tip={`Reset ${label} font to the theme's`} aria-label={`Reset ${label} font`}>
+          ↺
+        </button>
+      ) : (
+        <span className="at-theme__reset-gap" />
+      )}
+    </div>
+  );
+}
+
+/** One radius token as editable CSS text, committed on Enter or when the field loses focus. */
+function RadiusRow({ editor, step, value }: { editor: Editor; step: string; value: string }) {
+  const token = `${THEME_PREFIX}radius-${step}`;
+  const commit = (el: HTMLInputElement) => {
+    const next = el.value.trim();
+    if (next === value) return;
+    if (!next || cssValueProblem(next)) {
+      el.value = value;
+      return;
+    }
+    setThemeOverride(editor, token, next);
+  };
+  return (
+    <div className="at-token" data-testid={`theme-radius-${step}`}>
+      <span className="at-token__value">radius-{step}</span>
+      <input
+        key={value}
+        className="at-input at-token__field"
+        defaultValue={value}
+        aria-label={`Radius ${step}`}
+        spellCheck={false}
+        onBlur={(e) => commit(e.currentTarget)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') commit(e.currentTarget);
+        }}
+      />
+      <span className="at-theme__reset-gap" />
+    </div>
+  );
+}
+
 function CurrentTheme({ editor, themeRef, theme }: { editor: Editor; themeRef: ThemeRef; theme: ThemeDefinition }) {
+  const own = isOwnTheme(themeRef);
   const colors = effectiveColors(theme, themeRef.overrides);
   const report = contrastReport(theme, colors);
   const badge = badgeOf(report);
   const revert = revertTarget(editor);
   const overrides = themeRef.overrides ?? {};
   const overrideCount = Object.keys(overrides).length;
+  const tokens = themeTokens(theme, themeRef.overrides);
+  // A catalog theme resets an override to its own value; the document's own theme only lets go of a colour it derives (canvas, ink and accent are its choice).
+  const resettable = (token: string) => token in overrides && (!own || !(REQUIRED_COLORS as readonly string[]).some((c) => token === `${THEME_PREFIX}color-${c}`));
   return (
     <div className="at-theme-current" data-testid="theme-current">
       <div className="at-theme__meta">
@@ -146,7 +221,14 @@ function CurrentTheme({ editor, themeRef, theme }: { editor: Editor; themeRef: T
           {badge.text}
         </span>
       </div>
-      <div className="at-theme__hint">{theme.moodLine.charAt(0).toUpperCase() + theme.moodLine.slice(1)}.</div>
+      {own && (
+        <div>
+          <span className="at-theme__own" data-testid="theme-own" data-tip="A system made for this document: its palette, fonts and shapes are tokens every layer uses">
+            This document's system
+          </span>
+        </div>
+      )}
+      <div className="at-theme__hint">{own ? 'Change a token and every layer that uses it follows. Colours you do not set follow canvas, ink and accent.' : `${theme.moodLine.charAt(0).toUpperCase() + theme.moodLine.slice(1)}.`}</div>
       <div className="at-theme__actions">
         <button
           type="button"
@@ -157,21 +239,46 @@ function CurrentTheme({ editor, themeRef, theme }: { editor: Editor; themeRef: T
         >
           {revert ? 'Revert' : 'Remove theme'}
         </button>
-        {overrideCount > 0 && (
+        {!own && overrideCount > 0 && (
           <button type="button" className="at-btn" onClick={() => applyThemeAsHuman(editor, { id: theme.id }, { remember: false })} data-testid="theme-reset-overrides">
             Reset {overrideCount} override{overrideCount === 1 ? '' : 's'}
           </button>
         )}
       </div>
-      <details className="at-theme-custom">
-        <summary>Customize colours</summary>
+      <details className="at-theme-custom" open={own}>
+        <summary>{own ? 'Colours' : 'Customize colours'}</summary>
         <div className="at-theme-custom__rows">
           {COLOR_TOKENS.map((c) => {
             const token = `${THEME_PREFIX}color-${c}`;
-            return <ColorRow key={`${token}-${colors[c]}`} editor={editor} token={token} value={colors[c]} overridden={token in overrides} />;
+            return <ColorRow key={`${token}-${colors[c]}`} editor={editor} token={token} value={colors[c]} overridden={resettable(token)} />;
           })}
         </div>
         <div className="at-theme__hint">The badge re-checks every text, border and focus pair with your colours. Agents can override any token, not only colours (apply_theme).</div>
+      </details>
+      <details className="at-theme-custom" open={own}>
+        <summary>Fonts</summary>
+        <div className="at-theme-custom__rows">
+          {FONT_ROLES.map(([role, label]) => (
+            <FontRow key={`${role}-${tokens[`${THEME_PREFIX}font-${role}`]}`} editor={editor} role={role} label={label} value={tokens[`${THEME_PREFIX}font-${role}`]!} overridden={resettable(`${THEME_PREFIX}font-${role}`)} />
+          ))}
+        </div>
+      </details>
+      <details className="at-theme-custom" open={own}>
+        <summary>Shape and type</summary>
+        <div className="at-theme-custom__rows">
+          {Object.keys(theme.radii).map((k) => (
+            <RadiusRow key={`${k}-${theme.radii[k]}`} editor={editor} step={k} value={theme.radii[k]!} />
+          ))}
+          {TEXT_STEPS.map((step) => (
+            <div key={step} className="at-token" data-testid={`theme-text-${step}`}>
+              <span className="at-token__value">text-{step}</span>
+              <span className="at-token__count">
+                {theme.text[step][0]} / {theme.text[step][2]}
+              </span>
+              <span className="at-theme__reset-gap" />
+            </div>
+          ))}
+        </div>
       </details>
     </div>
   );
@@ -181,7 +288,7 @@ function CurrentTheme({ editor, themeRef, theme }: { editor: Editor; themeRef: T
 export function ThemeGallery() {
   const editor = useEditor();
   const current = useDocTheme(editor);
-  const currentTheme = current ? themeById(current.id) : undefined;
+  const currentTheme = current ? themeOfRef(current) : undefined;
   return (
     <section className="at-section at-themes" data-testid="themes">
       {/* Bundled fonts load lazily: a face is only fetched when a preview uses it. */}

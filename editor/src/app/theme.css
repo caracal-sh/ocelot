@@ -682,6 +682,8 @@ body {
 .at-theme-custom[open] > summary { color: var(--at-text); }
 .at-theme-custom__rows { margin: 4px 0; }
 .at-theme__reset-gap { flex: none; width: 26px; }
+.at-theme__own { flex: none; padding: 1px 6px; border-radius: 9px; font: var(--at-type-small); color: var(--at-accent); background: color-mix(in srgb, var(--at-accent) 12%, transparent); cursor: default; }
+.at-token__field { flex: 0 1 140px; min-width: 0; height: 22px; padding: 0 6px; }
 
 /* Press feedback: pointer presses only; disabled controls and keyboard actions stay still. 0.96 over 150ms everywhere. */
 @media (prefers-reduced-motion: no-preference) {
@@ -1162,18 +1164,70 @@ body {
   .at-pages__toggle .at-icon { transition: rotate 150ms var(--at-ease-out); }
 }
 
+/* Conversation history and the stop confirmation (Agent tab header): floating surfaces under their trigger, right-aligned to it. */
+.at-convo__pop {
+  position: fixed; z-index: 30; padding: 3px; outline: none; /* 3 + the 1px border = the 4px inset the rows' radius 6 is concentric with 10 */
+  border: 1px solid transparent; border-radius: var(--at-radius-l); background: var(--at-panel); box-shadow: var(--at-shadow-float);
+  transform-origin: top right;
+}
+.at-convo__list { max-height: 360px; overflow-y: auto; overscroll-behavior: contain; display: flex; flex-direction: column; gap: 1px; }
+.at-convo__row { position: relative; display: flex; align-items: stretch; border-radius: var(--at-radius-m); }
+.at-convo__main {
+  flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: flex-start; gap: 1px; padding: 5px 30px 5px 8px;
+  font: var(--at-type-body); color: var(--at-text); text-align: left; background: transparent; border: 0; border-radius: var(--at-radius-m);
+}
+.at-convo__main:focus-visible { background: var(--at-hover); outline: none; }
+@media (hover: hover) { .at-convo__row:hover .at-convo__main { background: var(--at-hover); } }
+.at-convo__title { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.at-convo__row.is-current .at-convo__title { font-weight: 500; }
+.at-convo__meta { display: flex; gap: 6px; font: var(--at-type-small); color: var(--at-text-2); font-variant-numeric: tabular-nums; }
+.at-convo__now { color: var(--at-accent); font-weight: 500; }
+.at-convo__now::after { content: '·'; margin-left: 6px; color: var(--at-text-3); font-weight: 400; }
+.at-convo__delete {
+  position: absolute; right: 3px; top: 50%; translate: 0 -50%; width: 24px; height: 24px; display: grid; place-items: center;
+  color: var(--at-text-2); background: transparent; border: 0; border-radius: var(--at-radius-m); opacity: 0;
+}
+.at-convo__row:focus-within .at-convo__delete, .at-convo__delete:focus-visible { opacity: 1; }
+.at-convo__delete:focus-visible { background: var(--at-hover); outline: none; }
+@media (hover: hover) {
+  .at-convo__row:hover .at-convo__delete { opacity: 1; }
+  .at-convo__delete:hover { color: var(--at-danger); background: var(--at-active); }
+}
+/* A touch screen has no hover: the delete button is always there. */
+@media (hover: none) { .at-convo__delete { opacity: 1; } }
+.at-convo__row--confirm { flex-direction: column; gap: 8px; padding: 8px; background: var(--at-bg); }
+.at-convo__ask { margin: 0; font: var(--at-type-body); font-weight: 500; color: var(--at-text); white-space: normal; text-wrap: pretty; }
+.at-convo__detail { margin: 2px 0 0; font: var(--at-type-small); color: var(--at-text-2); white-space: normal; text-wrap: pretty; }
+.at-convo__confirm { padding: 10px; }
+.at-convo__actions { display: flex; justify-content: flex-end; gap: 4px; }
+.at-convo__confirm .at-convo__actions { margin-top: 10px; }
+/* Empty state: the last conversation, offered as a quiet row like the suggestions. */
+.at-agent__resume {
+  display: grid; grid-template-columns: 1fr auto; gap: 1px 12px; margin: 6px -8px 0; padding: 6px 8px; text-align: left;
+  font: inherit; color: var(--at-text); background: transparent; border: 0; border-radius: var(--at-radius-m); transition: background-color 150ms ease;
+}
+@media (hover: hover) { .at-agent__resume:hover { background: var(--at-hover); } }
+.at-agent__resume-label { grid-column: 1 / -1; font: var(--at-type-small); color: var(--at-text-2); }
+.at-agent__resume-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.at-agent__resume-time { font: var(--at-type-small); color: var(--at-text-2); font-variant-numeric: tabular-nums; align-self: center; }
+@media (prefers-reduced-motion: no-preference) {
+  .at-agent__resume { transition: scale 150ms ease-out, background-color 150ms ease; }
+  .at-agent__resume:active { scale: 0.98; }
+  .at-convo__delete { transition: opacity 120ms ease; }
+}
+
 /* Menus, popovers, the export popover, the color picker, the text format bar and the timeline's transition popover: opacity + scale from 0.96 out
    of the trigger's side (transform-origin: set per surface), 160ms. Exit: 100ms opacity only (useExitGhost). */
 .at-picker__popover { transform-origin: bottom left; }
 .at-tfbar { transform-origin: bottom center; }
 .at-tfbar[data-below] { transform-origin: top center; }
 @media (prefers-reduced-motion: no-preference) {
-  .at-contextmenu, .at-export, .at-picker__popover, .at-cpick, .at-tfbar, .at-tl-chip__pop { transition-property: opacity, scale; transition-duration: 160ms; transition-timing-function: var(--at-ease-out); }
-  @starting-style { .at-contextmenu, .at-export, .at-picker__popover, .at-cpick, .at-tfbar, .at-tl-chip__pop { opacity: 0; scale: 0.96; } }
+  .at-contextmenu, .at-export, .at-picker__popover, .at-convo__pop, .at-cpick, .at-tfbar, .at-tl-chip__pop { transition-property: opacity, scale; transition-duration: 160ms; transition-timing-function: var(--at-ease-out); }
+  @starting-style { .at-contextmenu, .at-export, .at-picker__popover, .at-convo__pop, .at-cpick, .at-tfbar, .at-tl-chip__pop { opacity: 0; scale: 0.96; } }
 }
 @media (prefers-reduced-motion: reduce) {
-  .at-contextmenu, .at-export, .at-picker__popover, .at-cpick, .at-tfbar, .at-tl-chip__pop { transition: opacity 120ms ease-out; }
-  @starting-style { .at-contextmenu, .at-export, .at-picker__popover, .at-cpick, .at-tfbar, .at-tl-chip__pop { opacity: 0; } }
+  .at-contextmenu, .at-export, .at-picker__popover, .at-convo__pop, .at-cpick, .at-tfbar, .at-tl-chip__pop { transition: opacity 120ms ease-out; }
+  @starting-style { .at-contextmenu, .at-export, .at-picker__popover, .at-convo__pop, .at-cpick, .at-tfbar, .at-tl-chip__pop { opacity: 0; } }
 }
 .at-ghost { pointer-events: none; }
 

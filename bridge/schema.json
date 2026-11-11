@@ -191,7 +191,33 @@
       "processId": "string",
       "systemPrompt": "string",
       "model": "string?",
-      "thinking": "string?"
+      "thinking": "string?",
+      "projectId": "string",
+      "conversationId": "string",
+      "resume": "boolean?"
+    },
+    "AgentHistoryProject": {
+      "projectId": "string"
+    },
+    "AgentHistoryKey": {
+      "projectId": "string",
+      "id": "string"
+    },
+    "AgentHistoryEntry": {
+      "id": "string",
+      "meta": "string"
+    },
+    "AgentHistoryEntries": {
+      "entries": "AgentHistoryEntry[]"
+    },
+    "AgentHistoryTranscript": {
+      "text": "string?"
+    },
+    "AgentHistoryWriteParams": {
+      "projectId": "string",
+      "id": "string",
+      "meta": "string",
+      "transcript": "string?"
     },
     "AgentSendParams": {
       "processId": "string",
@@ -508,6 +534,22 @@
     },
     "host.agentStop": {
       "params": "AgentProcessId",
+      "result": "Empty"
+    },
+    "host.agentHistoryList": {
+      "params": "AgentHistoryProject",
+      "result": "AgentHistoryEntries"
+    },
+    "host.agentHistoryRead": {
+      "params": "AgentHistoryKey",
+      "result": "AgentHistoryTranscript"
+    },
+    "host.agentHistoryWrite": {
+      "params": "AgentHistoryWriteParams",
+      "result": "Empty"
+    },
+    "host.agentHistoryDelete": {
+      "params": "AgentHistoryKey",
       "result": "Empty"
     },
     "host.assetsList": {

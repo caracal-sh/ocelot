@@ -1,8 +1,9 @@
-// MCP tools for themes: `list_themes`, `get_theme`, `apply_theme`. The Assets > Styles gallery (panels/ThemeGallery.tsx) uses the same
+// MCP tools for themes: `list_themes`, `get_theme`, `apply_theme`, `create_theme` (the document's own, task-specific theme). The Assets > Styles gallery (panels/ThemeGallery.tsx) uses the same
 // operations (themes/apply.ts), so a human and an agent get the same tokens, the same one-step undo and the same contrast report.
 
-import { THEMES, themeById, type ThemeDefinition } from '../themes/catalog';
+import { COLOR_TOKENS, THEMES, type ThemeDefinition } from '../themes/catalog';
 import { applyThemeOps, requireTheme, type ThemeApplyReport } from '../themes/apply';
+import { isOwnTheme, planOwnTheme, requireThemeOf, themeOfRef } from '../themes/custom';
 import { contrastReport, truncate2, type ContrastReport } from '../themes/contrast';
 import { familiesOf } from '../themes/fonts';
 import { rememberTheme, revertTarget } from '../themes/actions';
@@ -47,9 +48,14 @@ function toolError(err: unknown): never {
   throw err;
 }
 
+/** A document's theme as the tools name it: id, name, whether it is the document's own, and its overrides. */
+function refSummary(ref: ThemeRef) {
+  return { id: ref.id, name: themeOfRef(ref)?.name ?? ref.id, ...(isOwnTheme(ref) ? { own: true, based_on: ref.base } : {}), ...(ref.overrides ? { overrides: ref.overrides } : {}) };
+}
+
 function currentRef(ctx: ToolContext) {
   const ref = ctx.editor.doc.theme();
-  return ref ? { ref, theme: themeById(ref.id) ?? null } : null;
+  return ref ? { ref, theme: themeOfRef(ref) ?? null } : null;
 }
 
 /** The theme Revert returns to: `{ id: "none" }` when that was no theme; undefined when no switch was made yet. */
@@ -58,14 +64,13 @@ function previousTheme(ctx: ToolContext) {
   if (!target) return undefined;
   const ref = target.ref;
   if (!ref) return { id: 'none', name: 'No theme' };
-  return { id: ref.id, name: themeById(ref.id)?.name ?? ref.id, ...(ref.overrides ? { overrides: ref.overrides } : {}) };
+  return refSummary(ref);
 }
 
 function describeApplied(report: ThemeApplyReport) {
   const ref = report.theme;
-  const theme = ref ? themeById(ref.id) : undefined;
   return {
-    theme: ref ? { id: ref.id, name: theme?.name ?? ref.id, ...(ref.overrides ? { overrides: ref.overrides } : {}) } : null,
+    theme: ref ? refSummary(ref) : null,
     artboards_updated: report.artboards,
     ...(report.skipped.length ? { skipped_layer_locked: report.skipped } : {}),
     ...(report.kept.length ? { kept_your_root_styles: report.kept } : {}),
@@ -82,16 +87,17 @@ export const THEME_TOOLS: ToolDef[] = [
     title: 'List themes',
     readOnly: true,
     description:
-      'The theme catalog: 12 ready-made visual systems plus a dark Ocelot Default. Each has an id, a mood word, light/dark scheme, what it is best and worst for, swatches, its fonts (bundled, they render offline) ' +
+      'The theme catalog: 12 ready-made visual systems plus a dark Ocelot Default (and, when the document has one, its own theme as "own"). Each has an id, a mood word, light/dark scheme, what it is best and worst for, swatches, its fonts (bundled, they render offline) ' +
       'and a contrast summary (every text/background pair is verified: ink 7:1, other text 4.5:1, borders and focus 3:1). Also returns the theme the document currently has. ' +
-      'Call it when the user names a style ("brutalist", "glassy", "editorial") or gives no direction, pick the theme that fits the product, then apply_theme. Skip it when the user brought their own design system.',
+      'Call it when the user names a style ("brutalist", "glassy", "editorial") and pick the theme that matches, then apply_theme. With no direction and no theme, derive a system for the task with create_theme instead. Skip it when the user brought their own design system.',
     inputSchema: { type: 'object', properties: {}, additionalProperties: false },
     run(_args, ctx) {
       const cur = currentRef(ctx);
       return json({
-        current: cur ? { id: cur.ref.id, name: cur.theme?.name ?? cur.ref.id, ...(cur.ref.overrides ? { overrides: cur.ref.overrides } : {}) } : null,
+        current: cur ? refSummary(cur.ref) : null,
+        ...(cur?.theme && isOwnTheme(cur.ref) ? { own: themeSummary(cur.theme) } : {}),
         themes: THEMES.map(themeSummary),
-        next: 'apply_theme {"theme_id": "<id>"} applies one to every artboard in one undo step; get_theme {"theme_id": "<id>"} shows the tokens, rules and example CSS first.',
+        next: 'apply_theme {"theme_id": "<id>"} applies one to every artboard in one undo step; get_theme {"theme_id": "<id>"} shows the tokens, rules and example CSS first. None fits the brief: create_theme derives a system for this task.',
       });
     },
   },
@@ -117,7 +123,7 @@ export const THEME_TOOLS: ToolDef[] = [
       }
       let theme: ThemeDefinition;
       try {
-        theme = id !== undefined ? requireTheme(id) : (cur?.theme ?? requireTheme(cur!.ref.id));
+        theme = id !== undefined ? (cur && id.toLowerCase() === cur.ref.id ? requireThemeOf(cur.ref) : requireTheme(id)) : (cur?.theme ?? requireThemeOf(cur!.ref));
       } catch (err) {
         return toolError(err);
       }
@@ -127,6 +133,7 @@ export const THEME_TOOLS: ToolDef[] = [
       return json({
         id: theme.id,
         name: theme.name,
+        ...(applied && isOwnTheme(cur!.ref) ? { own: true, based_on: cur!.ref.base, set_explicitly: Object.keys(cur!.ref.overrides ?? {}), derived_colors: COLOR_TOKENS.map((c) => `--theme-color-${c}`).filter((k) => !(k in (cur!.ref.overrides ?? {}))) } : {}),
         applied,
         ...(previousTheme(ctx) ? { previous_theme: previousTheme(ctx) } : {}),
         ...(applied && cur!.ref.overrides ? { overrides: cur!.ref.overrides } : {}),
@@ -156,11 +163,12 @@ export const THEME_TOOLS: ToolDef[] = [
       'binds each artboard\'s background, text colour and font to them (only where the artboard still has its default white background or no value of its own), and remembers the theme in the document. ' +
       'Existing layers that use plain values do not change; layers written with var(--theme-…) restyle instantly, so design with the tokens (get_theme lists them) and switching themes later restyles every page. ' +
       'overrides changes single tokens of the chosen theme, e.g. {"color-accent": "#e11d48", "radius-lg": "16px"} (names without --theme-); the result warns when an override breaks a contrast pair. ' +
+      'With the id of the document\'s own theme (create_theme), overrides are merged into it: that is how you change a token of it later. ' +
       'theme_id "none" removes the theme and its tokens again; theme_id "previous" goes back to the theme the document had before the last switch (the gallery\'s Revert; get_theme returns it as previous_theme) and refuses when no switch was made yet. New artboards created afterwards inherit the theme. Layers the user locked in the layers panel are skipped and reported.',
     inputSchema: {
       type: 'object',
       properties: {
-        theme_id: { type: 'string', description: 'A catalog id from list_themes (e.g. "aurora"), "none" to remove the theme, or "previous" to revert to the theme before the last switch.' },
+        theme_id: { type: 'string', description: 'A catalog id from list_themes (e.g. "aurora"), the id of the document\'s own theme (create_theme) to change its tokens, "none" to remove the theme, or "previous" to revert to the theme before the last switch.' },
         overrides: {
           type: 'object',
           additionalProperties: { type: 'string' },
@@ -188,14 +196,21 @@ export const THEME_TOOLS: ToolDef[] = [
           if (!target) throw new ThemeError('There is no previous theme: no theme switch was made in this session. Send a catalog id from list_themes (or "none") instead.');
           if (JSON.stringify(target.ref) === JSON.stringify(before)) throw new ThemeError(`The document already has the previous theme (${target.ref ? `"${target.ref.id}"` : 'none'}). get_theme returns previous_theme.`);
           ref = target.ref;
-          theme = ref ? requireTheme(ref.id) : null;
+          theme = ref ? requireThemeOf(ref) : null;
           revert = true;
+        } else if (before && isOwnTheme(before) && id.toLowerCase() === before.id) {
+          // The document's own theme: overrides change tokens of it (they merge), they never reset it to its base.
+          theme = requireThemeOf(before);
+          ref = null;
         } else {
           theme = id.toLowerCase() === 'none' ? null : requireTheme(id);
           ref = null;
         }
         if (!theme && overrides) throw new ThemeError('"none" removes the theme; overrides only apply to a theme. Send theme_id with a catalog id, or drop overrides.');
-        if (!revert) ref = theme ? { id: theme.id, ...(overrides ? { overrides: normalizeOverrides(theme, overrides) } : {}) } : null;
+        if (!revert && theme && before && isOwnTheme(before) && theme.id === before.id) {
+          const merged = { ...(before.overrides ?? {}), ...(overrides ? normalizeOverrides(theme, overrides) : {}) };
+          ref = { ...before, ...(Object.keys(merged).length ? { overrides: merged } : {}) };
+        } else if (!revert) ref = theme ? { id: theme.id, ...(overrides ? { overrides: normalizeOverrides(theme, overrides) } : {}) } : null;
         const applied = ref;
         const report = write(ctx, theme ? `${revert ? 'Revert to' : 'Apply'} theme ${theme.name}` : revert ? 'Revert to no theme' : 'Remove theme', () =>
           applyThemeOps(ctx.editor.doc, ctx.editor.agent, applied, { isLocked: (aid) => layerLockOf(ctx, aid) !== null }),
@@ -204,6 +219,61 @@ export const THEME_TOOLS: ToolDef[] = [
         if (!revert && before?.id !== applied?.id) rememberTheme(ctx.editor, before);
         ctx.editor.ui.toast(revert ? `${agentLabel(ctx)} reverted the theme${theme ? ` to “${theme.name}”` : ' (no theme)'}.` : theme ? `${agentLabel(ctx)} applied the theme “${theme.name}”.` : `${agentLabel(ctx)} removed the theme.`, 'agent');
         return json(describeApplied(report));
+      } catch (err) {
+        return toolError(err);
+      }
+    },
+  },
+  {
+    name: 'create_theme',
+    title: 'Create a theme for this document',
+    readOnly: false,
+    description:
+      'Derives the document\'s own, task-specific system and applies it as ONE undo step: a named theme (e.g. "Ferrule") with the palette, type families and scale, radii, shadows, spacing and motion this brief calls for, written as --theme-* tokens on every artboard so layers use var(--theme-…) and the person can adjust the system later in Assets > Styles. ' +
+      'Use it when the document has no theme or design system and the person named no style: before the first write. tokens is { "color-canvas": "#F4EDE1", "color-ink": "#2A1B12", "color-accent": "#B4451F", "font-display": "Fraunces", "font-sans": "Geist", "radius-lg": "6px", "text-5xl": "72px", … } (names without --theme-; same names as apply_theme overrides; get_theme lists them). ' +
+      'color-canvas, color-ink and color-accent are required. Every other colour (surface, surface-2, ink-2, ink-3, accent-ink, accent-text, accent-soft, accent-hover, line, line-subtle, focus, danger, success) is derived from them so that every text pair passes (ink 7:1, other text 4.5:1, borders, focus and the accent 3:1), or you set it yourself and it is measured. ' +
+      'It refuses a palette that fails contrast and names the pair. A bare font family ("Fraunces") becomes a stack; bundled families (list_fonts) render everywhere. Everything you leave out comes from based_on (a catalog id from list_themes; default the neutral Ocelot Default, or its dark twin when scheme is "dark" or the canvas is dark): its type scale, radii, shadows, spacing, motion and extra tokens. ' +
+      'Calling it again replaces the document\'s theme (also a stock one); change single tokens later with apply_theme using the theme\'s id and overrides. The person picks a stock theme or design system themselves: then use that one, not this. Not for product UI built from components (create_design_system).',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        name: { type: 'string', description: 'The system\'s name, 2-40 characters, for this task: "Ferrule". Its slug is the theme id.' },
+        tokens: {
+          type: 'object',
+          additionalProperties: { type: 'string' },
+          description: 'Token name (without --theme-) to CSS value: color-canvas, color-ink and color-accent (required), any other color-*, font-display / font-sans / font-mono (a family name or a full stack), text-xs … text-5xl (and --line-height, --weight, --tracking suffixes), radius-sm … radius-full, shadow-*, spacing, duration-*, ease-*.',
+        },
+        based_on: { type: 'string', description: 'Optional catalog theme id whose type scale, radii, shadows, spacing, motion and extras the system starts from. Its colours are not used.' },
+        scheme: { type: 'string', enum: ['light', 'dark'], description: 'Optional; read from the canvas colour when omitted.' },
+      },
+      required: ['name', 'tokens'],
+      additionalProperties: false,
+    },
+    run(args: Args, ctx) {
+      const name = str(args, 'name', {});
+      const raw = args['tokens'];
+      if (typeof raw !== 'object' || raw === null || Array.isArray(raw) || !Object.values(raw).every((v) => typeof v === 'string')) {
+        throw new ToolError('tokens must be an object of token name to CSS value, e.g. {"color-canvas": "#F4EDE1", "color-ink": "#2A1B12", "color-accent": "#B4451F"}.');
+      }
+      const basedOn = str(args, 'based_on', { optional: true });
+      const scheme = str(args, 'scheme', { optional: true });
+      if (scheme !== undefined && scheme !== 'light' && scheme !== 'dark') throw new ToolError('scheme is "light" or "dark".');
+      try {
+        const before = ctx.editor.doc.theme();
+        const plan = planOwnTheme({ name, tokens: raw as Record<string, string>, ...(basedOn !== undefined ? { basedOn } : {}), ...(scheme !== undefined ? { scheme } : {}) });
+        const report = write(ctx, `Create theme ${plan.ref.name}`, () =>
+          applyThemeOps(ctx.editor.doc, ctx.editor.agent, plan.ref, { isLocked: (aid) => layerLockOf(ctx, aid) !== null }),
+        );
+        if (JSON.stringify(before) !== JSON.stringify(plan.ref)) rememberTheme(ctx.editor, before);
+        ctx.editor.ui.toast(`${agentLabel(ctx)} created the theme “${plan.ref.name}”.`, 'agent');
+        const tokens = groupTokens(themeTokens(plan.theme, plan.ref.overrides));
+        return json({
+          ...describeApplied(report),
+          derived_colors: plan.derived,
+          tokens: { colors: tokens.colors, fonts: tokens.fonts, radii: tokens.radii },
+          contrast: contrastSummary(plan.report),
+          ...(plan.notes.length ? { notes: plan.notes } : {}),
+        });
       } catch (err) {
         return toolError(err);
       }

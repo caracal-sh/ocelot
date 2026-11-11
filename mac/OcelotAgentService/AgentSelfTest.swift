@@ -25,6 +25,7 @@ enum AgentSelfTest {
             probes += [
                 ("List ~/Documents", "/bin/ls", ["\(realHome)/Documents"], false),
                 ("List ~/Library/Application Support (other apps' data)", "/bin/ls", ["\(realHome)/Library/Application Support"], false),
+                ("List Ocelot's agent folder (the saved transcripts of your chats, gateway files)", "/bin/ls", ["\(realHome)/Library/Application Support/Ocelot/Agent"], false),
             ]
         }
         let results = probes.map { label, command, args, shouldSucceed -> AgentProbeResult in

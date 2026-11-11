@@ -9,7 +9,7 @@ import { cssValueProblem } from '../model/motion';
 import { ModelError, STATE_NAMES } from '../model/types';
 import { toHex } from '../panels/colors';
 import { baseTokens, isThemeToken } from '../themes/tokens';
-import { themeById } from '../themes/catalog';
+import { themeOfRef } from '../themes/custom';
 
 export interface ColorToken {
   value: string; // #rrggbb or rgba(...)
@@ -211,17 +211,18 @@ export function replaceColorIn(
 /** Moves recoloured theme tokens into the document's theme overrides (only when every artboard was in scope, so the document stays uniform). */
 function syncThemeOverrides(doc: OcelotDocument, ops: DocumentOps, ids: readonly string[], patches: Readonly<Record<string, string>>): void {
   const ref = doc.theme();
-  const theme = ref ? themeById(ref.id) : undefined;
+  const theme = ref ? themeOfRef(ref) : undefined;
   if (!ref || !theme || Object.keys(patches).length === 0) return;
   const inScope = new Set(ids);
   if (!doc.artboardIds().every((a) => inScope.has(a))) return;
-  const base = baseTokens(theme);
+  // The document's own theme is its overrides (and what they derive): a value that equals today's token is still a choice to keep.
+  const base = ref.base === undefined ? baseTokens(theme) : {};
   const overrides = { ...ref.overrides };
   for (const [name, value] of Object.entries(patches)) {
     if (base[name] === value) delete overrides[name];
     else overrides[name] = value;
   }
-  ops.setTheme({ id: ref.id, ...(Object.keys(overrides).length ? { overrides } : {}) });
+  ops.setTheme({ ...(ref.base !== undefined ? { id: ref.id, name: ref.name, base: ref.base } : { id: ref.id }), ...(Object.keys(overrides).length ? { overrides } : {}) });
 }
 
 /**

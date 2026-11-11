@@ -56,11 +56,46 @@ final class AgentLaunchTests: XCTestCase {
     }
 
     func testArgumentsExposeOnlyMCPTools() {
-        let args = AgentLaunch.ompArguments(configFile: "/c", systemPromptFile: "/p", model: "anthropic/a", thinking: "low")
-        for flag in ["--no-tools", "--no-skills", "--no-rules", "--no-context-files", "--no-extensions", "--no-lsp", "--no-session"] {
+        let args = AgentLaunch.ompArguments(configFile: "/c", systemPromptFile: "/p", model: "anthropic/a", thinking: "low", sessionDirectory: "/s/p1/c1", resume: false)
+        for flag in ["--no-tools", "--no-skills", "--no-rules", "--no-context-files", "--no-extensions", "--no-lsp"] {
             XCTAssertTrue(args.contains(flag), flag)
         }
         XCTAssertEqual(args.suffix(4), ["--model", "anthropic/a", "--thinking", "low"])
+    }
+
+    /// The conversation's session lives in its own directory so it can be continued; `--no-session` would lose it.
+    func testArgumentsKeepTheSessionInTheConversationDirectory() {
+        let args = AgentLaunch.ompArguments(configFile: "/c", systemPromptFile: "/p", model: nil, thinking: nil, sessionDirectory: "/s/p1/c1", resume: false)
+        XCTAssertFalse(args.contains("--no-session"))
+        XCTAssertEqual(Array(args.prefix(4)), ["--mode", "rpc", "--session-dir", "/s/p1/c1"])
+        XCTAssertFalse(args.contains("--continue"))
+    }
+
+    func testArgumentsContinueTheSessionOnlyWhenResuming() {
+        let args = AgentLaunch.ompArguments(configFile: "/c", systemPromptFile: "/p", model: nil, thinking: nil, sessionDirectory: "/s/p1/c1", resume: true)
+        XCTAssertEqual(Array(args.prefix(5)), ["--mode", "rpc", "--session-dir", "/s/p1/c1", "--continue"])
+    }
+
+    func testConversationPathsAreOnlyPlainNames() {
+        let folder = "/home/d/Library/Application Support/Ocelot/Agent"
+        XCTAssertEqual(AgentConversationPaths.sessionDirectory(agentFolder: folder, projectId: "p-1_a", conversationId: "c-1"), "\(folder)/conversations/p-1_a/c-1")
+        for bad in ["", "..", "a/b", "a b", String(repeating: "x", count: 65)] {
+            XCTAssertNil(AgentConversationPaths.sessionDirectory(agentFolder: folder, projectId: bad, conversationId: "c"), bad)
+            XCTAssertNil(AgentConversationPaths.sessionDirectory(agentFolder: folder, projectId: "p", conversationId: bad), bad)
+        }
+        XCTAssertNil(AgentConversationPaths.sessionDirectory(agentFolder: folder, projectId: "p", conversationId: "a_b")) // underscores are project-id only
+    }
+
+    /// The sandboxed service only accepts the directory the entitlements cover: exactly one conversation folder, nothing above or beside it.
+    func testServiceAcceptsOnlyAConversationDirectory() {
+        let folder = "/home/d/Library/Application Support/Ocelot/Agent"
+        XCTAssertTrue(AgentConversationPaths.isSessionDirectory("\(folder)/conversations/p1/c1", agentFolder: folder))
+        for bad in [
+            "\(folder)/conversations", "\(folder)/conversations/p1", "\(folder)/conversations/p1/c1/sub", "\(folder)/conversations/p1/../../history/p1",
+            "\(folder)/conversations//c1", "\(folder)/history/p1/c1", "\(folder)/tmp", "/home/d/.omp/agent", "\(folder)/conversations/p1/c 1",
+        ] {
+            XCTAssertFalse(AgentConversationPaths.isSessionDirectory(bad, agentFolder: folder), bad)
+        }
     }
 
     func testMCPConfigCarriesTheScopedTokenAndNoWindowHeader() throws {

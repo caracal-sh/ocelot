@@ -1,6 +1,9 @@
+// @vitest-environment jsdom
 import { describe, expect, it } from 'vitest';
 import { baseTokens } from '../themes/tokens';
 import { themeById } from '../themes/catalog';
+import { themeOfRef } from '../themes/custom';
+import { decodeDocument, encodeDocument } from '../model/persistence';
 import { setupMcp } from './testSetup';
 
 function twoPages() {
@@ -172,5 +175,175 @@ describe('theme tools: previous theme', () => {
     expect((await callJson('get_theme')).previous_theme).toMatchObject({ id: 'aurora' });
     const back = await callJson('apply_theme', { theme_id: 'previous' });
     expect(back.theme).toMatchObject({ id: 'aurora' });
+  });
+});
+
+const FERRULE = { 'color-canvas': '#F6EEDF', 'color-ink': '#2B1A10', 'color-accent': '#B4451F', 'font-display': 'Fraunces', 'font-sans': 'Geist', 'radius-lg': '6px', 'text-5xl': '72px' };
+
+describe('create_theme: the document\'s own, task-specific theme', () => {
+  it('stores a named theme, derives the other colours, writes tokens on every artboard of every page and is one undo step', async () => {
+    const { callJson, editor, first, second } = twoPages();
+    const r = await callJson('create_theme', { name: 'Ferrule', tokens: FERRULE });
+    expect(r.theme).toMatchObject({ id: 'ferrule', name: 'Ferrule', own: true, based_on: 'ocelot-default' });
+    expect(r.artboards_updated).toBe(2);
+    expect(Object.keys(r.derived_colors)).toContain('--theme-color-surface');
+    expect(Object.keys(r.derived_colors)).not.toContain('--theme-color-accent');
+    expect(r.contrast.all_pass).toBe(true);
+    expect(editor.doc.theme()).toMatchObject({ id: 'ferrule', name: 'Ferrule', base: 'ocelot-default' });
+    expect(editor.doc.theme()!.overrides).toMatchObject({ '--theme-color-canvas': '#F6EEDF', '--theme-font-display': '"Fraunces", system-ui, sans-serif', '--theme-radius-lg': '6px', '--theme-text-5xl': '72px' });
+    // Only what was chosen is stored: derived colours are not.
+    expect(editor.doc.theme()!.overrides!['--theme-color-surface']).toBeUndefined();
+    for (const id of [first, second]) {
+      const styles = editor.doc.require(id).styles;
+      expect(styles['--theme-color-canvas']).toBe('#F6EEDF');
+      expect(styles['--theme-color-surface']).toBe(r.derived_colors['--theme-color-surface']);
+      expect(styles['--theme-font-display']).toBe('"Fraunces", system-ui, sans-serif');
+      expect(styles['--theme-radius-lg']).toBe('6px');
+      expect(styles['background-color']).toBe('var(--theme-color-canvas)');
+      expect(styles['color']).toBe('var(--theme-color-ink)');
+      // The shapes the author left out come from the base.
+      expect(styles['--theme-radius-md']).toBe('6px');
+      expect(styles['--theme-shadow-2']).toBe(themeById('ocelot-default')!.shadows['2']);
+    }
+    expect(editor.history.undo()?.actor).toBe('agent');
+    expect(editor.doc.theme()).toBeNull();
+    expect(Object.keys(editor.doc.require(first).styles).filter((k) => k.startsWith('--theme-'))).toEqual([]);
+    editor.history.redo();
+    expect(editor.doc.theme()?.id).toBe('ferrule');
+  });
+
+  it('a dark canvas starts from the dark twin and the palette still passes every pair', async () => {
+    const { callJson, editor } = twoPages();
+    const r = await callJson('create_theme', { name: 'Night Shift', tokens: { 'color-canvas': '#101614', 'color-ink': '#EFE9DC', 'color-accent': '#E0A93B' } });
+    expect(r.theme.based_on).toBe('ocelot-default-dark');
+    expect(editor.doc.require(editor.doc.artboardIds()[0]!).styles['color-scheme']).toBe('dark');
+    expect(r.contrast.all_pass).toBe(true);
+  });
+
+  it('refuses a palette that fails contrast, names the pair, and changes nothing', async () => {
+    const { call, textOf, editor } = twoPages();
+    const r = await call('create_theme', { name: 'Washed', tokens: { 'color-canvas': '#F6EEDF', 'color-ink': '#A89C8C', 'color-accent': '#B4451F' } });
+    expect(r.isError).toBe(true);
+    expect(textOf(r)).toMatch(/ink \/ canvas: 2\.\d\d:1 \(needs 7:1\)/);
+    expect(textOf(r)).toMatch(/create_theme again/);
+    expect(editor.doc.theme()).toBeNull();
+  });
+
+  it('a pale accent is allowed (its label and rim identify the control) and the result says so', async () => {
+    const { callJson } = twoPages();
+    const r = await callJson('create_theme', { name: 'Marigold', tokens: { 'color-canvas': '#FBF7F0', 'color-ink': '#3B2F2F', 'color-accent': '#C8963E' } });
+    expect(r.contrast.all_pass).toBe(true);
+    expect(r.notes.join(' ')).toMatch(/color-accent is 2\.49:1 on the canvas/);
+  });
+
+  it('colours the author sets are kept and measured like a stock theme\'s', async () => {
+    const { callJson, call, textOf, editor } = twoPages();
+    const ok = await callJson('create_theme', { name: 'Ferrule', tokens: { ...FERRULE, 'color-surface': '#FFFFFF' } });
+    expect(editor.doc.theme()!.overrides!['--theme-color-surface']).toBe('#FFFFFF');
+    expect(Object.keys(ok.derived_colors)).not.toContain('--theme-color-surface');
+    const bad = await call('create_theme', { name: 'Ferrule', tokens: { ...FERRULE, 'color-ink-2': '#E8DFCF' } });
+    expect(bad.isError).toBe(true);
+    expect(textOf(bad)).toMatch(/ink-2 \/ canvas/);
+  });
+
+  it('explains what to fix: unknown tokens, missing core colours, translucent colours, built-in names, a mismatched base', async () => {
+    const { call, textOf, editor } = twoPages();
+    const unknown = await call('create_theme', { name: 'Ferrule', tokens: { ...FERRULE, 'colour-accent': '#fff' } });
+    expect(unknown.isError).toBe(true);
+    expect(textOf(unknown)).toMatch(/has no token "colour-accent"[\s\S]*get_theme/);
+    const missing = await call('create_theme', { name: 'Ferrule', tokens: { 'color-canvas': '#F6EEDF' } });
+    expect(textOf(missing)).toMatch(/missing color-ink, color-accent/);
+    const alpha = await call('create_theme', { name: 'Ferrule', tokens: { ...FERRULE, 'color-accent': 'rgba(180,69,31,0.5)' } });
+    expect(textOf(alpha)).toMatch(/opaque colour/);
+    const builtin = await call('create_theme', { name: 'Clay', tokens: FERRULE });
+    expect(textOf(builtin)).toMatch(/built-in theme/);
+    const mismatch = await call('create_theme', { name: 'Ferrule', based_on: 'aurora', tokens: FERRULE });
+    expect(textOf(mismatch)).toMatch(/aurora" is a dark theme but the canvas is light/);
+    const shortName = await call('create_theme', { name: 'x', tokens: FERRULE });
+    expect(shortName.isError).toBe(true);
+    expect(editor.doc.theme()).toBeNull();
+  });
+
+  it('is not allowed next to a design system', async () => {
+    const { call, textOf, callJson, editor } = twoPages();
+    await callJson('create_design_system', {});
+    const r = await call('create_theme', { name: 'Ferrule', tokens: FERRULE });
+    expect(r.isError).toBe(true);
+    expect(textOf(r)).toMatch(/design system/);
+    expect(editor.doc.theme()).toBeNull();
+  });
+
+  it('shows up as the document\'s own theme in list_themes and get_theme, with what was chosen and what is derived', async () => {
+    const { callJson } = twoPages();
+    await callJson('create_theme', { name: 'Ferrule', tokens: FERRULE });
+    const list = await callJson('list_themes');
+    expect(list.current).toMatchObject({ id: 'ferrule', name: 'Ferrule', own: true });
+    expect(list.own).toMatchObject({ id: 'ferrule', name: 'Ferrule', fonts: { display: 'Fraunces' } });
+    const t = await callJson('get_theme');
+    expect(t).toMatchObject({ id: 'ferrule', name: 'Ferrule', own: true, applied: true, based_on: 'ocelot-default' });
+    expect(t.set_explicitly).toContain('--theme-color-accent');
+    expect(t.derived_colors).toContain('--theme-color-surface');
+    expect(t.tokens.colors['--theme-color-accent']).toBe('#B4451F');
+    expect(t.tokens.type['--theme-text-5xl']).toBe('72px');
+    expect((await callJson('get_theme', { theme_id: 'ferrule' })).id).toBe('ferrule');
+  });
+
+  it('apply_theme with its id merges overrides, and the colours that follow the accent follow it', async () => {
+    const { callJson, editor, first } = twoPages();
+    await callJson('create_theme', { name: 'Ferrule', tokens: FERRULE });
+    const before = editor.doc.require(first).styles['--theme-color-accent-hover'];
+    const r = await callJson('apply_theme', { theme_id: 'ferrule', overrides: { 'color-accent': '#1F5A8A' } });
+    expect(r.theme).toMatchObject({ id: 'ferrule', own: true });
+    expect(editor.doc.theme()).toMatchObject({ name: 'Ferrule', base: 'ocelot-default' });
+    expect(editor.doc.theme()!.overrides).toMatchObject({ '--theme-color-canvas': '#F6EEDF', '--theme-color-accent': '#1F5A8A' });
+    const styles = editor.doc.require(first).styles;
+    expect(styles['--theme-color-accent']).toBe('#1F5A8A');
+    expect(styles['--theme-color-accent-hover']).not.toBe(before);
+    expect(styles['--theme-font-display']).toBe('"Fraunces", system-ui, sans-serif');
+  });
+
+  it('layers written with var() restyle when a token changes', async () => {
+    const { callJson, call, editor, first } = twoPages();
+    await callJson('create_theme', { name: 'Ferrule', tokens: FERRULE });
+    await call('write_html', { node_id: first, mode: 'append', html: '<button data-name="Order" style="background: var(--theme-color-accent); color: var(--theme-color-accent-ink)">Order</button>' });
+    const id = editor.doc.require(first).children[0]!;
+    expect(id).toBeTruthy();
+    expect(editor.doc.require(id).styles['background']).toBe('var(--theme-color-accent)');
+    await callJson('apply_theme', { theme_id: 'ferrule', overrides: { 'color-accent': '#1F5A8A' } });
+    expect(editor.doc.require(first).styles['--theme-color-accent']).toBe('#1F5A8A');
+    expect(editor.doc.require(id).styles['background']).toBe('var(--theme-color-accent)');
+  });
+
+  it('survives save and load, and new artboards inherit it', async () => {
+    const { callJson, editor } = twoPages();
+    await callJson('create_theme', { name: 'Ferrule', tokens: FERRULE });
+    const loaded = decodeDocument(JSON.parse(JSON.stringify(encodeDocument(editor.doc))));
+    expect(loaded.theme()).toEqual(editor.doc.theme());
+    expect(themeOfRef(loaded.theme()!)!.colors['accent-hover']).toBe(themeOfRef(editor.doc.theme()!)!.colors['accent-hover']);
+    const made = await callJson('create_artboard', { name: 'Fresh', width: 800, height: 600 });
+    const styles = editor.doc.require(made.artboard_id).styles;
+    expect(styles['--theme-color-accent']).toBe('#B4451F');
+    expect(styles['--theme-font-display']).toBe('"Fraunces", system-ui, sans-serif');
+    expect(styles['background-color']).toBe('var(--theme-color-canvas)');
+  });
+
+  it('Revert (apply_theme "previous") returns to the own theme after a stock theme replaced it, and create_theme replaces a stock theme', async () => {
+    const { callJson, editor } = twoPages();
+    await callJson('apply_theme', { theme_id: 'clay' });
+    await callJson('create_theme', { name: 'Ferrule', tokens: FERRULE });
+    expect((await callJson('get_theme')).previous_theme).toMatchObject({ id: 'clay' });
+    await callJson('apply_theme', { theme_id: 'swiss-grid' });
+    await callJson('apply_theme', { theme_id: 'previous' });
+    expect(editor.doc.theme()).toMatchObject({ id: 'ferrule', name: 'Ferrule' });
+    expect(editor.doc.require(editor.doc.artboardIds()[0]!).styles['--theme-color-accent']).toBe('#B4451F');
+  });
+
+  it('replace_color on a theme colour keeps it as the theme\'s own choice', async () => {
+    const { callJson, editor, first } = twoPages();
+    await callJson('create_theme', { name: 'Ferrule', tokens: FERRULE });
+    await callJson('replace_color', { from: '#B4451F', to: '#1F5A8A' });
+    expect(editor.doc.theme()).toMatchObject({ id: 'ferrule', base: 'ocelot-default' });
+    expect(editor.doc.theme()!.overrides!['--theme-color-accent']).toBe('#1F5A8A');
+    expect(editor.doc.require(first).styles['--theme-color-accent']).toBe('#1F5A8A');
   });
 });

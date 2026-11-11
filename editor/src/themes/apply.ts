@@ -11,6 +11,7 @@ import type { DocumentOps, OcelotDocument } from '../model/document';
 import type { ThemeRef } from '../model/types';
 import { toHex } from '../panels/colors';
 import { THEMES, themeById, type ThemeDefinition } from './catalog';
+import { requireThemeOf } from './custom';
 import { contrastReport, type ContrastReport } from './contrast';
 import { effectiveColors, isThemeToken, normalizeOverrides, ROOT_BINDINGS, themeRootStyles, ThemeError } from './tokens';
 
@@ -77,14 +78,14 @@ export function applyThemeOps(
   ref: ThemeRef | null,
   opts: { artboardIds?: readonly string[]; isLocked?: (id: string) => boolean } = {},
 ): ThemeApplyReport {
-  const theme = ref ? requireTheme(ref.id) : null;
+  const theme = ref ? requireThemeOf(ref) : null;
   const overrides = theme ? normalizeOverrides(theme, ref!.overrides) : undefined;
   const scope = opts.artboardIds ?? doc.artboardIds();
   const skipped: string[] = [];
   const kept: string[] = [];
   let artboards = 0;
   ops.transact(() => {
-    ops.setTheme(theme ? { id: theme.id, ...(overrides && Object.keys(overrides).length ? { overrides } : {}) } : null);
+    ops.setTheme(theme ? { id: theme.id, ...(ref!.base !== undefined ? { name: theme.name, base: ref!.base } : {}), ...(overrides && Object.keys(overrides).length ? { overrides } : {}) } : null);
     for (const id of scope) {
       const n = doc.require(id);
       if (opts.isLocked?.(id)) {

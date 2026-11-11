@@ -1,8 +1,8 @@
 import { useContext, useRef, useState, useSyncExternalStore } from 'react';
 import { AgentChatContext, AgentPanel } from '../agent/AgentPanel';
+import { ConversationControls } from '../agent/ConversationControls';
 import { useEditor, useLocks, useOpenQuestions } from '../editor/context';
 import { SIDEBAR_TABS, type SidebarTab } from '../editor/ui';
-import { Icon } from '../app/Icon';
 import { usePresence } from '../app/usePresence';
 import { AssetsPanel } from './AssetsPanel';
 import { LayersPanel } from './LayersPanel';
@@ -40,7 +40,6 @@ export function LeftPanel({ composerRef }: { composerRef: React.RefObject<HTMLTe
   const editor = useEditor();
   const chat = useContext(AgentChatContext);
   const tab = useSyncExternalStore((cb) => editor.ui.subscribe(cb), () => editor.ui.sidebarTab);
-  const hasChat = useSyncExternalStore((cb) => chat?.subscribe(cb) ?? (() => {}), () => !!chat && (chat.snapshot.items.length > 0 || !!chat.snapshot.turn));
   const working = useAgentWorking();
   const asking = useOpenQuestions() > 0;
   const [opened, setOpened] = useState<ReadonlySet<SidebarTab>>(() => new Set([tab]));
@@ -66,9 +65,7 @@ export function LeftPanel({ composerRef }: { composerRef: React.RefObject<HTMLTe
         ))}
         <span className="at-tabs__spacer" />
         {tab === 'agent' && chat && (
-          <button type="button" className="at-btn at-btn--icon" onClick={() => chat.newChat()} disabled={!hasChat} data-tip="New conversation" aria-label="New conversation" data-testid="agent-new-chat">
-            <Icon name="plus" />
-          </button>
+          <ConversationControls chat={chat} />
         )}
       </div>
       {opened.has('agent') && (

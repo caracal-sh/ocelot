@@ -222,6 +222,38 @@ export interface AgentStartParams {
   systemPrompt: string;
   model?: string;
   thinking?: string;
+  projectId: string;
+  conversationId: string;
+  resume?: boolean;
+}
+
+export interface AgentHistoryProject {
+  projectId: string;
+}
+
+export interface AgentHistoryKey {
+  projectId: string;
+  id: string;
+}
+
+export interface AgentHistoryEntry {
+  id: string;
+  meta: string;
+}
+
+export interface AgentHistoryEntries {
+  entries: AgentHistoryEntry[];
+}
+
+export interface AgentHistoryTranscript {
+  text?: string;
+}
+
+export interface AgentHistoryWriteParams {
+  projectId: string;
+  id: string;
+  meta: string;
+  transcript?: string;
 }
 
 export interface AgentSendParams {
@@ -502,6 +534,10 @@ export interface HostMethods {
   'host.agentStart': { params: AgentStartParams; result: Empty };
   'host.agentSend': { params: AgentSendParams; result: Empty };
   'host.agentStop': { params: AgentProcessId; result: Empty };
+  'host.agentHistoryList': { params: AgentHistoryProject; result: AgentHistoryEntries };
+  'host.agentHistoryRead': { params: AgentHistoryKey; result: AgentHistoryTranscript };
+  'host.agentHistoryWrite': { params: AgentHistoryWriteParams; result: Empty };
+  'host.agentHistoryDelete': { params: AgentHistoryKey; result: Empty };
   'host.assetsList': { params: Empty; result: AssetList };
   'host.assetsRead': { params: AssetIdParams; result: AssetData };
   'host.assetsImport': { params: AssetImportParams; result: AssetRecord };
@@ -519,7 +555,7 @@ export interface HostMethods {
   'host.exportVideoCancel': { params: ExportCancelParams; result: Empty };
 }
 
-export const HOST_METHOD_NAMES = ["host.ping","host.getInfo","host.log","host.documentChanged","host.renderSnapshot","host.listFonts","host.getMcpStatus","host.getMcpClientConfig","host.copyText","host.openURL","host.windowToggleFullScreen","host.presenterListScreens","host.presenterOpenAudience","host.presenterPush","host.presenterClose","host.windowDrag","host.windowTitlebarDoubleClick","host.agentStatus","host.agentLogin","host.agentInstall","host.agentStart","host.agentSend","host.agentStop","host.assetsList","host.assetsRead","host.assetsImport","host.assetsDelete","host.imageProviders","host.imageGenerate","host.imageCancel","host.imageSetKey","host.imageSetDefault","host.exportSave","host.exportRun","host.exportWriteFile","host.exportCancel","host.exportVideoRun","host.exportVideoCancel"] as const;
+export const HOST_METHOD_NAMES = ["host.ping","host.getInfo","host.log","host.documentChanged","host.renderSnapshot","host.listFonts","host.getMcpStatus","host.getMcpClientConfig","host.copyText","host.openURL","host.windowToggleFullScreen","host.presenterListScreens","host.presenterOpenAudience","host.presenterPush","host.presenterClose","host.windowDrag","host.windowTitlebarDoubleClick","host.agentStatus","host.agentLogin","host.agentInstall","host.agentStart","host.agentSend","host.agentStop","host.agentHistoryList","host.agentHistoryRead","host.agentHistoryWrite","host.agentHistoryDelete","host.assetsList","host.assetsRead","host.assetsImport","host.assetsDelete","host.imageProviders","host.imageGenerate","host.imageCancel","host.imageSetKey","host.imageSetDefault","host.exportSave","host.exportRun","host.exportWriteFile","host.exportCancel","host.exportVideoRun","host.exportVideoCancel"] as const;
 
 export interface EditorMethods {
   'editor.ping': { params: PingParams; result: PingResult };

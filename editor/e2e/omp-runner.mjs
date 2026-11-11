@@ -12,6 +12,7 @@ import { existsSync } from 'node:fs';
 import { mkdir, realpath, rm, symlink, writeFile } from 'node:fs/promises';
 import { homedir, platform } from 'node:os';
 import { delimiter, join } from 'node:path';
+import { createHistoryStore } from './agent-history.mjs';
 import { AgentGateway, cleanStaleClients, ephemeralGatewayHome, sweepStaleGatewayHomes } from './agent-gateway.mjs';
 import { agentConfigYml, CONFINED_MODEL_PROVIDERS_OFF, confinedEnv, defaultSelector, filterModels, MCP_TOKEN_ENV, modelsYml, pickerSelectors, seatbeltProfile } from './agent-sandbox.mjs';
 
@@ -39,12 +40,16 @@ export const ALLOWED_COMMANDS = new Set([
 /**
  * Arguments for one agent process. Only the MCP tools are available (no built-in
  * tools, skills, rules, context files or extensions), and MCP tools are exposed
- * directly instead of behind `xd://` devices.
+ * directly instead of behind `xd://` devices. The session lives in `sessionDir` (one
+ * directory per conversation, see agent-history.mjs); `resume` continues the session
+ * already there (`--continue`) instead of starting one.
  */
-export function ompArgs({ systemPromptFile, configFile, model, thinking }) {
+export function ompArgs({ systemPromptFile, configFile, model, thinking, sessionDir, resume = false }) {
+  if (!sessionDir) throw new Error('An agent process needs its conversation directory.');
   return [
     '--mode', 'rpc',
-    '--no-session',
+    '--session-dir', sessionDir,
+    ...(resume ? ['--continue'] : []),
     '--no-tools',
     '--no-skills',
     '--no-rules',
@@ -138,6 +143,7 @@ export function createAgentHost({ bin = 'omp', unconfined = process.env.OCELOT_A
     return gateway;
   };
   const running = new Set();
+  const history = createHistoryStore(stateDir);
   let prepared = null; // { models, selectors, defaultModel, thinking }: what the gateway serves; worked out by the first confined start
 
   /** Starts the gateway (first use) and works out which models the confined agent may use. */
@@ -189,8 +195,9 @@ export function createAgentHost({ bin = 'omp', unconfined = process.env.OCELOT_A
     return { ...base, loggedIn: selectors.length > 0, models: filterModels(models, selectors), ...(gateway?.status().port ? { gatewayPort: gateway.status().port } : {}) };
   }
 
-  async function start({ processId, systemPrompt, model, thinking, mcp, onEvent }) {
-    if (mode === 'unconfined') return startUnconfined({ bin, processId, systemPrompt, model, thinking, mcp, onEvent, running });
+  async function start({ processId, systemPrompt, model, thinking, projectId, conversationId, resume, mcp, onEvent }) {
+    const sessionDir = await history.sessionDirectory(projectId, conversationId);
+    if (mode === 'unconfined') return startUnconfined({ bin, processId, systemPrompt, model, thinking, sessionDir, resume, mcp, onEvent, running });
     if (typeof processId !== 'string' || !SESSION_ID.test(processId)) throw new Error('Invalid agent session id.');
     const ompPath = await resolveBin(bin);
     if (!ompPath || !existsSync(SANDBOX_EXEC)) throw new Error(`The agent sandbox is not available. Check omp and ${SANDBOX_EXEC}, or set OCELOT_AGENT_UNCONFINED=1.`);
@@ -235,9 +242,11 @@ export function createAgentHost({ bin = 'omp', unconfined = process.env.OCELOT_A
     const profileDir = join(stateDir, 'profiles');
     await mkdir(profileDir, { recursive: true });
     const profile = join(profileDir, `${processId}.sb`);
-    await writeFile(profile, seatbeltProfile({ ompPath, home: session, loopbackPorts: [port, Number(mcpUrl.port)], readOnly }));
+    // Read-write for exactly this conversation's session directory (omp's session files, kept after the process): never its siblings or the transcripts.
+    const sessions = await realpath(sessionDir);
+    await writeFile(profile, seatbeltProfile({ ompPath, home: session, loopbackPorts: [port, Number(mcpUrl.port)], readOnly, writable: [sessions] }));
 
-    const args = ['-f', profile, ompPath, ...ompArgs({ systemPromptFile: files.systemPromptFile, configFile: files.configFile, model, thinking })];
+    const args = ['-f', profile, ompPath, ...ompArgs({ systemPromptFile: files.systemPromptFile, configFile: files.configFile, model, thinking, sessionDir: sessions, resume })];
     const child = spawn(SANDBOX_EXEC, args, { cwd: session, stdio: ['pipe', 'pipe', 'pipe'], env: confinedEnv({ home, agentDir, token: client.token, mcpToken: mcp.token }) });
     return attach(child, onEvent, running, async () => {
       await gw.revoke(client.name);
@@ -250,6 +259,8 @@ export function createAgentHost({ bin = 'omp', unconfined = process.env.OCELOT_A
     isolation: () => ({ mode, warning }),
     status,
     start,
+    /** The sidebar's saved conversations (summaries, transcripts, omp's session files), per project. Never reachable by the agent but its own conversation directory. */
+    history,
     /** Stops every agent and the credential path (host shutdown). */
     async shutdown() {
       shutDown = true;
@@ -277,7 +288,7 @@ async function readModels(bin) {
   }
 }
 
-async function startUnconfined({ bin, processId, systemPrompt, model, thinking, mcp, onEvent, running }) {
+async function startUnconfined({ bin, processId, systemPrompt, model, thinking, sessionDir, resume, mcp, onEvent, running }) {
   const cwd = join(agentStateDir(), 'unconfined', processId);
   await mkdir(cwd, { recursive: true });
   const systemPromptFile = join(cwd, 'system-prompt.md');
@@ -285,7 +296,7 @@ async function startUnconfined({ bin, processId, systemPrompt, model, thinking, 
   await writeFile(join(cwd, '.mcp.json'), JSON.stringify(mcpConfig(mcp), null, 2));
   await writeFile(configFile, CONFIG_OVERLAY);
   await writeFile(systemPromptFile, systemPrompt);
-  const child = spawn(bin, ompArgs({ systemPromptFile, configFile, model, thinking }), { cwd, stdio: ['pipe', 'pipe', 'pipe'], env: process.env });
+  const child = spawn(bin, ompArgs({ systemPromptFile, configFile, model, thinking, sessionDir, resume }), { cwd, stdio: ['pipe', 'pipe', 'pipe'], env: process.env });
   return attach(child, onEvent, running, () => rm(cwd, { recursive: true, force: true }));
 }
 

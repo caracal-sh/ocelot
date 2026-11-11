@@ -8,6 +8,7 @@
 import { BUNDLED_FONTS, bundledFont, familiesOf } from '../themes/fonts';
 import { DEFAULT_PRESET, PRESET_FONT_FAMILY, decodePresetInfo, encodePreset, extractPresetCode, presetFontOf, type PresetKnobs } from './preset';
 import { THEMES, themeById } from '../themes/catalog';
+import { themeOfRef } from '../themes/custom';
 import { baseTokens, effectiveColors } from '../themes/tokens';
 import type { ThemeRef } from '../model/types';
 import { SEED_COLOR_MAP, THEME_ALIASES } from './aliases';
@@ -296,7 +297,7 @@ function siblingOf(id: string) {
  * them still render. Variables the theme has no colour for (charts) come from the neutral base.
  */
 export function seedFromTheme(ref: ThemeRef, radiusKnob?: RadiusKnob): ThemeSeed {
-  const theme = themeById(ref.id);
+  const theme = themeOfRef(ref);
   if (!theme) throw new DesignSystemError(`There is no theme "${ref.id}" to seed from. Available: ${THEMES.map((t) => t.id).join(', ')}.`);
   const sibling = siblingOf(theme.id);
   const colorsOf = (scheme: Scheme) => {

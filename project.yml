@@ -13,7 +13,7 @@ settings:
   base:
     SWIFT_VERSION: "6.0"
     SWIFT_STRICT_CONCURRENCY: complete
-    MARKETING_VERSION: "0.3.5"
+    MARKETING_VERSION: "0.3.6"
     CURRENT_PROJECT_VERSION: "1"
     # Ad-hoc signing so the app builds and runs from the CLI without a team.
     CODE_SIGN_STYLE: Manual
@@ -213,8 +213,11 @@ targets:
           - /.local/bin/
           - /.omp/natives/
         # The agent's TMPDIR: the app unpacks omp's helper dylib here (unquarantined); the sandbox reuses it.
+        # Plus the conversations' session directories (omp's memory of each sidebar conversation, `--session-dir`): only
+        # `Agent/conversations/`. The saved transcripts (`Agent/history/`) and everything else under Application Support stay unreadable.
         com.apple.security.temporary-exception.files.home-relative-path.read-write:
           - /Library/Application Support/Ocelot/Agent/tmp/
+          - /Library/Application Support/Ocelot/Agent/conversations/
         com.apple.security.temporary-exception.files.absolute-path.read-only:
           - /opt/homebrew/
           - /usr/local/

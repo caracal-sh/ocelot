@@ -13,6 +13,7 @@ import { answerText } from './answers';
 import { QueueChips, useCommandHeld } from './QueueChips';
 import type { QueueName, QueuedItem, SendMode } from './queue';
 import { ImageJobStep, PendingImages } from './ImageJobs';
+import { relativeTime, type ConversationMeta } from './conversations';
 
 export const AgentChatContext = createContext<AgentChat | null>(null);
 
@@ -46,6 +47,7 @@ export function AgentPanel({ composerRef }: { composerRef: React.RefObject<HTMLT
   const canAttach = snap.availability.kind === 'ready';
   useEffect(() => {
     void chat.refreshStatus();
+    void chat.refreshConversations(); // the empty state offers the last conversation
   }, [chat]);
   // Chat entries settle in when they arrive, not when the panel mounts with a transcript already in it (sidebar reopened): theme.css
   // keeps their enter off while `data-restoring` is set, and it is removed after the second frame.
@@ -127,7 +129,9 @@ function Messages({ chat, snap }: { chat: AgentChat; snap: AgentSnapshot }) {
   else if (a.kind === 'unavailable') body = <Setup chat={chat} message={a.message} {...(a.info ? { info: a.info } : {})} />;
   else if (a.kind === 'signedOut' && !snap.items.length) body = <SignIn chat={chat} info={a.info} />;
   else if (!snap.items.length) {
-    const empty = <Empty ready={a.kind === 'ready'} onSuggestion={(s) => void chat.send(s)} />;
+    // The last conversation of this document is offered, never reopened by itself: a new window starts clean.
+    const last = snap.conversations.find((c) => c.id !== snap.conversationId);
+    const empty = <Empty ready={a.kind === 'ready'} onSuggestion={(s) => void chat.send(s)} {...(last ? { last, onContinue: () => void chat.openConversation(last.id) } : {})} />;
     body = a.kind === 'ready' ? <ReadyGate info={a.info} models={snap.models.length} fallback={empty} /> : empty;
   } else
     body = (
@@ -147,11 +151,18 @@ function Messages({ chat, snap }: { chat: AgentChat; snap: AgentSnapshot }) {
   );
 }
 
-function Empty({ ready, onSuggestion }: { ready: boolean; onSuggestion: (s: string) => void }) {
+function Empty({ ready, onSuggestion, last, onContinue }: { ready: boolean; onSuggestion: (s: string) => void; last?: ConversationMeta; onContinue?: () => void }) {
   return (
     <div className="at-agent__intro">
       <h2 className="at-agent__heading">What should we design?</h2>
       <p>Describe a screen, a flow or a change. Edits appear on the canvas as the agent makes them, and ⌘Z undoes them.</p>
+      {last && onContinue && (
+        <button type="button" className="at-agent__resume" onClick={onContinue} data-testid="agent-continue">
+          <span className="at-agent__resume-label">Continue where you left off</span>
+          <span className="at-agent__resume-title">{last.title}</span>
+          <time className="at-agent__resume-time" dateTime={new Date(last.updatedAt).toISOString()}>{relativeTime(last.updatedAt)}</time>
+        </button>
+      )}
       <div className="at-agent__suggestions">
         {SUGGESTIONS.map((s) => (
           <button key={s} type="button" className="at-agent__suggestion" disabled={!ready} onClick={() => onSuggestion(s)}>

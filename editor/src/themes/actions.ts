@@ -3,7 +3,8 @@
 
 import type { Editor } from '../editor/Editor';
 import type { ThemeRef } from '../model/types';
-import { applyThemeOps, requireTheme, type ThemeApplyReport } from './apply';
+import { applyThemeOps, type ThemeApplyReport } from './apply';
+import { requireThemeOf } from './custom';
 import { truncate2 } from './contrast';
 import { ThemeError } from './tokens';
 
@@ -41,7 +42,7 @@ export function applyThemeAsHuman(editor: Editor, ref: ThemeRef | null, opts: { 
   }
   if (!report) return undefined;
   if (opts.remember !== false) rememberTheme(editor, before);
-  const name = ref ? requireTheme(ref.id).name : null;
+  const name = ref ? requireThemeOf(ref).name : null;
   const n = report.artboards;
   const where = `${n} artboard${n === 1 ? '' : 's'}`;
   const skipped = report.skipped.length ? ` ${report.skipped.length} locked artboard${report.skipped.length === 1 ? ' was' : 's were'} skipped.` : '';
@@ -57,5 +58,8 @@ export function setThemeOverride(editor: Editor, token: string, value: string | 
   const overrides = { ...(cur.overrides ?? {}) };
   if (value === null) delete overrides[token];
   else overrides[token] = value;
-  applyThemeAsHuman(editor, { id: cur.id, ...(Object.keys(overrides).length ? { overrides } : {}) }, { remember: false });
+  const next: ThemeRef = { ...cur };
+  if (Object.keys(overrides).length) next.overrides = overrides;
+  else delete next.overrides;
+  applyThemeAsHuman(editor, next, { remember: false });
 }

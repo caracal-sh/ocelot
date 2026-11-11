@@ -7,7 +7,7 @@ import { describe, expect, it } from 'vitest';
 import {
   agentConfigYml, clientsFile, confinedEnv, defaultSelector, filterModels, modelsYml, pickerSelectors, sbString, seatbeltProfile, sha256Hex, SUPERVISED_WRAPPER,
 } from './agent-sandbox.mjs';
-import { confinedMcpConfig, mcpConfig, SANDBOX_EXEC, SESSION_ID, verifyConfinement } from './omp-runner.mjs';
+import { confinedMcpConfig, mcpConfig, ompArgs, SANDBOX_EXEC, SESSION_ID, verifyConfinement } from './omp-runner.mjs';
 import { existsSync } from 'node:fs';
 
 describe('models.yml', () => {
@@ -84,6 +84,14 @@ describe('seatbelt profile', () => {
     expect(profile).toContain('(allow signal (target self))');
     expect(profile.match(/\(allow mach-lookup [^\n]*\)/)[0]).toBe('(allow mach-lookup (global-name "com.apple.logd") (global-name "com.apple.system.notification_center"))');
     expect(profile).not.toMatch(/\(allow sysctl-read\)|\(allow ipc|\(allow system/);
+  });
+  it('grants read-write to the conversation directory it is given and to nothing else outside the session home', () => {
+    const conversation = '/Users/designer/Library/Application Support/Ocelot/Agent/conversations/p1/c1';
+    const withSessions = seatbeltProfile({ ompPath: '/o', home, loopbackPorts: [1], writable: [conversation] });
+    expect(withSessions).toContain(`(allow file-write* (subpath "${home}") (subpath "${conversation}") (literal "/dev/null")`);
+    expect(withSessions).toContain(`(subpath "${conversation}")`);
+    expect(withSessions).not.toMatch(/history|transcript/);
+    expect(profile).toContain(`(allow file-write* (subpath "${home}") (literal "/dev/null")`);
   });
   it('rejects paths it cannot quote and missing ports', () => {
     expect(() => sbString('relative')).toThrow(/absolute path/);
@@ -204,4 +212,21 @@ describe.skipIf(process.platform !== 'darwin' || !existsSync(SANDBOX_EXEC))('sea
       await rm(root, { recursive: true, force: true });
     }
   }, 60_000);
+});
+
+describe('omp arguments', () => {
+  const base = { systemPromptFile: '/s/p.md', configFile: '/s/c.yml', sessionDir: '/conv/p1/c1' };
+  it('keeps the session in the conversation directory instead of running ephemeral', () => {
+    const args = ompArgs(base);
+    expect(args).not.toContain('--no-session');
+    expect(args.slice(0, 4)).toEqual(['--mode', 'rpc', '--session-dir', '/conv/p1/c1']);
+    expect(args).not.toContain('--continue');
+    for (const flag of ['--no-tools', '--no-skills', '--no-rules', '--no-context-files', '--no-extensions', '--no-lsp', '--no-title']) expect(args).toContain(flag);
+  });
+  it('continues the conversation only when resuming', () => {
+    expect(ompArgs({ ...base, resume: true })).toContain('--continue');
+  });
+  it('refuses to start without a conversation directory', () => {
+    expect(() => ompArgs({ systemPromptFile: '/s', configFile: '/c' })).toThrow(/conversation directory/);
+  });
 });

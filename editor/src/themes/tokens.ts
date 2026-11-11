@@ -5,7 +5,8 @@
 
 import { cssValueProblem } from '../model/motion';
 import type { ThemeRef } from '../model/types';
-import { COLOR_TOKENS, TEXT_STEPS, themeById, type ColorToken, type ThemeDefinition } from './catalog';
+import { COLOR_TOKENS, TEXT_STEPS, type ColorToken, type ThemeDefinition } from './catalog';
+import { themeOfRef } from './custom';
 import { parseRgba } from '../panels/colors';
 
 export const THEME_PREFIX = '--theme-';
@@ -108,9 +109,9 @@ export function artboardThemeStyles(ref: ThemeRef | null): Record<string, string
   return found ? { ...themeRootStyles(found.theme, ref!.overrides), ...ROOT_BINDINGS } : {};
 }
 
-/** The catalog theme and its tokens for a document's `ThemeRef` (null when the id is not in the catalog). */
+/** The theme and its tokens for a document's `ThemeRef` (null when the theme is not in this version: an unknown catalog id or base). */
 export function themeForRef(ref: ThemeRef): { theme: ThemeDefinition; tokens: Record<string, string> } | null {
-  const theme = themeById(ref.id);
+  const theme = themeOfRef(ref);
   return theme ? { theme, tokens: themeTokens(theme, ref.overrides) } : null;
 }
 

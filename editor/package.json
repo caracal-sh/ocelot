@@ -26,6 +26,7 @@
     "e2e:live-preview": "node e2e/live-preview.mjs",
     "e2e:deck-export": "node e2e/deck-export.mjs",
     "e2e:handoff": "node e2e/handoff.mjs",
+    "e2e:own-theme": "node e2e/own-theme.mjs",
     "ds:snapshot": "node scripts/ds-snapshot/fetch.mjs",
     "ds:specs": "node scripts/ds-snapshot/build-specs.mjs",
     "ds:preset-fixtures": "node scripts/preset-fixtures.mjs",

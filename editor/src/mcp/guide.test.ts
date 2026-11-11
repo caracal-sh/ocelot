@@ -64,7 +64,7 @@ describe('guides name real tools', () => {
   });
 
   it('every tool a guide is built around exists', () => {
-    for (const name of ['set_slide', 'get_deck', 'export_deck', 'get_timeline', 'get_frames', 'export_video', 'list_themes', 'get_theme', 'apply_theme', 'start_presentation', 'get_code_errors', 'set_keyframes', 'create_page', 'update_page', 'create_design_system', 'insert_component', 'update_design_system', 'export_design_system']) {
+    for (const name of ['set_slide', 'get_deck', 'export_deck', 'get_timeline', 'get_frames', 'export_video', 'list_themes', 'get_theme', 'apply_theme', 'create_theme', 'start_presentation', 'get_code_errors', 'set_keyframes', 'create_page', 'update_page', 'create_design_system', 'insert_component', 'update_design_system', 'export_design_system']) {
       expect(registry.has(name), name).toBe(true);
     }
   });
@@ -103,8 +103,9 @@ describe('guide topics', () => {
     // and the canvas reveal note (data-name shows in the marker).
     // design-guide: +250 words for the property-to-tool rows of the app tools, preferences, sidebar chat, present/timeline/viewport
     // control, export/clipboard/handoff and image-import tools (everything a person can do has a row).
+    // theme-guide: +70 words for your own theme (create_theme), the flow a new design without a given style now takes (it replaces the mood-word brief that never became tokens).
     // product-guide: its own topic (1,700 words) because the design-guide is at its cap; agents fetch it only for app screens.
-    const budget: Record<string, number> = { 'design-guide': 5950, 'motion-guide': 2800, 'slides-guide': 1900, 'video-guide': 2300, 'theme-guide': 1400, 'design-system-guide': 1550, 'product-guide': 1750 };
+    const budget: Record<string, number> = { 'design-guide': 5950, 'motion-guide': 2800, 'slides-guide': 1900, 'video-guide': 2300, 'theme-guide': 1470, 'design-system-guide': 1550, 'product-guide': 1750 };
     for (const [topic, max] of Object.entries(budget)) expect(words(readGuide(topic)), topic).toBeLessThanOrEqual(max);
     expect(words(SERVER_INSTRUCTIONS)).toBeLessThanOrEqual(1250);
   });
@@ -143,7 +144,32 @@ describe('slides, video and theme guides', () => {
   it('theme-guide names every theme and the token namespace', () => {
     const g = readGuide('theme-guide');
     for (const id of ['ocelot-default', 'ocelot-default-dark', 'liquid-glass', 'expressive', 'soft-machine', 'clay', 'neo-brutalist', 'swiss-grid', 'aurora', 'editorial-serif', 'retro-y2k', 'terminal', 'organic-soft']) expect(g, id).toContain(id);
-    for (const s of ['list_themes', 'get_theme', 'apply_theme', '--theme-color-ink', '--theme-font-display']) expect(g, s).toContain(s);
+    for (const s of ['list_themes', 'get_theme', 'apply_theme', 'create_theme', '--theme-color-ink', '--theme-font-display']) expect(g, s).toContain(s);
+  });
+
+  it('with no style given the brief becomes a saved, task-specific system before the first write', () => {
+    const g = readGuide('design-guide');
+    const section = g.slice(g.indexOf('## 7. Before creating a new design'), g.indexOf('## 8. Writing incrementally'));
+    // the system is created before any write, the brief stays in reasoning, a stock theme or a given design still wins
+    expect(section).toMatch(/before your first create_artboard, update_page, begin_edit, apply_theme, create_theme or write/);
+    expect(section).toMatch(/not in chat/);
+    expect(section).toMatch(/create_theme named for the task/);
+    expect(section).toMatch(/create_design_system with the style, radius and fonts the product calls for/);
+    expect(section).toMatch(/get_design_tokens first/);
+    expect(section).toMatch(/gave or picked a design system or theme, or names a style a stock theme matches/);
+    expect(section).toMatch(/A hex value in a layer means no token fits/);
+    expect(SERVER_INSTRUCTIONS).toMatch(/save it as the document's system before the first write/);
+    expect(SERVER_INSTRUCTIONS).toMatch(/create_theme named for the task/);
+    expect(SERVER_INSTRUCTIONS).toMatch(/Settle it in your reasoning, never in chat/);
+    const theme = readGuide('theme-guide');
+    expect(theme).toContain('## 2. Your own theme');
+    for (const s of ['color-canvas, color-ink and color-accent are required', 'derived', 'refused', 'apply_theme({ theme_id: "ferrule"', 'Assets > Styles']) expect(theme, s).toContain(s);
+    expect(readGuide('design-system-guide')).toMatch(/never the stock defaults/);
+  });
+
+  it('the new text names no product', () => {
+    const own = [SERVER_INSTRUCTIONS, readGuide('theme-guide').slice(0, readGuide('theme-guide').indexOf('## 3. The catalog')), readGuide('design-guide').slice(readGuide('design-guide').indexOf('## 7. Before creating'), readGuide('design-guide').indexOf('## 8. Writing incrementally'))].join('\n');
+    expect(own).not.toMatch(/\b(linear|stripe|notion|shopify|figma|paper|apple|google|airbnb|vercel|spotify)\b/i);
   });
 
   it('design-system-guide covers the workflow, the eight styles and the semantic tokens', () => {

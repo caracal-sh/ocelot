@@ -40,6 +40,12 @@ struct AgentServiceStart: Codable, Sendable {
     var mcpToken: String
     /// Host-owned directory used as TMPDIR (holds the pre-unpacked helper dylib; the service may write there).
     var temporaryDirectory: String
+    /// The conversation's own directory for omp's session files (`--session-dir`): `Agent/conversations/<projectId>/<conversationId>`,
+    /// created by the app. The service refuses any other path; the entitlements let it read and write there and nowhere else
+    /// outside its container.
+    var sessionDirectory: String
+    /// Continue the session in `sessionDirectory` (`--continue`).
+    var resume: Bool
 }
 
 struct AgentProbeResult: Codable, Sendable, Equatable {

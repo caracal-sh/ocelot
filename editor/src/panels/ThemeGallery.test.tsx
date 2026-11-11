@@ -5,6 +5,8 @@ import { createRoot, type Root } from 'react-dom/client';
 import { EditorContext } from '../editor/context';
 import { Editor } from '../editor/Editor';
 import { THEMES } from '../themes/catalog';
+import { applyThemeAsHuman } from '../themes/actions';
+import { planOwnTheme } from '../themes/custom';
 import { ThemeGallery } from './ThemeGallery';
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
@@ -107,5 +109,65 @@ describe('Theme gallery', () => {
     act(() => q(el, 'theme-reset-overrides')!.click());
     expect(editor.doc.theme()).toEqual({ id: 'ocelot-default' });
     expect(q(el, 'theme-current')!.querySelector('.at-theme__badge')!.classList.contains('at-theme__badge--ok')).toBe(true);
+  });
+
+  describe('the document\'s own system', () => {
+    const ferrule = () => planOwnTheme({ name: 'Ferrule', tokens: { 'color-canvas': '#F6EEDF', 'color-ink': '#2B1A10', 'color-accent': '#B4451F', 'font-display': 'Fraunces' } }).ref;
+
+    it('is shown by name with its colours, fonts, radii and type scale, marked as this document\'s own', () => {
+      const { editor, el } = mount();
+      act(() => void applyThemeAsHuman(editor, ferrule()));
+      const current = q(el, 'theme-current')!;
+      expect(current.querySelector('.at-theme__name')!.textContent).toBe('Ferrule');
+      expect(el.querySelectorAll('[data-testid="theme-own"]')).toHaveLength(1);
+      expect(q(el, 'theme-own')!.textContent).toContain('This document');
+      expect(el.querySelector('.at-section__count')!.textContent).toBe('Ferrule');
+      expect(q(el, 'theme-token-accent')!.textContent).toContain('#B4451F');
+      expect(q(el, 'theme-token-surface')).not.toBeNull();
+      expect(q(el, 'theme-font-display')!.querySelector('select')!.value).toBe('Fraunces');
+      expect(q(el, 'theme-radius-lg')!.querySelector('input')!.value).toBe('10px');
+      expect(q(el, 'theme-text-5xl')!.textContent).toContain('64px');
+      // Nothing to "reset" on a system whose colours are the document's own choice.
+      expect(q(el, 'theme-reset-overrides')).toBeNull();
+      expect(q(el, 'theme-token-accent')!.querySelector('[aria-label="Reset accent"]')).toBeNull();
+    });
+
+    it('changing the accent restyles the artboards, keeps the system, re-derives its dependent colours and is one undo step', () => {
+      const { editor, el } = mount();
+      const ab = editor.doc.artboardIds()[0]!;
+      act(() => void applyThemeAsHuman(editor, ferrule()));
+      const hoverBefore = editor.doc.require(ab).styles['--theme-color-accent-hover'];
+      const input = q(el, 'theme-token-accent')!.querySelector<HTMLInputElement>('input[type="color"]')!;
+      input.value = '#1f5a8a';
+      act(() => void input.dispatchEvent(new Event('change', { bubbles: true })));
+      expect(editor.doc.theme()).toMatchObject({ id: 'ferrule', name: 'Ferrule', base: 'ocelot-default' });
+      expect(editor.doc.theme()!.overrides!['--theme-color-accent']).toBe('#1F5A8A');
+      expect(editor.doc.require(ab).styles['--theme-color-accent']).toBe('#1F5A8A');
+      expect(editor.doc.require(ab).styles['--theme-color-accent-hover']).not.toBe(hoverBefore);
+      expect(q(el, 'theme-current')!.querySelector('.at-theme__name')!.textContent).toBe('Ferrule');
+      act(() => void editor.history.undo());
+      expect(editor.doc.require(ab).styles['--theme-color-accent']).toBe('#B4451F');
+    });
+
+    it('a font picked in the panel becomes the token, keeping the stack\'s fallbacks', () => {
+      const { editor, el } = mount();
+      const ab = editor.doc.artboardIds()[0]!;
+      act(() => void applyThemeAsHuman(editor, ferrule()));
+      const select = q(el, 'theme-font-display')!.querySelector('select')!;
+      select.value = 'Newsreader';
+      act(() => void select.dispatchEvent(new Event('change', { bubbles: true })));
+      expect(editor.doc.require(ab).styles['--theme-font-display']).toBe('"Newsreader", system-ui, sans-serif');
+      expect(editor.doc.theme()).toMatchObject({ id: 'ferrule', base: 'ocelot-default' });
+    });
+
+    it('a radius typed in the panel becomes the token; nonsense is put back', () => {
+      const { editor, el } = mount();
+      const ab = editor.doc.artboardIds()[0]!;
+      act(() => void applyThemeAsHuman(editor, ferrule()));
+      const input = q(el, 'theme-radius-lg')!.querySelector('input')!;
+      input.value = '4px';
+      act(() => void input.dispatchEvent(new FocusEvent('focusout', { bubbles: true })));
+      expect(editor.doc.require(ab).styles['--theme-radius-lg']).toBe('4px');
+    });
   });
 });

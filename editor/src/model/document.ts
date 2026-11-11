@@ -303,13 +303,14 @@ export class OcelotDocument {
 
   /** The document's theme, or null when none was applied. */
   theme(): ThemeRef | null {
-    const v = this.meta.get('theme') as { id?: unknown; overrides?: unknown } | undefined;
+    const v = this.meta.get('theme') as { id?: unknown; name?: unknown; base?: unknown; overrides?: unknown } | undefined;
     if (typeof v !== 'object' || v === null || typeof v.id !== 'string' || !v.id) return null;
     const overrides: Record<string, string> = {};
     if (typeof v.overrides === 'object' && v.overrides !== null) {
       for (const [k, val] of Object.entries(v.overrides as Record<string, unknown>)) if (typeof val === 'string') overrides[k] = val;
     }
-    return Object.keys(overrides).length ? { id: v.id, overrides } : { id: v.id };
+    const own = typeof v.base === 'string' && v.base ? { name: typeof v.name === 'string' && v.name ? v.name : v.id, base: v.base } : {};
+    return { id: v.id, ...own, ...(Object.keys(overrides).length ? { overrides } : {}) };
   }
 
   /**
@@ -869,7 +870,7 @@ export class DocumentOps {
     });
   }
 
-  /** The document's theme: `{ id, overrides? }`, or null to remove it. */
+  /** The document's theme: `{ id, overrides? }` (own theme: plus `name`, `base`), or null to remove it. */
   setTheme(theme: ThemeRef | null): void {
     if (theme !== null) {
       if (typeof theme.id !== 'string' || !theme.id.trim()) throw new ModelError('invalid_argument', 'A theme needs an id. Call list_themes for the available ones.');
@@ -881,7 +882,10 @@ export class DocumentOps {
     if (ds) throw new ModelError('invalid_argument', `This document is owned by design system "${ds.name}", so it cannot have a theme. Edit it with update_design_system, or remove_design_system first.`);
     this.transact(() => {
       if (theme === null) this.doc.meta.delete('theme');
-      else this.doc.meta.set('theme', theme.overrides && Object.keys(theme.overrides).length ? { id: theme.id, overrides: { ...theme.overrides } } : { id: theme.id });
+      else {
+        const own = theme.base ? { name: theme.name || theme.id, base: theme.base } : {};
+        this.doc.meta.set('theme', { id: theme.id, ...own, ...(theme.overrides && Object.keys(theme.overrides).length ? { overrides: { ...theme.overrides } } : {}) });
+      }
     });
   }
 
