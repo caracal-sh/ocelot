@@ -26,6 +26,7 @@ function mirrorRenderer(editor: Editor, artboardId: string) {
     const el = document.createElement('div');
     el.setAttribute('data-node-id', id);
     for (const [k, v] of Object.entries(n.styles)) el.style.setProperty(k, v);
+    for (const [k, v] of Object.entries(n.attrs)) el.setAttribute(k, String(v));
     if (n.type === 'text') el.textContent = n.text;
     parent.append(el);
     els.set(id, el);
@@ -160,7 +161,7 @@ describe('end_edit', () => {
 describe('built-in held-out rules', () => {
   it('the five calm Checks are hidden from agents by default, a variant can show some, and its hiddenRules add to them', () => {
     const calm = ['text-wall', 'dense-screen', 'shouting-display', 'no-picture', 'tight-margin'];
-    const notMotion = (ids: readonly string[]) => ids.filter((id) => RULES[id]!.family !== 'motion').sort(); // the motion Checks are held out too (motionLint.test.ts)
+    const notMotion = (ids: readonly string[]) => ids.filter((id) => RULES[id]!.family !== 'motion' && RULES[id]!.family !== 'page').sort(); // the motion and page Checks are held out too (motionLint.test.ts, pageChecks.test.ts)
     expect(notMotion(HELD_OUT_RULES)).toEqual([...calm].sort());
     expect(notMotion(hiddenRules())).toEqual([...calm].sort());
     globalThis.__ocelotMcpOverrides = { showRules: ['no-picture'], hiddenRules: ['emoji-icon'] };
@@ -171,7 +172,61 @@ describe('built-in held-out rules', () => {
     for (const id of HELD_OUT_RULES) {
       expect(RULES[id], id).toMatchObject({ level: 'check' });
       // the calm rules judge a Persuade page; the motion Checks apply to every kind except the ones they name (films skip the state rules)
-      if (RULES[id]!.family !== 'motion') expect(RULES[id], id).toMatchObject({ notIn: ['app', 'deck', 'video'] });
+      if (RULES[id]!.family === 'page') expect(RULES[id], id).toMatchObject({ notIn: ['deck', 'video'] }); // page rules judge product screens, apps included
+      else if (RULES[id]!.family !== 'motion') expect(RULES[id], id).toMatchObject({ notIn: ['app', 'deck', 'video'] });
     }
+  });
+});
+
+describe('page-level Checks in inspect_design', () => {
+  const BUTTON = (label: string) => `<div style="padding:20px"><div role="button" data-name="Action" style="color:#111111;font-size:16px">${label}</div></div>`;
+  /** A page with two artboards, "Settings" and "Billing", each holding one button. */
+  async function twoScreens(first: string, second: string) {
+    const t = setupMcp();
+    const a = t.editor.doc.artboardIds()[0]!;
+    await t.call('update_artboard', { artboard_id: a, name: 'Settings' });
+    const b = (await t.callJson('create_artboard', { name: 'Billing', preset: 'desktop' })).artboard_id as string;
+    for (const [id, label] of [[a, first], [b, second]] as const) {
+      expect((await t.call('write_html', { node_id: id, mode: 'append', html: BUTTON(label) })).isError).toBeFalsy();
+      mirrorRenderer(t.editor, id);
+    }
+    return { ...t, a, b };
+  }
+
+  it('are held out: the agent sees nothing under page until a variant shows the rule', async () => {
+    const { callJson } = await twoScreens('Save', 'Save changes');
+    const hidden = await callJson('inspect_design', {});
+    expect(hidden['page']).toBeUndefined();
+    expect(hidden['summary']).toMatch(/^0 fix, 0 check across 2 artboards\.$/);
+    globalThis.__ocelotMcpOverrides = { showRules: ['action-labels'] };
+    const shown = await callJson('inspect_design', {});
+    expect(shown['summary']).toBe('0 fix, 0 check across 2 artboards, plus 1 page-level check.');
+    expect(shown['page']).toHaveLength(1);
+    expect(shown['page'][0]).toMatchObject({
+      rule_id: 'action-labels',
+      level: 'check',
+      name: 'Save changes',
+      measured: '“Save” on Settings; “Save changes” on Billing: 2 labels for one action',
+      threshold: 'one label per action, one capitalisation',
+      message: expect.stringMatching(/^One action should carry one label/),
+    });
+  });
+
+  it('names the artboards involved, and narrows to the artboards or layer asked about', async () => {
+    const { callJson, a, b, editor } = await twoScreens('Save', 'Update');
+    globalThis.__ocelotMcpOverrides = { showRules: ['action-labels'] };
+    const all = await callJson('inspect_design', {});
+    expect(all['page'][0].artboard_ids.sort()).toEqual([a, b].sort());
+    expect((await callJson('inspect_design', { artboard_ids: [b] }))['page']).toHaveLength(1);
+    const layer = [...editor.doc.subtreeIds(a)].find((id) => editor.doc.get(id)?.name === 'Action')!;
+    expect((await callJson('inspect_design', { node_id: layer }))['page']).toBeUndefined(); // the finding's layer is the odd label's, on the other artboard
+  });
+
+  it('is quiet when the labels agree, and for a single artboard', async () => {
+    globalThis.__ocelotMcpOverrides = { showRules: ['action-labels'] };
+    const same = await twoScreens('Save changes', 'Save changes');
+    expect((await same.callJson('inspect_design', {}))['page']).toBeUndefined();
+    const one = await page(BUTTON('Save') + BUTTON('Update'));
+    expect((await one.callJson('inspect_design', {}))['page']).toBeUndefined();
   });
 });

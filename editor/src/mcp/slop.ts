@@ -8,7 +8,8 @@
 
 import type { Editor } from '../editor/Editor';
 import { lintMotion } from '../inspect/motionLint';
-import { probeSlop, type ProbeKind } from '../inspect/probe';
+import { lintPage, type PageBoard } from '../inspect/pageChecks';
+import { probeSlop, type PageFacts, type ProbeKind } from '../inspect/probe';
 import { HELD_OUT_RULES, RULES, classify, formatFinding, type InspectFinding, type SkippedRule } from '../inspect/rules';
 import { contrastIssues } from './contrast';
 import { dsRawValueFinding } from './dsSlop';
@@ -20,6 +21,8 @@ export interface ArtboardInspection {
   /** False when the artboard is not rendered (never mounted): nothing was measured. */
   measured: boolean;
   findings: InspectFinding[];
+  /** What the page-level rules compare (action labels, radii, a data list); absent when the artboard was not measured. */
+  facts?: PageFacts;
   skipped: SkippedRule[];
 }
 
@@ -67,7 +70,33 @@ export function inspectArtboard(editor: Editor, artboardId: string, opts: { kind
   const raw = dsRawValueFinding(editor, artboardId);
   if (raw && !(opts.hidden ?? hiddenRules()).includes(raw.rule_id)) findings.push(raw);
   findings.sort((a, b) => (a.level === b.level ? 0 : a.level === 'fix' ? -1 : 1) || RULES[b.rule_id]!.weight - RULES[a.rule_id]!.weight);
-  return { artboard_id: artboardId, name, kind, measured: probed.laidOut, findings, skipped };
+  return { artboard_id: artboardId, name, kind, measured: probed.laidOut, findings, skipped, facts: probed.facts };
+}
+
+/** Pages with more artboards than this skip the page rules: probing every sibling would slow a big document's inspection for little. */
+const MAX_PAGE_ARTBOARDS = 24;
+
+/**
+ * The page-level findings (src/inspect/pageChecks.ts) of one page: labels, radii and state artboards compared across all its artboards.
+ * `known` are inspections already made (their facts are reused); the other artboards are probed here. Artboards that are not rendered
+ * count by name only. Decks and films have none.
+ */
+export function inspectPage(editor: Editor, pageId: string, opts: { hidden?: readonly string[]; known?: ReadonlyMap<string, ArtboardInspection> } = {}): InspectFinding[] {
+  const doc = editor.doc;
+  const pageKind = doc.pageKind(pageId);
+  const ids = doc.artboardIds(pageId);
+  if (pageKind === 'deck' || pageKind === 'video' || ids.length > MAX_PAGE_ARTBOARDS) return [];
+  const boards: PageBoard[] = ids.map((id) => {
+    const known = opts.known?.get(id);
+    if (known?.facts) return { id, name: known.name, kind: known.kind, facts: known.facts };
+    const ab = doc.get(id);
+    const root = editor.renderers.get(id)?.root as Element | undefined;
+    const name = ab?.name ?? id;
+    if (!ab?.frame || !root || !root.isConnected) return { id, name, kind: 'page', facts: { actions: [], radii: [], dataList: null } };
+    const probed = probeSlop({ root, width: ab.frame.width, height: ab.frame.height, kind: kindOf(editor, id) });
+    return { id, name, kind: probed.kind, facts: probed.facts };
+  });
+  return classify(lintPage(boards, { pageName: doc.pageName(pageId) }), { kind: 'page', hidden: opts.hidden ?? hiddenRules() }).findings;
 }
 
 /**

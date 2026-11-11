@@ -31,6 +31,8 @@ export interface ProbeFinding {
   threshold: string;
   /** Rules that group several elements say how many. */
   count?: number;
+  /** Page rules (inspect/pageChecks.ts) name the artboards they compare; per-artboard findings leave this out. */
+  artboards?: string[];
 }
 
 /** The numbers behind the calm rules, measured on every laid-out artboard with text (the eval reports them). */
@@ -49,6 +51,40 @@ export interface CalmMetrics {
   rightMarginPct: number | null;
 }
 
+/**
+ * What the page-level rules compare across the artboards of one page (inspect/pageChecks.ts). The probe only reads them off the artboard
+ * and raises nothing from them. Labels and radii are deduplicated per artboard (the first layer wins, `count` says how many).
+ */
+export interface ActionFact {
+  /** The visible label of a button, link or button-like control, whitespace collapsed (case kept). */
+  text: string;
+  nodeId: string | null;
+  count: number;
+}
+export interface RadiusFact {
+  /** Corner radius in px, rounded. Square corners, pills and circles (a radius of at least half the short side) are not recorded. */
+  px: number;
+  /** A control (button, field, select, button-like link) or a surface (a card, panel or dialog). */
+  kind: 'control' | 'surface';
+  /** A surface inside a surface with a larger radius: a concentric step, not a choice of its own (the rules do not count it). */
+  nested?: boolean;
+  nodeId: string | null;
+  name: string;
+  count: number;
+}
+/** A table, grid or row group of five or more rows: the artboard lists data. */
+export interface DataListFact {
+  nodeId: string | null;
+  name: string;
+  rows: number;
+}
+export interface PageFacts {
+  actions: ActionFact[];
+  /** Empty when the artboard is not laid out (radii need geometry). */
+  radii: RadiusFact[];
+  dataList: DataListFact | null;
+}
+
 export interface ProbeResult {
   /** The kind the rules ran as. */
   kind: ProbeKind;
@@ -56,16 +92,18 @@ export interface ProbeResult {
   laidOut: boolean;
   findings: ProbeFinding[];
   metrics?: CalmMetrics;
+  facts: PageFacts;
 }
 
 export function probeSlop(opts: ProbeOptions): ProbeResult {
   const root = opts.root ?? document.querySelector('[data-ocelot-root]');
   const out: ProbeFinding[] = [];
   const fallbackKind: ProbeKind = opts.kind === 'canvas' ? 'page' : opts.kind;
-  if (!root) return { kind: fallbackKind, laidOut: false, findings: out };
+  const noFacts: PageFacts = { actions: [], radii: [], dataList: null };
+  if (!root) return { kind: fallbackKind, laidOut: false, findings: out, facts: noFacts };
   const doc = root.ownerDocument;
   const view = doc.defaultView;
-  if (!view) return { kind: fallbackKind, laidOut: false, findings: out };
+  if (!view) return { kind: fallbackKind, laidOut: false, findings: out, facts: noFacts };
   const W = opts.width, H = opts.height;
   const kind: ProbeKind = opts.kind === 'canvas' ? (W >= 900 && root.querySelector('table, [role="grid"], aside') ? 'app' : 'page') : opts.kind;
   const rootRect = root.getBoundingClientRect();
@@ -690,5 +728,109 @@ export function probeSlop(opts: ProbeOptions): ProbeResult {
     }
   }
 
-  return { kind, laidOut, findings: out, ...(metrics ? { metrics } : {}) };
+  // ---------------------------------------------------------------- page facts (no findings): what the page-level rules compare across artboards
+  const squash = (t: string) => t.replace(/\s+/g, ' ').trim();
+  const facts: PageFacts = { actions: [], radii: [], dataList: null };
+  {
+    // Action labels. A control is a button, a link that stands alone (not inline in a sentence), a button role, or a layer that acts like one:
+    // a short label with a pointer cursor, or a small filled box around a short label. Agents write most buttons as plain divs and spans.
+    const NOT_BUTTON = /^(h[1-6]|p|ul|ol|li|dl|dt|dd|table|thead|tbody|tfoot|tr|td|th|label|figure|figcaption|blockquote|pre|code|nav|header|footer|main|section|article|aside|form|body|html|svg|img|select|textarea|option|summary|details)$/;
+    const FIELD = 'input,select,textarea,[role="combobox"],[role="textbox"],[role="searchbox"]';
+    const labelOf = (el: Element): string | null => {
+      const tag = el.tagName.toLowerCase();
+      const input = tag === 'input' ? (el as HTMLInputElement) : null;
+      const semantic = tag === 'button' || tag === 'a' || el.getAttribute('role') === 'button' || (!!input && /^(submit|button)$/i.test(input.type));
+      if (!semantic && (NOT_BUTTON.test(tag) || input)) return null;
+      const text = squash(input ? input.value : (el.textContent ?? ''));
+      if (text.length < 2 || text.length > 40 || !/[A-Za-z\u00C0-\u024F]/.test(text) || text.split(' ').length > 5) return null;
+      if (isHidden(el) || srOnly(el)) return null;
+      if (tag === 'a' && !surfaceOf(el) && cs(el).display === 'inline' && squash(el.parentElement?.textContent ?? '') !== text) return null;
+      if (semantic) return text;
+      if (el.querySelector('button,a,[role="button"],p,h1,h2,h3,h4,h5,h6,ul,ol,li,img,input')) return null;
+      if (cs(el).cursor === 'pointer') return text;
+      if (!laidOut) return null;
+      const r = rectOf(el);
+      const fill = parseColor(cs(el).backgroundColor);
+      return fill && fill[3] > 0.5 && r.h >= 24 && r.h <= 72 && r.w <= 400 ? text : null;
+    };
+    const labels = new Map<Element, string>();
+    const seenAction = new Map<string, ActionFact>();
+    for (const el of els) {
+      const text = labelOf(el);
+      if (!text) continue;
+      labels.set(el, text);
+      const seen = seenAction.get(text);
+      if (seen) seen.count++;
+      else seenAction.set(text, { text, nodeId: idOf(el), count: 1 });
+    }
+    facts.actions = [...seenAction.values()].slice(0, 60);
+
+    if (laidOut) {
+      // corner radii: controls (buttons, fields, button-like layers up to 72px tall) and surfaces (cards, panels, dialogs); pills, circles,
+      // square corners and media are not scale steps. A surface inside a surface with a larger radius (a screen in a phone frame, a card in
+      // a panel) takes a concentric radius from its parent, not a step of its own: it is marked `nested`.
+      const seenRadius = new Map<string, RadiusFact>();
+      const surfaceRadius = new Map<Element, number>();
+      for (const el of els) {
+        const tag = el.tagName.toLowerCase();
+        if (MEDIA.has(tag.toUpperCase()) || /^(table|thead|tbody|tfoot|tr|td|th|html|body)$/.test(tag)) continue;
+        if (tag === 'input' && /^(checkbox|radio|range|color|file|hidden)$/i.test((el as HTMLInputElement).type)) continue;
+        if (isHidden(el) || el === root) continue;
+        const control = el.matches(FIELD) || (labels.has(el) && rectOf(el).h <= 72);
+        if (!control && !surfaceOf(el)) continue;
+        const r = rectOf(el);
+        const short = Math.min(r.w, r.h);
+        if (short < (control ? 20 : 48) || (!control && r.w * r.h >= 0.7 * W * H)) continue;
+        const s = cs(el);
+        const px = Math.max(...['top-left', 'top-right', 'bottom-right', 'bottom-left'].map((c) => {
+          const v = (s.getPropertyValue(`border-${c}-radius`) || '0').trim().split(/\s+/)[0]!;
+          return v.endsWith('%') ? (parseFloat(v) / 100) * short : parseFloat(v) || 0;
+        }));
+        if (px < 0.75 || px >= short / 2 - 0.5) continue;
+        let nested = false;
+        if (!control) {
+          surfaceRadius.set(el, px);
+          for (let a: Element | null = el.parentElement; a && a !== root && !nested; a = a.parentElement) nested = (surfaceRadius.get(a) ?? 0) > px;
+        }
+        const key = `${control ? 'c' : nested ? 'n' : 's'}${round(px)}`;
+        const seen = seenRadius.get(key);
+        if (seen) seen.count++;
+        else seenRadius.set(key, { px: round(px), kind: control ? 'control' : 'surface', ...(nested ? { nested: true } : {}), nodeId: idOf(el), name: nameOf(el), count: 1 });
+      }
+      facts.radii = [...seenRadius.values()];
+    }
+
+    // data lists: a table or grid with five or more rows, or five or more sibling rows laid out side by side (avatar, name, role, actions…)
+    const found: { v: DataListFact | null } = { v: null };
+    const noteList = (el: Element, rows: number) => {
+      if (rows >= 5 && (!found.v || rows > found.v.rows)) found.v = { nodeId: idOf(el), name: nameOf(el), rows };
+    };
+    for (const t of Array.from(root.querySelectorAll('table'))) {
+      if (isHidden(t)) continue;
+      const body = t.querySelectorAll('tbody tr').length;
+      noteList(t, body || Math.max(0, t.querySelectorAll('tr').length - 1));
+    }
+    for (const g of Array.from(root.querySelectorAll('[role="grid"],[role="table"],[role="treegrid"]'))) {
+      if (!isHidden(g)) noteList(g, g.querySelectorAll('[role="row"]').length - 1);
+    }
+    if (laidOut) {
+      for (const p of [root, ...els]) {
+        if (p.children.length < 5) continue;
+        const kids = Array.from(p.children).filter((k) => !SKIP.has(k.tagName.toUpperCase()) && !isHidden(k));
+        const sig = (k: Element) => `${k.tagName}:${k.children.length}`;
+        const counts = new Map<string, number>();
+        for (const k of kids) counts.set(sig(k), (counts.get(sig(k)) ?? 0) + 1);
+        const common = [...counts.entries()].sort((a, b) => b[1] - a[1])[0];
+        const rows = common ? kids.filter((k) => sig(k) === common[0]) : [];
+        if (rows.length < 5 || rows[0]!.children.length < 3) continue;
+        const tops = rows.map((k) => k.getBoundingClientRect().top);
+        if (!tops.every((t, i) => i === 0 || t > tops[i - 1]! + 8)) continue;
+        const cols = Array.from(rows[0]!.children).filter((c) => !isHidden(c)).map((c) => c.getBoundingClientRect().left);
+        if (cols.length >= 3 && cols.every((l, i) => i === 0 || l > cols[i - 1]! + 4)) noteList(p, rows.length);
+      }
+    }
+    facts.dataList = found.v;
+  }
+
+  return { kind, laidOut, findings: out, facts, ...(metrics ? { metrics } : {}) };
 }

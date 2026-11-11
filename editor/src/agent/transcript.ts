@@ -8,6 +8,7 @@
 
 import type { Attachment } from './attachments';
 import { describeCall } from '../mcp/describe';
+import { patternById } from '../patterns/catalog';
 
 export type ToolStatus = 'running' | 'ok' | 'error';
 
@@ -294,6 +295,12 @@ export function toolLabel(item: ToolItem, nameOf?: (id: string) => string | unde
     case 'apply_theme': {
       const id = str(input?.['theme_id'])?.trim();
       return id === 'none' ? pick('Removing the theme', 'Removed the theme') : id ? pick(`Applying the theme ${id}`, `Applied the theme ${id}`) : pick('Applying a theme', 'Applied a theme');
+    }
+    case 'list_patterns':
+      return pick('Browsing patterns', 'Browsed patterns');
+    case 'get_pattern': {
+      const title = patternById(str(input?.['id'])?.trim() ?? '')?.title.toLowerCase();
+      return title ? pick(`Reading the ${title} pattern`, `Read the ${title} pattern`) : pick('Reading a pattern', 'Read a pattern');
     }
     case 'list_design_system_options':
       return pick('Browsing design system options', 'Browsed design system options');

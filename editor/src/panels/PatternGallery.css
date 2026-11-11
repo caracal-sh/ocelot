@@ -1,0 +1,39 @@
+/* Assets > Patterns. The cards follow the theme gallery: a 6px inset around a stage, the stage radius + inset on the card (concentric corners). */
+.at-pats { flex: 1; min-height: 0; overflow: auto; border-bottom: 0; }
+.at-pats__lede { margin: 0 0 8px; }
+.at-pats__filters { display: flex; flex-direction: column; gap: 8px; margin-bottom: 10px; }
+.at-pats__filters .at-row { margin-top: 0; }
+.at-pats__filters select.at-input { height: 24px; }
+.at-pats__list { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; }
+.at-pats__empty { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }
+.at-pats__empty p { margin: 0; }
+
+.at-pat { display: flex; flex-direction: column; gap: 6px; height: 100%; padding: 6px; border-radius: calc(var(--at-radius-m) + 6px); background: var(--at-bg); box-shadow: inset 0 0 0 1px var(--at-border); }
+.at-pat__stage { box-sizing: border-box; padding: 8px; border-radius: var(--at-radius-m); background: var(--at-panel); box-shadow: inset 0 0 0 1px var(--at-border); }
+.at-pat__sketch { display: block; width: 100%; height: auto; aspect-ratio: 100 / 62; }
+.at-pat__r--ink { fill: var(--at-text-2); }
+.at-pat__r--line { fill: var(--at-text-3); }
+.at-pat__r--box { fill: none; stroke: var(--at-text-3); stroke-width: 0.6; }
+.at-pat__r--fill { fill: var(--at-active); }
+.at-pat__r--accent { fill: var(--at-accent); }
+.at-pat__meta { display: flex; align-items: center; gap: 6px; min-width: 0; padding: 0 2px; }
+.at-pat__name { flex: 1; min-width: 0; margin: 0; font: var(--at-type-title); color: var(--at-text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.at-pat__tag { flex: none; padding: 1px 6px; border-radius: 9px; font: var(--at-type-small); color: var(--at-text-2); background: var(--at-hover); cursor: default; }
+.at-pat__summary { flex: 1; margin: 0; padding: 0 2px; font: var(--at-type-small); color: var(--at-text-2); text-wrap: pretty; }
+.at-pat__actions { display: flex; align-items: center; gap: 6px; padding: 0 2px; }
+.at-pat__more { color: var(--at-text-2); }
+
+/* The checklist opens by animating the grid row (no measuring); reduced motion opens it at once. */
+.at-pat__panel { display: grid; grid-template-rows: 0fr; visibility: hidden; }
+.at-pat__panel[data-open] { grid-template-rows: 1fr; visibility: visible; }
+.at-pat__panel-inner { min-height: 0; overflow: hidden; padding: 0 2px; }
+.at-pat__h { margin: 6px 0 2px; font: var(--at-type-small-strong); color: var(--at-text-2); }
+.at-pat__states { margin: 0; font: var(--at-type-small); color: var(--at-text); }
+.at-pat__checks { margin: 0; padding-left: 14px; font: var(--at-type-small); color: var(--at-text); }
+.at-pat__checks li { margin: 1px 0; }
+@media (prefers-reduced-motion: no-preference) {
+  .at-pat__panel { transition: grid-template-rows 200ms var(--at-ease-out), visibility 0s linear 200ms; }
+  .at-pat__panel[data-open] { transition-delay: 0s; }
+  .at-pat__panel-inner { opacity: 0; transition: opacity 150ms var(--at-ease-out); }
+  .at-pat__panel[data-open] .at-pat__panel-inner { opacity: 1; }
+}

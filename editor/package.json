@@ -29,6 +29,7 @@
     "ds:snapshot": "node scripts/ds-snapshot/fetch.mjs",
     "ds:specs": "node scripts/ds-snapshot/build-specs.mjs",
     "ds:preset-fixtures": "node scripts/preset-fixtures.mjs",
+    "e2e:patterns-agent": "node e2e/patterns-agent.mjs",
     "e2e:ds-blocks": "node e2e/ds-blocks.mjs",
     "e2e:ds-blocks-insert": "node e2e/ds-blocks-insert.mjs",
     "e2e:ds-blocks-gallery": "node e2e/ds-blocks-gallery.mjs",

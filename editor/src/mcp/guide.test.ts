@@ -80,7 +80,7 @@ describe('guide topics', () => {
       expect(textOf(r), topic).toBe(readGuide(topic));
       expect(textOf(r), topic).toMatch(/^# /);
     }
-    expect(GUIDE_TOPICS.map((t) => t.topic)).toEqual(expect.arrayContaining(['design-guide', 'motion-guide', 'mobile-status-bar', 'image-guide', 'slides-guide', 'video-guide', 'theme-guide', 'design-system-guide']));
+    expect(GUIDE_TOPICS.map((t) => t.topic)).toEqual(expect.arrayContaining(['design-guide', 'motion-guide', 'mobile-status-bar', 'image-guide', 'slides-guide', 'video-guide', 'theme-guide', 'design-system-guide', 'product-guide']));
   });
 
   it('unknown topics list the new guides', async () => {
@@ -91,7 +91,7 @@ describe('guide topics', () => {
   });
 
   it('server instructions send agents to every guide', () => {
-    for (const topic of ['design-guide', 'motion-guide', 'image-guide', 'slides-guide', 'video-guide', 'theme-guide', 'design-system-guide']) {
+    for (const topic of ['design-guide', 'motion-guide', 'image-guide', 'slides-guide', 'video-guide', 'theme-guide', 'design-system-guide', 'product-guide']) {
       expect(SERVER_INSTRUCTIONS, topic).toContain(`"${topic}"`);
     }
   });
@@ -103,7 +103,8 @@ describe('guide topics', () => {
     // and the canvas reveal note (data-name shows in the marker).
     // design-guide: +250 words for the property-to-tool rows of the app tools, preferences, sidebar chat, present/timeline/viewport
     // control, export/clipboard/handoff and image-import tools (everything a person can do has a row).
-    const budget: Record<string, number> = { 'design-guide': 5950, 'motion-guide': 2800, 'slides-guide': 1900, 'video-guide': 2300, 'theme-guide': 1400, 'design-system-guide': 1550 };
+    // product-guide: its own topic (1,700 words) because the design-guide is at its cap; agents fetch it only for app screens.
+    const budget: Record<string, number> = { 'design-guide': 5950, 'motion-guide': 2800, 'slides-guide': 1900, 'video-guide': 2300, 'theme-guide': 1400, 'design-system-guide': 1550, 'product-guide': 1750 };
     for (const [topic, max] of Object.entries(budget)) expect(words(readGuide(topic)), topic).toBeLessThanOrEqual(max);
     expect(words(SERVER_INSTRUCTIONS)).toBeLessThanOrEqual(1250);
   });
@@ -169,5 +170,24 @@ describe('slides, video and theme guides', () => {
   it('the system prompt names the guides', () => {
     const src = readFileSync(join(__dirname, '../agent/AgentChat.ts'), 'utf8');
     for (const topic of ['slides-guide', 'video-guide', 'theme-guide', 'design-system-guide', 'motion-guide']) expect(src, topic).toContain(topic);
+  });
+});
+
+describe('product-guide', () => {
+  const g = readGuide('product-guide');
+
+  it('covers every screen kind and the four distinct states', () => {
+    for (const s of ['## 2. Dashboards', '## 3. Four states', '## 4. Loading', '## 5. Onboarding', '## 6. Paywall', '## 7. Settings and billing', '## 8. One label per action', 'First use', 'No results', 'Error', 'No access', 'Request access', 'Try again', 'Clear filters']) expect(g, s).toContain(s);
+  });
+
+  it('names state artboards with the canvas convention and ends in pass / fail / unverified', () => {
+    expect(g).toMatch(/"Projects \/ No results — Desktop"/);
+    expect(g).toMatch(/pass, fail, unverified/);
+  });
+
+  it('is reachable from the server instructions and the design-guide, in our own words (no product names)', () => {
+    expect(SERVER_INSTRUCTIONS).toContain('get_guide({ topic: "product-guide" })');
+    expect(readGuide('design-guide')).toContain('get_guide({ topic: "product-guide" })');
+    expect(g).not.toMatch(/\b(uizze|mobbin|refero|linear|stripe|notion|shopify)\b/i);
   });
 });

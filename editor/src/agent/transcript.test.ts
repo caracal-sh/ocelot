@@ -199,3 +199,14 @@ describe('image tools in the transcript', () => {
     expect(thumbnailAlt({ ...item, tool: 'get_screenshot' })).toMatch(/Screenshot/);
   });
 });
+
+describe('pattern tools in the transcript', () => {
+  const tool = (name: string, input: Record<string, unknown> | null, status: ToolItem['status'] = 'running'): ToolItem => ({ kind: 'tool', id: 't', tool: name, input, status });
+
+  it('names the pattern the agent reads, or says it read one', () => {
+    expect(toolLabel(tool('list_patterns', {}))).toBe('Browsing patterns');
+    expect(toolLabel(tool('get_pattern', { id: 'settings' }))).toBe('Reading the settings pattern');
+    expect(toolLabel(tool('get_pattern', { id: 'sign-in-up' }, 'ok'))).toBe('Read the sign in and sign up pattern');
+    expect(toolLabel(tool('get_pattern', { need: 'a table of orders' }, 'ok'))).toBe('Read a pattern');
+  });
+});

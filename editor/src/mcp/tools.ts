@@ -44,6 +44,7 @@ import { DECK_EXPORT_TOOLS } from './pptxTools';
 import { VIDEO_TOOLS } from './videoTools';
 import { ASK_TOOLS } from './askTools';
 import { THEME_TOOLS } from './themeTools';
+import { PATTERN_TOOLS } from './patternTools';
 import { HANDOFF_TOOLS } from './handoffTools';
 import { CLIPBOARD_TOOLS } from './clipboardTools';
 import { HISTORY_TOOLS } from './historyTools';
@@ -918,7 +919,7 @@ const CORE_TOOLS: ToolDef[] = [
 ];
 
 /** Every tool, in the order agents see them: guide first, then read, write, structure. */
-export const TOOLS: ToolDef[] = [...QUERY_TOOLS.slice(0, 1), ...CORE_TOOLS, ...HANDOFF_TOOLS, ...INSPECT_TOOLS, ...QUERY_TOOLS.slice(1), ...PAGE_TOOLS, ...DECK_TOOLS, ...EDIT_TOOLS, ...FILL_TOOLS, ...CANVAS_TOOLS, ...ARRANGE_TOOLS, ...MOTION_TOOLS, ...LINK_TOOLS, ...PRESENT_TOOLS, ...CODE_TOOLS, ...TIMELINE_TOOLS, ...THEME_TOOLS, ...DESIGN_SYSTEM_TOOLS, ...ASSET_TOOLS, ...ASSET_MANAGE_TOOLS, ...COLOR_TOOLS, ...EXPORT_TOOLS, ...DECK_EXPORT_TOOLS, ...VIDEO_TOOLS, ...CLIPBOARD_TOOLS, ...HISTORY_TOOLS, ...PREFERENCES_TOOLS, ...SIDEBAR_AGENT_TOOLS, ...ASK_TOOLS];
+export const TOOLS: ToolDef[] = [...QUERY_TOOLS.slice(0, 1), ...CORE_TOOLS, ...HANDOFF_TOOLS, ...INSPECT_TOOLS, ...QUERY_TOOLS.slice(1), ...PAGE_TOOLS, ...DECK_TOOLS, ...EDIT_TOOLS, ...FILL_TOOLS, ...CANVAS_TOOLS, ...ARRANGE_TOOLS, ...MOTION_TOOLS, ...LINK_TOOLS, ...PRESENT_TOOLS, ...CODE_TOOLS, ...TIMELINE_TOOLS, ...THEME_TOOLS, ...DESIGN_SYSTEM_TOOLS, ...PATTERN_TOOLS, ...ASSET_TOOLS, ...ASSET_MANAGE_TOOLS, ...COLOR_TOOLS, ...EXPORT_TOOLS, ...DECK_EXPORT_TOOLS, ...VIDEO_TOOLS, ...CLIPBOARD_TOOLS, ...HISTORY_TOOLS, ...PREFERENCES_TOOLS, ...SIDEBAR_AGENT_TOOLS, ...ASK_TOOLS];
 
 /**
  * Runs a tool by name, converting failures into agent-readable tool errors. Every result of the calling agent carries, once,

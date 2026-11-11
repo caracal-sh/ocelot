@@ -17,6 +17,7 @@ import { createBrowserHost } from '../src/host/host.ts';
 import { artboardDocumentHtml } from '../src/render/serialize.ts';
 import { probeSlop } from '../src/inspect/probe.ts';
 import { classify } from '../src/inspect/rules.ts';
+import { lintPage } from '../src/inspect/pageChecks.ts';
 import { BUNDLED_FONT_FACE_CSS } from '../src/themes/fonts.ts';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -39,7 +40,7 @@ async function inspect(html, width, height, kind = 'canvas', themeId = null) {
   await page.evaluate(() => document.fonts.ready);
   const probed = await page.evaluate(probeSlop, { width, height, kind });
   await page.close();
-  return classify(probed.findings, { kind: probed.kind, themeId });
+  return { ...classify(probed.findings, { kind: probed.kind, themeId }), facts: probed.facts, kind: probed.kind };
 }
 const doc = (body, style = '') => `<!doctype html><body style="margin:0;font-family:Georgia,serif;color:#222;${style}">${body}`;
 const ids = (r) => r.findings.map((f) => f.rule_id);
@@ -260,6 +261,69 @@ describe('calm rules (held-out Checks): text-wall, dense-screen, shouting-displa
   });
 });
 
+describe('page facts and the page-level Checks (action-labels, radius-scale, state-coverage)', () => {
+  const PAGE_RULES = ['action-labels', 'radius-scale', 'state-coverage'];
+  const texts = (r) => r.facts.actions.map((a) => a.text);
+  const radii = (r) => r.facts.radii.map((x) => `${x.kind[0]}${x.nested ? 'n' : ''}${x.px}`).sort();
+  const base = (inner) => doc(`<div style="padding:60px 120px;width:1200px">${inner}</div>`);
+  const rounded = (px, size = 'width:200px;height:120px', extra = '') => `<div style="${size};border-radius:${px}px;background:#eef;${extra}"></div>`;
+
+  it('reads action labels off buttons, standalone links, button roles, submit inputs and button-like layers, not inline links or hidden ones', async () => {
+    const r = await inspect(
+      base(`<button>Save changes</button><a href="#" style="display:inline-block">Sign in</a><div role="button">Cancel</div><input type="submit" value="Send message">
+        <div style="cursor:pointer">Add project</div><span style="display:inline-block;padding:8px 16px;background:#222;color:#fff">Get started</span>
+        <p>Read the <a href="#">terms of service</a> before you continue.</p><button style="display:none">Hidden</button><div>Plain text</div><h2>Settings</h2>
+        <button>★</button>`),
+      1440, 700,
+    );
+    expect(texts(r).sort()).toEqual(['Add project', 'Cancel', 'Get started', 'Save changes', 'Send message', 'Sign in']);
+  });
+
+  it('reads controls and surfaces by radius; pills, circles, square corners and small chips are not steps', async () => {
+    const r = await inspect(
+      base(`<button style="height:40px;padding:0 16px;border-radius:6px;background:#222;color:#fff">Save</button>
+        <input style="height:40px;border-radius:8px;border:1px solid #ccc"><button style="height:40px;border-radius:999px;background:#222;color:#fff">Pill</button>
+        <button style="height:40px;border-radius:0;background:#222;color:#fff">Square</button><div style="width:40px;height:40px;border-radius:50%;background:#ccc"></div>
+        <input type="checkbox" style="width:24px;height:24px;border-radius:4px;border:1px solid #333">${rounded(16)}<span style="display:inline-block;height:20px;padding:0 6px;border-radius:4px;background:#eee;font-size:12px">tag</span>`),
+      1440, 700,
+    );
+    expect(radii(r)).toEqual(['c6', 'c8', 's16']);
+  });
+
+  it('marks a surface inside a larger-radius surface as nested (a screen in a phone frame), and a percentage radius as its share of the short side', async () => {
+    const r = await inspect(base(`<div style="width:300px;height:500px;border-radius:44px;background:#111;padding:10px;box-sizing:border-box"><div style="height:480px;border-radius:36px;background:#fff"></div></div>${rounded(0, 'width:200px;height:120px', 'border-radius:10%')}`), 1440, 800);
+    expect(radii(r)).toEqual(['s12', 's44', 'sn36']);
+  });
+
+  it('reads a data list: a table or grid of five or more rows, or five side-by-side rows; not a stack of cards, nor four rows', async () => {
+    const rows = (n) => Array.from({ length: n }, (_, i) => `<tr><td>Order ${i}</td><td>Ada</td><td>$${i}0</td></tr>`).join('');
+    expect((await inspect(base(`<table><thead><tr><th>Order</th><th>Name</th><th>Total</th></tr></thead><tbody>${rows(6)}</tbody></table>`), 1440, 700)).facts.dataList).toMatchObject({ rows: 6 });
+    expect((await inspect(base(`<table><tbody>${rows(4)}</tbody></table>`), 1440, 700)).facts.dataList).toBeNull();
+    const flexRows = (n) => `<div>${Array.from({ length: n }, (_, i) => `<div style="display:flex;gap:20px;height:40px;align-items:center"><span>Ada ${i}</span><span>Admin</span><span>Active</span></div>`).join('')}</div>`;
+    expect((await inspect(base(flexRows(7)), 1440, 700)).facts.dataList).toMatchObject({ rows: 7 });
+    const cards = `<div>${Array.from({ length: 6 }, (_, i) => `<div style="height:120px"><h3>Plan ${i}</h3><p>Copy</p><button>Choose</button></div>`).join('')}</div>`;
+    expect((await inspect(base(cards), 1440, 700)).facts.dataList).toBeNull();
+  });
+
+  it('end to end over four artboards: inconsistent labels, a radius sprawl and a screen with a lone empty state', async () => {
+    const settings = await inspect(base(`<button style="border-radius:4px;height:40px;background:#222;color:#fff">Save</button><input style="height:40px;border-radius:6px">`), 1440, 600);
+    const billing = await inspect(base(`<button style="border-radius:8px;height:40px;background:#222;color:#fff">Save changes</button><input style="height:40px;border-radius:10px">${rounded(12)}`), 1440, 600);
+    const team = await inspect(base(`<button style="border-radius:14px;height:40px;background:#222;color:#fff">Update</button>`), 1440, 600);
+    const boards = [['Settings', settings], ['Billing', billing], ['Team', team], ['Team / Empty', team]].map(([name, r]) => ({ id: name, name, kind: r.kind, facts: r.facts }));
+    const found = lintPage(boards);
+    expect(found.map((f) => f.rule).sort()).toEqual(['action-labels', 'radius-scale', 'state-coverage']);
+    expect(found.find((f) => f.rule === 'action-labels').measured).toBe("“Update” on Team and Team / Empty; “Save” on Settings; “Save changes” on Billing: 3 labels for one action");
+    expect(found.find((f) => f.rule === 'radius-scale').measured).toBe('5 different corner radii on controls (4px, 6px, 8px, 10px, 14px), 6 with cards and panels');
+    expect(found.find((f) => f.rule === 'state-coverage').measured).toBe('“Team” has Empty but no Loading or Error artboard');
+  });
+
+  it('a consistent set of product screens raises none of them', async () => {
+    const screen = base(`<button style="border-radius:8px;height:40px;background:#222;color:#fff">Save changes</button><input style="height:40px;border-radius:8px">${rounded(12)}`);
+    const [a, b] = [await inspect(screen, 1440, 600), await inspect(screen, 1440, 600)];
+    expect(lintPage([{ id: 'a', name: 'Settings', kind: a.kind, facts: a.facts }, { id: 'b', name: 'Billing', kind: b.kind, facts: b.facts }]).map((f) => f.rule).filter((x) => PAGE_RULES.includes(x))).toEqual([]);
+  });
+});
+
 describe('calibration on human-made references', () => {
   it('good.html raises zero Fix findings and none of the calm Checks', async () => {
     const html = await readFile(join(HERE, '..', 'src', 'inspect', 'fixtures', 'good.html'), 'utf8');
@@ -267,6 +331,7 @@ describe('calibration on human-made references', () => {
     expect(fixes(r)).toEqual([]);
     expect(r.findings.filter((f) => f.level === 'check').length).toBeLessThanOrEqual(3);
     expect(ids(r).filter((i) => ['text-wall', 'dense-screen', 'shouting-display', 'no-picture', 'tight-margin'].includes(i))).toEqual([]);
+    expect(lintPage([{ id: 'good', name: 'Landing', kind: r.kind, facts: r.facts }]), 'none of the page rules').toEqual([]);
   });
 
   it('poor.html raises several Fix findings (and no Check finding is needed to see it is poor)', async () => {
@@ -300,6 +365,7 @@ describe('calibration on human-made references', () => {
       await page.close();
       const r = await inspect(html(), 1280, height, 'canvas', t.id);
       expect(fixes(r).map((f) => `${t.id}: ${f.rule_id} ${f.measured}`), t.id).toEqual([]);
+      expect(lintPage([{ id: 'showcase', name: 'Landing', kind: r.kind, facts: r.facts }]).map((f) => `${t.id}: ${f.rule} ${f.measured}`), t.id).toEqual([]);
       // The showcase is a token demo (103 words on the first screen, no picture, 72px margins): it may raise these three calm Checks, never the other two.
       expect(ids(r).filter((i) => ['text-wall', 'shouting-display'].includes(i)), t.id).toEqual([]);
     }

@@ -8,7 +8,7 @@
 import type { ProbeFinding, ProbeKind } from './probe';
 
 export type RuleLevel = 'fix' | 'check';
-export type RuleFamily = 'frame' | 'type' | 'colour' | 'layout' | 'component' | 'copy' | 'motion';
+export type RuleFamily = 'frame' | 'type' | 'colour' | 'layout' | 'component' | 'copy' | 'motion' | 'page';
 
 export interface RuleDef {
   id: string;
@@ -94,6 +94,11 @@ const ALL_RULES: RuleDef[] = [
   { id: 'shouting-display', level: 'check', family: 'type', weight: 45, notIn: ['app', 'deck', 'video'], heldOut: true, say: 'The headline outsizes the page. Set display at 56-80px (about 5% of the width), two lines at most, weight 400-600, and let the picture and the space carry the scale; keep it only if the brief is loud.' },
   { id: 'no-picture', level: 'check', family: 'layout', weight: 48, notIn: ['app', 'deck', 'video'], heldOut: true, say: 'The first screen has no picture, object or interface fragment. Generate or place one (image-guide), or crop a real interface into the hero; text on flat fills reads as a template.' },
   { id: 'tight-margin', level: 'check', family: 'frame', weight: 44, notIn: ['app', 'deck', 'video'], heldOut: true, say: 'Text sits close to the side edges. Give the page side margins of 8-10% of its width and a content column up to about 1200px.' },
+
+  // ---- page (src/inspect/pageChecks.ts): counts over all the artboards of a page, listed by inspect_design under `page`; Check, held out until the eval promotes them
+  { id: 'action-labels', level: 'check', family: 'page', weight: 34, notIn: ['deck', 'video'], heldOut: true, say: 'One action should carry one label everywhere it appears. Pick the clearest (“Save changes”, “Sign in”), use it on every artboard and in one capitalisation; if the actions really differ, let the words show how (“Save draft”, “Publish”).' },
+  { id: 'radius-scale', level: 'check', family: 'page', weight: 29, notIn: ['deck', 'video'], heldOut: true, say: 'Corner radii should come from a short scale. Pick one radius for controls and one step larger for cards and panels (a third for dialogs if needed), keep a pill for chips, and replace the odd values with the nearest step; with a design system, use var(--radius) and its steps.' },
+  { id: 'state-coverage', level: 'check', family: 'page', weight: 32, notIn: ['deck', 'video'], heldOut: true, say: 'A screen that lists data has more than one state. Add the missing ones as sibling artboards named “Screen / Loading”, “Screen / Empty” and “Screen / Error”: a skeleton that keeps the layout, an empty state that says what the list will hold and offers the next action, an error that says what happened and offers a retry. If the screen never loads anything, rename it for what it is.' },
 ];
 
 export const RULES: Record<string, RuleDef> = Object.fromEntries(ALL_RULES.map((r) => [r.id, r]));
@@ -111,6 +116,8 @@ export interface InspectFinding {
   threshold: string;
   /** One line: what is wrong or asked, and what to do. */
   message: string;
+  /** Page rules: the artboards the finding compares (node_id is one layer or artboard among them). */
+  artboard_ids?: string[];
 }
 
 /** The sentence for one finding: `Fix: "Hero": left margin 140px, … Give the layout …` or `Check: "Cards": … Would the items …`. */
@@ -138,7 +145,7 @@ export function classify(raw: ProbeFinding[], opts: { kind: ProbeKind; themeId?:
       skipped.set(f.rule, { rule_id: f.rule, reason: `theme "${opts.themeId}" uses this device on purpose` });
       continue;
     }
-    findings.push({ rule_id: f.rule, level: def.level, node_id: f.nodeId, name: f.name, measured: f.measured, threshold: f.threshold, message: def.say });
+    findings.push({ rule_id: f.rule, level: def.level, node_id: f.nodeId, name: f.name, measured: f.measured, threshold: f.threshold, message: def.say, ...(f.artboards ? { artboard_ids: f.artboards } : {}) });
   }
   findings.sort((a, b) => (a.level === b.level ? 0 : a.level === 'fix' ? -1 : 1) || RULES[b.rule_id]!.weight - RULES[a.rule_id]!.weight);
   return { findings, skipped: [...skipped.values()] };

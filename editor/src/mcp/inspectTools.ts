@@ -3,7 +3,7 @@
 
 import { PROBE_KINDS } from '../inspect/probe';
 import { NODE_ID, ToolError, json, requireNode, str, type ToolDef } from './toolkit';
-import { hiddenRules, inspectArtboard } from './slop';
+import { hiddenRules, inspectArtboard, inspectPage, type ArtboardInspection } from './slop';
 
 export const INSPECT_TOOLS: ToolDef[] = [
   {
@@ -16,6 +16,7 @@ export const INSPECT_TOOLS: ToolDef[] = [
       'Each finding has rule_id, node_id, name, what was measured, the threshold and one line saying what to do. Fix every "fix"; answer each "check" with a reason from the brief or change it. ' +
       'Rules the applied theme uses on purpose are listed under skipped. get_screenshot already shows the five most important findings; call this for the whole list. ' +
       'Pass node_id (an artboard, or a node inside one: only findings in that subtree are listed) or artboard_ids; with neither, every artboard of the current page. ' +
+      'Findings that compare the artboards of a page (labels, corner radii, state artboards) come under "page", with the artboards they involve. ' +
       'kind ("page", "app", "deck", "video") overrides the inferred kind: deck and video pages are inferred from the page, a canvas artboard with a table, grid or sidebar is an app screen.',
     inputSchema: {
       type: 'object',
@@ -51,14 +52,25 @@ export const INSPECT_TOOLS: ToolDef[] = [
         boards = doc.artboardIds(ctx.session.pageId ?? editor.currentPageId);
       }
       const hidden = hiddenRules();
+      const inspected = new Map<string, ArtboardInspection>();
       const artboards = boards.map((id) => {
         const r = inspectArtboard(editor, id, { ...(kind ? { kind } : {}), hidden });
+        inspected.set(id, r);
         const findings = within ? r.findings.filter((f) => f.node_id && within.has(f.node_id)) : r.findings;
         const fix = findings.filter((f) => f.level === 'fix').length;
         return { artboard_id: r.artboard_id, name: r.name, kind: r.kind, ...(r.measured ? {} : { not_measured: 'The artboard is not rendered (open its page on the canvas), so nothing was measured.' }), fix, check: findings.length - fix, findings, ...(r.skipped.length ? { skipped: r.skipped } : {}) };
       });
+      // Page rules compare every artboard of the page, so they run once per page and are narrowed to the artboards (or the layer) asked about.
+      const pages = [...new Set(boards.map((id) => doc.pageOfArtboard(id)).filter((p): p is string => !!p))];
+      const page = pages.flatMap((p) => inspectPage(editor, p, { hidden, known: inspected })).filter((f) => (within ? !!f.node_id && within.has(f.node_id) : !!f.artboard_ids?.some((id) => boards.includes(id))));
       const total = artboards.reduce((a, b) => a + b.fix, 0);
-      return json({ summary: `${total} fix, ${artboards.reduce((a, b) => a + b.check, 0)} check across ${artboards.length} artboard${artboards.length === 1 ? '' : 's'}.`, artboards });
+      const checks = artboards.reduce((a, b) => a + b.check, 0);
+      const across = `across ${artboards.length} artboard${artboards.length === 1 ? '' : 's'}`;
+      return json({
+        summary: `${total} fix, ${checks} check ${across}${page.length ? `, plus ${page.length} page-level check${page.length === 1 ? '' : 's'}` : ''}.`,
+        artboards,
+        ...(page.length ? { page } : {}),
+      });
     },
   },
 ];

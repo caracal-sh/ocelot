@@ -187,3 +187,26 @@ describe('the get_screenshot block', () => {
     expect(slopNote([overflow])).toMatch(/Fix \[overflow\]/);
   });
 });
+
+describe('page facts', () => {
+  const facts = (html: string) => probe(render(html)).facts;
+
+  it('reads action labels off buttons, button roles, standalone links, submit inputs and pointer-cursor layers', () => {
+    const f = facts(
+      '<button>Save changes</button><div role="button">Cancel</div><a href="#" style="display:block">Sign in</a><input type="submit" value="Send message"><div style="cursor:pointer">Add project</div>' +
+        '<p>Read the <a href="#">terms</a> first.</p><button style="display:none">Hidden</button><div>Plain text</div><h2>Settings</h2><button>★</button>',
+    );
+    expect(f.actions.map((a) => a.text).sort()).toEqual(['Add project', 'Cancel', 'Save changes', 'Send message', 'Sign in']);
+  });
+
+  it('counts a repeated label once with how many layers carry it, and names a layer to look at', () => {
+    const [a] = facts('<div data-node-id="n1"><button data-node-id="n2">Save</button></div><button>Save</button>').actions;
+    expect(a).toMatchObject({ text: 'Save', nodeId: 'n2', count: 2 });
+  });
+
+  it('has empty facts without a root, and no radii or data lists without layout (jsdom)', () => {
+    expect(probeSlop({ root: document.createElement('div'), width: 100, height: 100, kind: 'page' }).facts).toEqual({ actions: [], radii: [], dataList: null });
+    expect(facts('<table><tbody>' + '<tr><td>a</td><td>b</td></tr>'.repeat(6) + '</tbody></table>').dataList).toMatchObject({ rows: 6 });
+    expect(facts('<button style="border-top-left-radius:8px">Save</button>').radii).toEqual([]);
+  });
+});
