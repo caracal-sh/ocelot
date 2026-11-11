@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="utf-8"?>
+<rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle">
+  <channel>
+    <title>Ocelot</title>
+    <link>https://github.com/caracal-sh/ocelot</link>
+    <description>Ocelot updates</description>
+    <language>en</language>
+    <item>
+      <title>Ocelot 0.3.0</title>
+      <pubDate>Wed, 11 Nov 2026 07:26:49 +0000</pubDate>
+      <sparkle:version>3</sparkle:version>
+      <sparkle:shortVersionString>0.3.0</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <description><![CDATA[<p>Ocelot is now open source under the GNU AGPL-3.0. Updates come straight from this repository and no longer need a GitHub sign-in.</p>
+<h3>Watch the agent design</h3>
+<ul>
+<li>Each part the agent writes plays onto the canvas: an outline in the agent's colour, then the content top to bottom. A marker shows what it is writing (&quot;Writing Hero&quot;), and the view follows work that happens off screen, without pulling the view away while you scroll.</li>
+<li>With the built-in agent, a section grows on the canvas while the agent is still writing it, then settles into real layers in a single undo step.</li>
+<li>The agent is present from the moment you press Send. Steps in the sidebar say what was built (&quot;Hero: headline and booking card&quot;), and badges name the agent (&quot;Claude is editing&quot;).</li>
+</ul>
+<h3>Work with the agent</h3>
+<ul>
+<li>Ask, queue and steer: agents can ask you multiple-choice questions; Enter queues a message while the agent works, ⌘↩ steers it mid-turn.</li>
+<li>Attach images, text files and long pastes to a prompt, in the sidebar and on Home.</li>
+<li>Image generation runs in the background while the agent keeps building. Choose the default image model in Settings › Images.</li>
+<li><strong>Hand off to an agent</strong> (Export menu): copy a prompt for a coding agent, or save a folder with screenshots, React code, the design system and the motion, so the design gets implemented as drawn.</li>
+<li>Every action in the app is available to agents over MCP, including opening Ocelot, creating and saving projects, and changing settings. Security settings stay yours.</li>
+</ul>
+<h3>Design systems</h3>
+<ul>
+<li>Build your own design system on shadcn/ui with Base UI: eight styles, colours, radius, fonts and icons, light and dark, with a token editor that checks contrast.</li>
+<li>About 60 components and 23 blocks (login, sign-up, sidebar layouts) become real layers on the canvas: change a token and every instance follows.</li>
+<li>Tweak individual components, paste or copy shadcn preset codes, and export a shadcn registry or React code with real component imports.</li>
+<li>A Design system page shows every foundation and component.</li>
+</ul>
+<h3>Better designs out of the box</h3>
+<ul>
+<li>Geist is the default type family, including Geist Serif and Geist Pixel.</li>
+<li>Agents follow tighter guidance on layout, calm type, real imagery and motion, and a built-in inspection flags layout defects and unintended defaults.</li>
+<li>Screens that belong together are linked, so you can click through them in Preview.</li>
+</ul>
+<h3>Everyday details</h3>
+<ul>
+<li>Real tooltips, a fully keyboard-accessible Layers panel (⇧⌘L locks, ⇧⌘H hides), and &quot;Back to content&quot; when you have panned away from everything.</li>
+<li>Calmer motion throughout the app, with reduced motion respected everywhere.</li>
+<li>Opening a document from Finder or the command line now works in every case.</li>
+<li>Home moves to ⇧⌘1.</li>
+</ul>]]></description>
+      <enclosure url="https://github.com/caracal-sh/ocelot/releases/download/v0.3.0/Ocelot-0.3.0.dmg" length="16853255" type="application/octet-stream" sparkle:edSignature="GMNk6kMaxmiDfiNaTq/gUivijlhv66+S5VeyrLrCC2ozYgyQ6o2JGeO0NoEcOpORAPCrzy94X5oPwO3eT3qPAg=="/>
+    </item>
+  </channel>
+</rss>
