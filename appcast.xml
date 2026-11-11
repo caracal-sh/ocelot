@@ -6,6 +6,23 @@
     <description>Ocelot updates</description>
     <language>en</language>
     <item>
+      <title>Ocelot 0.3.8</title>
+      <pubDate>Wed, 11 Nov 2026 18:55:43 +0000</pubDate>
+      <sparkle:version>1014</sparkle:version>
+      <sparkle:shortVersionString>0.3.8</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <description><![CDATA[<ul>
+<li>Long agent conversations keep working. Screenshots of whole pages are sent to the model smaller, the agent drops older screenshots after a busy turn and compacts the conversation on its own when it gets long. A conversation that has become too large compacts itself and asks you to send your message again, instead of failing with &quot;413&quot;.</li>
+<li>Compact button in the Agent tab: a summary replaces older messages and screenshots, and the agent keeps the gist.</li>
+<li>Preview switches between sizes. When a screen has a desktop and a mobile version (named like &quot;Home — Desktop&quot; and &quot;Home — Mobile&quot;), the Preview bar shows Desktop / Tablet / Mobile buttons that jump between them.</li>
+<li>Following several agents no longer jumps around: the camera zooms out once to show everything they are working on and stays there.</li>
+<li>Contrast is checked in hover, pressed and focus states too, so a button whose label disappears when you point at it is caught. The agent checks contrast in every state before it finishes.</li>
+<li>Screenshots no longer show photos blank now and then.</li>
+<li>The agent activity dot sits inside the Agent tab.</li>
+</ul>]]></description>
+      <enclosure url="https://github.com/caracal-sh/ocelot/releases/download/v0.3.8/Ocelot-0.3.8.dmg" length="17594542" type="application/octet-stream" sparkle:edSignature="WWBlZjqC4iFOGpfTJPAdODDae1epO5hF5a30+Oa6HHkEIB2BGBDnCQkA2qNMTV26EUL/OzTEckx/kNhm69quCw=="/>
+    </item>
+    <item>
       <title>Ocelot 0.3.7</title>
       <pubDate>Wed, 11 Nov 2026 13:00:55 +0000</pubDate>
       <sparkle:version>1013</sparkle:version>
