@@ -189,7 +189,9 @@ jobs:
           NOTARIZE: ${{ steps.notary.outputs.notarize }}
         run: |
           set -euo pipefail
-          OCELOT_BUILD="$(git rev-list --count HEAD)"
+          # Sparkle compares build numbers. This repo started over at commit 1, while builds from the earlier private repository
+          # went up to 45, so public builds start at 1000 + the commit count: always newer than every earlier build, and still growing.
+          OCELOT_BUILD="$((1000 + $(git rev-list --count HEAD)))"
           export OCELOT_BUILD
           make editor-build project
           if [[ "$NOTARIZE" == "true" ]]; then mode=release; else mode=dmg; fi
