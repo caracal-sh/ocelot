@@ -65,7 +65,8 @@ export function LockOverlay() {
   const active = new Set<string>();
   const byNode = new Map<string, Box>();
   for (const lock of editor.locks.active) {
-    for (const id of lock.nodeIds) {
+    // Editing a main rewrites every instance of it: those are covered too (coveredIds lists them with the locked layers).
+    for (const id of editor.locks.coveredIds(lock)) {
       const key = `${lock.id}:${id}`;
       active.add(key);
       const box = boxOf(editor, id);

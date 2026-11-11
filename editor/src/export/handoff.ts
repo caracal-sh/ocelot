@@ -8,6 +8,8 @@
 import type { OcelotDocument } from '../model/document';
 import { referencedAssetIds } from '../assets/refs';
 import { blocksIn, countInstances } from '../designsystem/components';
+import type { ComponentDef } from '../model/types';
+import { instanceRoots, propSignature, propSummary, type PropSummary } from './docComponents';
 import { presetCodeOf } from '../designsystem/knobs';
 import { radiusValue } from '../designsystem/model';
 import { registrySlug } from '../designsystem/export/registry';
@@ -85,6 +87,8 @@ export interface Handoff {
   design_system: HandoffDesignSystem | null;
   /** The document's theme (`--theme-*` tokens the React export writes to a stylesheet), when it has one instead of a design system. */
   theme: { id: string } | null;
+  /** The document components the screens use (an instance of each, or one a used component contains): build each once. Empty without any. */
+  components: HandoffComponent[];
   assets: { images: number; fonts: string[] };
   /** What the handoff leaves out, and why. */
   skipped: string[];
@@ -175,12 +179,67 @@ const BASE_CONSTRAINTS = [
   'Match the screenshots: layout, spacing, type, colour and every state the design shows. Take exact values from export_react or get_computed_styles, never from reading pixels.',
   'Keep the copy and the images as designed; no placeholder text or stock images.',
 ];
+const COMPONENTS_CONSTRAINT = 'Document components (the Components list) are built once and used wherever the design shows an instance: import them, never copy their markup into a screen. A prop changes what one instance shows (label, variant, an icon); the rest of the component is shared.';
 const DS_CONSTRAINTS = [
   'Use the design system\'s real components (imports from "@/components/ui/*"); never redraw a button, card, input or tab by hand.',
   'No colours, fonts, radii or shadows outside its tokens: use var(--primary), var(--muted-foreground) and the other semantic tokens. Dark artboards are the dark scheme of the same tokens (the `dark` class).',
 ];
 const THEME_CONSTRAINTS = ['No colours or fonts outside the theme\'s tokens (var(--theme-…) in the exported stylesheet).'];
 const ROUTES_CONSTRAINT = 'Links between screens are routes (/<slug>): wire a router so each flow below works, and keep external links as they are.';
+
+/** A document component the handed-off screens use. */
+export interface HandoffComponent {
+  id: string;
+  name: string;
+  description?: string;
+  /** The layer it is made from (its main). */
+  main_id: string;
+  /** Instances on the handed-off screens (visible ones). */
+  instances: number;
+  /** Names of the other components whose own layers contain an instance of this one. */
+  nested_in: string[];
+  props: PropSummary[];
+}
+
+/** The components the screens use: the ones they hold instances of, and those those components contain, by name. */
+export function handoffComponents(doc: OcelotDocument, screenIds: readonly string[]): HandoffComponent[] {
+  if (!doc.components.size) return [];
+  const count = new Map<string, number>();
+  for (const id of screenIds) {
+    for (const inst of instanceRoots(doc, id)) {
+      // An instance inside a main is the main's own business (`nested_in`), not a use on the screen.
+      if (doc.mainsContaining(inst).length) continue;
+      const c = doc.require(inst).instance!.component;
+      count.set(c, (count.get(c) ?? 0) + 1);
+    }
+  }
+  const all = new Map<string, ComponentDef>();
+  const nestedIn = new Map<string, Set<string>>();
+  const visit = (def: ComponentDef): void => {
+    if (all.has(def.id)) return;
+    all.set(def.id, def);
+    for (const id of doc.subtreeIds(def.root)) {
+      const inner = id === def.root ? undefined : doc.get(id)?.instance;
+      const innerDef = inner ? doc.component(inner.component) : null;
+      if (!innerDef) continue;
+      nestedIn.set(innerDef.id, (nestedIn.get(innerDef.id) ?? new Set()).add(def.name));
+      visit(innerDef);
+    }
+  };
+  for (const c of count.keys()) {
+    const def = doc.component(c);
+    if (def) visit(def);
+  }
+  return doc.componentList().filter((d) => all.has(d.id)).map((d) => ({
+    id: d.id,
+    name: d.name,
+    ...(d.description ? { description: d.description } : {}),
+    main_id: d.root,
+    instances: count.get(d.id) ?? 0,
+    nested_in: [...(nestedIn.get(d.id) ?? [])].sort(),
+    props: d.props.map((p) => propSummary(doc, p)),
+  }));
+}
 
 /** The brief, with its prompt rendered. */
 export function buildHandoff(src: HandoffSource, req: HandoffRequest): Handoff {
@@ -209,6 +268,7 @@ export function buildHandoff(src: HandoffSource, req: HandoffRequest): Handoff {
       ...(motion ? { motion } : {}),
     };
   });
+  const components = handoffComponents(doc, ids);
 
   const inScope = new Set(ids);
   const seen = new Set<string>();
@@ -250,6 +310,7 @@ export function buildHandoff(src: HandoffSource, req: HandoffRequest): Handoff {
     flows,
     design_system: designSystem,
     theme: theme ? { id: theme.id } : null,
+    components,
     assets: { images: referencedAssetIds(doc, ids).size, fonts: fontsForExport(doc, ids).map((f) => f.family) },
     skipped,
     agent: req.agent ? { kind: req.agent.kind, name: AGENT_NAMES[req.agent.kind], connected: req.agent.connected, connect: req.agent.connected ? null : req.agent.connect } : null,
@@ -258,7 +319,7 @@ export function buildHandoff(src: HandoffSource, req: HandoffRequest): Handoff {
     prompt: '',
   };
   handoff.steps = toolSteps(handoff, req.nodeIds);
-  handoff.constraints = [...(designSystem ? DS_CONSTRAINTS : theme ? THEME_CONSTRAINTS : []), ...BASE_CONSTRAINTS, ...(screens.length > 1 || flows.length ? [ROUTES_CONSTRAINT] : [])];
+  handoff.constraints = [...(designSystem ? DS_CONSTRAINTS : theme ? THEME_CONSTRAINTS : []), ...(components.length ? [COMPONENTS_CONSTRAINT] : []), ...BASE_CONSTRAINTS, ...(screens.length > 1 || flows.length ? [ROUTES_CONSTRAINT] : [])];
   handoff.prompt = promptText(handoff);
   return handoff;
 }
@@ -276,7 +337,7 @@ function toolSteps(h: Handoff, nodeIds: readonly string[] | undefined): string[]
   const each = h.screens.length > 1 ? ' for each screen' : '';
   // No step opens a save dialog for the person: the files arrive inline in get_handoff and the agent writes them into its own repo.
   const steps = [
-    `get_handoff ${scopeArgs(h, nodeIds, true)}: this brief again, current, plus the files inline (text or base64). Write them into your repo, e.g. under ./ocelot-handoff/: ${ds ? '`design-system/` (the shadcn registry), ' : ''}\`code/\` (React + Tailwind v4 components, their stylesheets, \`public/assets\`, \`public/fonts\`) and \`prototype/\` (linked static HTML). The screenshots are not in \`files\`: you get them in the next step.`,
+    `get_handoff ${scopeArgs(h, nodeIds, true)}: this brief again, current, plus the files inline (text or base64). Write them into your repo, e.g. under ./ocelot-handoff/: ${ds ? '`design-system/` (the shadcn registry), ' : ''}\`code/\` (React + Tailwind v4 components${h.components.length ? ', the document components in `code/components/`' : ''}, their stylesheets, \`public/assets\`, \`public/fonts\`) and \`prototype/\` (linked static HTML). The screenshots are not in \`files\`: you get them in the next step.`,
     `get_screenshot { "node_id": "<screen id>" }${each}: what the result must look like. Look at it before writing code.`,
   ];
   if (ds) {
@@ -285,7 +346,7 @@ function toolSteps(h: Handoff, nodeIds: readonly string[] | undefined): string[]
     );
   }
   steps.push(
-    `Adapt \`code/\` into the app: copy its .tsx and .css files into src/pages/, \`code/public/\` into public/, \`@import\` each stylesheet after "tailwindcss", and wire the routes. Start from those components, do not rewrite them. Only if you want a fresh copy of one screen: export_react { "node_id": "<screen id>"${ds ? ', "components": "ui"' : ''} }.`,
+    `Adapt \`code/\` into the app: copy its .tsx and .css files into src/pages/, ${h.components.length ? '`code/components/` into src/components/ (the screens import the document components as "@/components/<Name>"), ' : ''}\`code/public/\` into public/, \`@import\` each stylesheet after "tailwindcss", and wire the routes. Start from those components, do not rewrite them. Only if you want a fresh copy of one screen: export_react { "node_id": "<screen id>"${ds ? ', "components": "ui"' : ''} }.`,
   );
   if (h.screens.length > 1 || h.flows.length) steps.push('get_links: the click-through graph. Every flow below must work as a route in your app, and nothing may dangle.');
   return steps;
@@ -307,6 +368,36 @@ function designSystemLines(h: Handoff): string[] {
     `Design system: “${ds.name}”: shadcn ${ds.style} style on Base UI, ${ds.icon_library} icons, radius ${ds.radius}, fonts ${ds.fonts.sans}${ds.fonts.heading === 'inherit' ? '' : ` / ${ds.fonts.heading} (headings)`}.${ds.preset_code ? ` Preset code ${ds.preset_code}.` : ''}`,
     ...(ds.preset_notes.length ? [`  Note: ${ds.preset_notes.join(' ')}`] : []),
     ...(used.length ? [`  Components in these screens: ${used.join(', ')}.`] : []),
+  ];
+}
+
+function componentLine(c: HandoffComponent): string {
+  const used = c.instances ? `${c.instances} instance${c.instances === 1 ? '' : 's'}` : 'no instance on the screens themselves';
+  const inside = c.nested_in.length ? `, used inside ${c.nested_in.join(', ')}` : '';
+  return `- ${c.name}: ${used}${inside}; ${c.props.length ? `props ${c.props.map(propSignature).join(', ')}` : 'no props'}${c.description ? ` (${c.description})` : ''}`;
+}
+
+function componentLines(h: Handoff): string[] {
+  return [
+    `Components (${h.components.length}): reusable layers of the design, built once. The code in \`code/\` uses each as <Name … /> for every instance (imported from "@/components/<Name>"); implement them, do not repeat their markup.`,
+    ...h.components.map(componentLine),
+  ];
+}
+
+/** The folder's Components section: one row per component with the file the export wrote for it. */
+function componentSection(h: Handoff, layout: FolderLayout): string[] {
+  const cell = (s: string): string => s.replace(/\|/g, '\\|');
+  return [
+    'Reusable layers of the design. `code/components/` has each one once; the screens use it as `<Name … />` for every instance, with the props below (`className` and `style` place it). Build on these files, do not copy their markup into a screen.',
+    '',
+    '| Component | Props | Instances | File |',
+    '| --- | --- | --- | --- |',
+    ...h.components.map((c) => {
+      const file = layout.components?.find((l) => l.componentId === c.id);
+      const props = c.props.length ? c.props.map((p) => `\`${cell(propSignature(p))}\``).join('<br>') : 'none';
+      const inside = c.nested_in.length ? ` (inside ${c.nested_in.join(', ')})` : '';
+      return `| ${file?.name ?? c.name} | ${props} | ${c.instances}${inside} | ${file ? `\`code/${file.file}\`` : '(not exported)'} |`;
+    }),
   ];
 }
 
@@ -337,6 +428,7 @@ export function promptText(h: Handoff): string {
   out.push('', h.flows.length ? 'Flows (get_links):' : 'Flows: no screens are linked.', ...h.flows.map(flowLine));
   const ds = designSystemLines(h);
   if (ds.length) out.push('', ...ds);
+  if (h.components.length) out.push('', ...componentLines(h));
   out.push('', 'Call these Ocelot MCP tools, in this order:', ...h.steps.map((s, i) => `${i + 1}. ${s}`));
   if (hasMotion(h.screens)) out.push('', ...promptMotion(h));
   out.push('', 'Constraints:', ...h.constraints.map((c) => `- ${c}`));
@@ -357,6 +449,8 @@ export interface FolderLayout {
   hasPrototype: boolean;
   /** `screens/` has the 2× PNGs; false when the caller gets screenshots from get_screenshot instead. */
   hasScreenshots: boolean;
+  /** The document components' files in `code/components/` (the export names them), when the screens use any. */
+  components?: Array<{ componentId: string; name: string; file: string }>;
 }
 
 /** `HANDOFF.md`: the brief adapted to the files next to it. */
@@ -375,6 +469,7 @@ export function folderMarkdown(h: Handoff, layout: FolderLayout): string {
   out.push('', '## Flows', '', ...(h.flows.length ? [...h.flows.map(flowLine), '', 'The same flows are in `flows.json`.'] : ['No screens are linked.']));
   const dsLines = designSystemLines(h);
   if (dsLines.length) out.push('', '## Design system', '', ...dsLines);
+  if (h.components.length) out.push('', '## Components', '', ...componentSection(h, layout));
   if (ds && layout.hasRegistry) {
     out.push(
       '',
@@ -394,7 +489,7 @@ export function folderMarkdown(h: Handoff, layout: FolderLayout): string {
     '',
     '## How to run it',
     '',
-    `1. In a Vite + React + Tailwind v4 app (${ds ? 'created by the command above' : '`bun create vite`, then `bun add tailwindcss @tailwindcss/vite`'}), copy \`code/*.tsx\` and \`code/*.css\` into \`src/pages/\` and \`code/public/\` into \`public/\`.`,
+    `1. In a Vite + React + Tailwind v4 app (${ds ? 'created by the command above' : '`bun create vite`, then `bun add tailwindcss @tailwindcss/vite`'}), copy \`code/*.tsx\` and \`code/*.css\` into \`src/pages/\`${layout.components?.length ? ', `code/components/` into `src/components/` (the screens import it as `@/components/<Name>`)' : ''} and \`code/public/\` into \`public/\`.`,
     '2. `@import "./pages/<Name>.css";` in your stylesheet after `@import "tailwindcss";` (theme variables, `@theme`, `@font-face`).',
     '3. Add a router with one route per screen (the table above); the components link to each other by those paths.',
     '4. Run the app and compare every screen with its screenshot.',
@@ -424,7 +519,13 @@ export function flowsJson(h: Handoff, layout: FolderLayout): string {
     const file = layout.code.find((c) => c.screenId === s.id)?.file;
     return { id: s.id, name: s.name, route: s.route, width: s.width, height: s.height, screenshot: layout.hasScreenshots ? s.screenshot : null, component: file ? `code/${file}` : null, ...(s.motion ? { motion: s.motion } : {}) };
   });
-  return `${JSON.stringify({ project: h.project, screens, flows: h.flows }, null, 2)}\n`;
+  const components = layout.components?.length
+    ? h.components.map((c) => {
+        const written = layout.components!.find((l) => l.componentId === c.id);
+        return { ...c, identifier: written?.name ?? null, file: written ? `code/${written.file}` : null };
+      })
+    : [];
+  return `${JSON.stringify({ project: h.project, screens, flows: h.flows, ...(components.length ? { components } : {}) }, null, 2)}\n`;
 }
 
 const plural = (n: number, noun: string): string => `${n} ${noun}${n === 1 ? '' : 's'}`;
@@ -435,5 +536,6 @@ export function describeHandoff(h: Handoff): string {
   if (h.design_system) parts.push(`design system “${h.design_system.name}”`);
   else if (h.theme) parts.push(`theme “${h.theme.id}”`);
   if (h.assets.images) parts.push(plural(h.assets.images, 'image'));
+  if (h.components.length) parts.push(plural(h.components.length, 'component'));
   return parts.join(' · ');
 }

@@ -36,7 +36,7 @@ export class History {
 
   constructor(doc: OcelotDocument) {
     this.#doc = doc;
-    const scope = [doc.nodes, doc.artboards, doc.pages, doc.pageOrder, doc.meta, doc.keyframes];
+    const scope = [doc.nodes, doc.artboards, doc.pages, doc.pageOrder, doc.meta, doc.keyframes, doc.components];
     this.human = new Y.UndoManager(scope, {
       trackedOrigins: new Set([ORIGIN.human]),
       captureTimeout: 500,

@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
-  agentConfigYml, clientsFile, confinedEnv, defaultSelector, filterModels, modelsYml, pickerSelectors, sbString, seatbeltProfile, sha256Hex, SUPERVISED_WRAPPER,
+  agentConfigYml, BUNDLED_AGENTS_OFF, clientsFile, confinedEnv, defaultSelector, filterModels, modelsYml, pickerSelectors, sbString, seatbeltProfile, sha256Hex, SUBAGENT_CONCURRENCY, SUBAGENT_DEFINITION, SUBAGENT_DEFINITION_PATH, SUPERVISED_WRAPPER,
 } from './agent-sandbox.mjs';
 import { confinedMcpConfig, mcpConfig, ompArgs, SANDBOX_EXEC, SESSION_ID, verifyConfinement } from './omp-runner.mjs';
 import { existsSync } from 'node:fs';
@@ -55,9 +55,26 @@ describe('picker models', () => {
   });
   it('writes the default into the overlay', () => {
     const yml = agentConfigYml({ disabledProviders: ['native'], defaultModel: 'anthropic/a', thinkingLevel: 'auto' });
-    expect(yml).toContain('tools:\n  xdev: false\ndisabledProviders:\n  - native\n');
+    expect(yml).toContain('tools:\n  xdev: false\n');
+    expect(yml).toContain('disabledProviders:\n  - native\n');
     expect(yml).toContain('modelRoles:\n  default: "anthropic/a"\n');
     expect(yml).toContain('defaultThinkingLevel: "auto"');
+  });
+});
+
+describe('subagents', () => {
+  const yml = agentConfigYml({ disabledProviders: ['native'] });
+  it('caps concurrency, forbids nesting, blocks the turn on the spawn and disables every bundled agent', () => {
+    expect(yml).toContain('async:\n  enabled: false\n');
+    expect(yml).toContain(`task:\n  maxConcurrency: ${SUBAGENT_CONCURRENCY}\n  maxRecursionDepth: 1\n  disabledAgents:\n`);
+    for (const agent of BUNDLED_AGENTS_OFF) expect(yml).toContain(`    - ${agent}\n`);
+  });
+  it('defines the one agent a spawn can name: yield and the connected MCP tools, no spawns, no model', () => {
+    const front = SUBAGENT_DEFINITION.split('---')[1];
+    expect(front).toMatch(/^name: task$/m);
+    expect(front).toMatch(/^tools: yield$/m);
+    expect(front).not.toMatch(/^(spawns|model|thinkingLevel):/m);
+    expect(SUBAGENT_DEFINITION_PATH).toBe('.omp/agents/task.md');
   });
 });
 
@@ -221,7 +238,9 @@ describe('omp arguments', () => {
     expect(args).not.toContain('--no-session');
     expect(args.slice(0, 4)).toEqual(['--mode', 'rpc', '--session-dir', '/conv/p1/c1']);
     expect(args).not.toContain('--continue');
-    for (const flag of ['--no-tools', '--no-skills', '--no-rules', '--no-context-files', '--no-extensions', '--no-lsp', '--no-title']) expect(args).toContain(flag);
+    expect(args.slice(args.indexOf('--tools'), args.indexOf('--tools') + 2)).toEqual(['--tools', 'task']);
+    expect(args).not.toContain('--no-tools');
+    for (const flag of ['--no-skills', '--no-rules', '--no-context-files', '--no-extensions', '--no-lsp', '--no-title']) expect(args).toContain(flag);
   });
   it('continues the conversation only when resuming', () => {
     expect(ompArgs({ ...base, resume: true })).toContain('--continue');

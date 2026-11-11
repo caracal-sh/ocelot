@@ -3,8 +3,9 @@
 // Several artboards created in a row are visited in turn, one glide each.
 //
 // It never fights the person: nothing moves while they have moved the camera (a pan, a zoom, a fit, a resize) in the last
-// `QUIET_MS`, a glide in progress stops the moment they touch the camera, and Zoom menu > Follow agent turns the whole
-// thing off. Under `prefers-reduced-motion` the camera jumps (no glide). In-place edits only move the camera when what changed is
+// `QUIET_MS`, a glide in progress stops the moment they touch the camera, and the follow toggle (the eye next to the agent
+// indicator, Zoom menu > Follow agent) turns the whole thing off. With several agents at work the camera follows whichever
+// focuses last, or only the one the person picked (`editor.ui.followAgentKey`). Under `prefers-reduced-motion` the camera jumps (no glide). In-place edits only move the camera when what changed is
 // entirely off screen. Presentation only: it changes the viewport, never the document.
 
 import type { Editor } from '../editor/Editor';
@@ -41,6 +42,11 @@ export function cubicBezier(x1: number, y1: number, x2: number, y2: number): (t:
     }
     return by(s);
   };
+}
+
+/** Whether the camera heeds a focus event: always for "all agents" (`pick` null), else only for the picked agent's. */
+export function followsAgent(pick: string | null, e: FocusEvent): boolean {
+  return pick === null || e.agentKey === pick;
 }
 
 export interface FollowOptions {
@@ -84,8 +90,14 @@ export class CameraFollow {
   /** Starts listening to the agent's work; returns the stop function. */
   start(): () => void {
     const off = this.#editor.activity.onFocus((e) => this.#follow(e));
+    // A picked agent that has left is not followed any more: back to whichever agent focuses last (its key will not come back).
+    const offPick = this.#editor.activity.subscribe(() => {
+      const { ui, activity } = this.#editor;
+      if (ui.followAgentKey !== null && !activity.presences.some((p) => p.key === ui.followAgentKey)) ui.setFollowAgentKey(null);
+    });
     return () => {
       off();
+      offPick();
       this.#cancelRaf(this.#frame);
       this.#frame = 0;
     };
@@ -95,6 +107,7 @@ export class CameraFollow {
     const editor = this.#editor;
     const view = editor.viewport;
     if (!editor.ui.followAgent || editor.present.active || view.size.width <= 0) return;
+    if (!followsAgent(editor.ui.followAgentKey, e)) return;
     // The person is moving the camera, or just did: leave it alone.
     if (view.clock() - view.lastMoveAt < FOLLOW.quiet) return;
     const to = followTarget(editor, e);

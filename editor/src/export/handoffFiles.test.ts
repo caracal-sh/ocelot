@@ -121,4 +121,36 @@ describe('buildHandoffFolder', () => {
     expect(files.get('code/Pricing2.tsx')!.text).not.toContain('./Pricing.css');
     expect(new Set(folder.files.map((f) => f.path)).size).toBe(folder.files.length);
   });
+
+  it('writes the document components once in code/components/, with their images; the screens import them', async () => {
+    const p = await project({ designSystem: false });
+    const { human } = p.editor;
+    const mainImage = await p.editor.assets.importBase64(bytesToBase64(fakePng(8, 6, 3)), { name: 'avatar', kind: 'upload' });
+    const otherImage = await p.editor.assets.importBase64(bytesToBase64(fakePng(10, 6, 4)), { name: 'other', kind: 'upload' });
+    // the Avatar main lives on Pricing; Home only has instances of it
+    const [avatar] = human.insertNodes(p.pricing, [{ type: 'image', name: 'Avatar', attrs: { src: assetRef(mainImage.id), alt: 'Avatar' }, styles: { width: '40px', height: '40px' } }]);
+    const { componentId } = human.makeComponent([avatar!], { name: 'Avatar' });
+    human.updateComponent('Avatar', { props: [{ name: 'src', type: 'text', bind: [{ node: avatar!, field: 'attr:src' }] }] });
+    human.placeInstance('Avatar', p.home, { name: 'Me', props: { src: assetRef(otherImage.id) }, styles: { 'margin-left': '8px' } });
+    human.placeInstance('Avatar', p.home, { name: 'Default' });
+
+    const folder = await buildHandoffFolder(p.editor, p.host, p.brief());
+    const files = byPath(folder.files);
+    const component = files.get('code/components/Avatar.tsx')!.text!;
+    expect(folder.files.filter((f) => f.path === 'code/components/Avatar.tsx')).toHaveLength(1);
+    // the main's image is the component's default; no asset:// reference survives in the code
+    expect(component).toContain(`src = "/assets/${mainImage.id}.${mainImage.ext}"`);
+    const home = files.get('code/Home.tsx')!.text!;
+    expect(home).toContain('import { Avatar } from "@/components/Avatar";');
+    expect(home).toContain(`<Avatar src="/assets/${otherImage.id}.${otherImage.ext}" className="ml-2" />`);
+    expect(home).toContain('<Avatar />');
+    for (const f of folder.files.filter((x) => x.path.startsWith('code/') && x.text !== undefined)) expect(f.text, f.path).not.toContain('asset://');
+    // both images travel with the code
+    expect(files.get(`code/public/assets/${mainImage.id}.${mainImage.ext}`)).toMatchObject({ assetId: mainImage.id });
+    expect(files.get(`code/public/assets/${otherImage.id}.${otherImage.ext}`)).toMatchObject({ assetId: otherImage.id });
+    expect(folder.layout.components).toEqual([{ componentId, name: 'Avatar', file: 'components/Avatar.tsx' }]);
+    expect(files.get('HANDOFF.md')!.text).toContain('## Components');
+    expect(files.get('HANDOFF.md')!.text).toContain('`code/components/Avatar.tsx`');
+    expect(JSON.parse(files.get('flows.json')!.text!).components[0]).toMatchObject({ name: 'Avatar', identifier: 'Avatar', file: 'code/components/Avatar.tsx' });
+  });
 });

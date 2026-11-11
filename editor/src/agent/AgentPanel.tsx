@@ -1,11 +1,13 @@
 import { createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type ClipboardEvent, type KeyboardEvent, type ReactNode } from 'react';
 import { useEditor } from '../editor/context';
 import type { AgentChat, AgentModel, AgentSnapshot } from './AgentChat';
-import { thumbnailAlt, toolLabel, type ChatItem } from './transcript';
+import { thumbnailAlt, toolLabel, toolRunning, type ChatItem } from './transcript';
+import { TaskStep } from './TaskStep';
 import { ReadyGate, SignIn, Setup } from './SetupFlow';
 import { CrossfadeText } from '../app/Crossfade';
 import { useExitGhost } from '../app/exitGhost';
 import { Icon } from '../app/Icon';
+import { ReferenceChips } from './ReferenceChips';
 import { AttachmentChips, hasFiles, readPaste, useAttachments, type AttachmentSet } from './AttachmentChips';
 import { SUPPORTED_FILES, type Attachment } from './attachments';
 import { QuestionCards } from './QuestionCard';
@@ -184,6 +186,7 @@ function Item({ item, onSignIn, onCopy }: { item: ChatItem; onSignIn: () => void
           {item.context && <span className="at-msg__context">{item.context}</span>}
           {item.from && <span className="at-msg__tag" data-testid="agent-msg-from">From {item.from}</span>}
           {item.steered && <span className="at-msg__tag">Steered</span>}
+          {item.references && <ReferenceChips items={item.references} sent />}
           {item.attachments && <AttachmentChips items={item.attachments} onCopy={onCopy} sent />}
           <div className="at-msg__bubble">{item.text}</div>
         </div>
@@ -196,6 +199,7 @@ function Item({ item, onSignIn, onCopy }: { item: ChatItem; onSignIn: () => void
       if ((item.tool === 'ask_user' || item.tool === 'get_answers') && item.status !== 'error') return null;
       if (item.tool === 'end_edit' && item.status === 'ok') return null;
       if (item.job) return <ImageJobStep item={item} jobId={item.job} />;
+      if (item.agents?.length) return <TaskStep item={item} agents={item.agents} />;
       return (
         <div className={`at-step at-step--${item.status}${item.tool === 'begin_edit' ? ' at-step--edit' : ''}`} data-testid="agent-step" title={item.intent}>
           <span className="at-step__mark" aria-hidden="true" />
@@ -255,13 +259,15 @@ function Working({ turn, thinking, items }: { turn: NonNullable<AgentSnapshot['t
   const last = [...items].reverse().find((it) => it.kind === 'tool' || it.kind === 'assistant');
   // While text streams, the caret at its end says so (see Item); the label does not name that state.
   const waiting = !turn.stopping && last?.kind === 'tool' && last.status === 'running' && (last.tool === 'ask_user' || last.tool === 'get_answers');
-  const label = turn.stopping ? 'Stopping' : last?.kind === 'tool' && last.status === 'running' ? toolLabel(last, (id) => editor.doc.get(id)?.name) : thinking ? 'Thinking' : 'Working';
+  // A running `task` step above already names the subagents ("Working in parallel: …"): the live line stays short instead of repeating it.
+  const label = turn.stopping ? 'Stopping' : last?.kind === 'tool' && toolRunning(last) ? (last.tool === 'task' ? 'Working' : toolLabel(last, (id) => editor.doc.get(id)?.name)) : thinking ? 'Thinking' : 'Working';
   // Waiting for the person is not work: the dot holds still (no pulse) and the label says whose move it is.
   return (
     <div className={`at-working${waiting ? ' at-working--waiting' : ''}`} data-testid="agent-working" data-waiting={waiting || undefined}>
       <span className="at-lock__dot" aria-hidden="true" />
-      <span>
-        <CrossfadeText value={label} />…
+      <span className="at-working__text">
+        {/* The ellipsis is part of the faded text so a wrapping label never leaves it alone on a second line. */}
+        <CrossfadeText value={`${label}…`} />
       </span>
       <span className="at-working__time">{seconds}s</span>
     </div>
@@ -278,10 +284,14 @@ function Composer({ chat, snap, composerRef, attachments }: { chat: AgentChat; s
     (cb) => editor.selection.subscribe(cb),
     () => editor.selection.ids,
   );
+  const references = useSyncExternalStore(
+    (cb) => editor.references.subscribe(cb),
+    () => editor.references.items,
+  );
   const ready = snap.availability.kind === 'ready';
   const running = !!snap.turn;
   const { items, pending, errors } = attachments;
-  const canSend = ready && !pending && errors.size === 0 && (text.trim() !== '' || items.length > 0);
+  const canSend = ready && !pending && errors.size === 0 && (text.trim() !== '' || items.length > 0 || references.length > 0);
   const steerKey = useCommandHeld(running);
 
   // Grow with the text up to the CSS max-height.
@@ -297,11 +307,14 @@ function Composer({ chat, snap, composerRef, attachments }: { chat: AgentChat; s
     if (!canSend || snap.turn?.stopping) return;
     const sent = text;
     const sentAttachments = items;
+    const sentReferences = references;
     setText('');
     attachments.clear();
-    if (!(await chat.send(sent, sentAttachments, mode))) {
+    editor.references.clear();
+    if (!(await chat.send(sent, sentAttachments, mode, undefined, sentReferences))) {
       setText(sent);
       attachments.restore(sentAttachments);
+      editor.references.restore(sentReferences);
     }
   };
   // Stop withdraws the queue: its texts come back here (after what is already typed), so nothing typed is lost.
@@ -310,17 +323,19 @@ function Composer({ chat, snap, composerRef, attachments }: { chat: AgentChat; s
       chat.onRestoreDraft((draft) => {
         if (draft.text) setText((t) => (t.trim() ? `${t}\n\n${draft.text}` : draft.text));
         attachments.restore(draft.attachments);
+        if (draft.references?.length) editor.references.restore(draft.references);
       }),
-    [chat, attachments.restore],
+    [chat, editor, attachments.restore],
   );
   const drafting = useRef({ empty: true });
-  drafting.current.empty = text.trim() === '' && items.length === 0;
+  drafting.current.empty = text.trim() === '' && items.length === 0 && references.length === 0;
   /** × on a queued message: omp confirms the removal first; the typed text returns to the input only when the input is empty. */
   const removeQueued = async (item: QueuedItem, queue: QueueName) => {
     const { removed, draft } = await chat.removeQueued(item.key, queue);
     if (!removed || !draft || !drafting.current.empty) return;
     setText(draft.text);
     attachments.restore(draft.attachments);
+    if (draft.references?.length) editor.references.restore(draft.references);
     composerRef.current?.focus();
   };
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -330,9 +345,11 @@ function Composer({ chat, snap, composerRef, attachments }: { chat: AgentChat; s
     } else if (e.key === 'Escape') {
       if (running) void chat.cancel();
       else e.currentTarget.blur();
-    } else if (e.key === 'Backspace' && text === '' && items.length > 0 && !e.nativeEvent.isComposing) {
+    } else if (e.key === 'Backspace' && text === '' && (items.length > 0 || references.length > 0) && !e.nativeEvent.isComposing) {
+      // The last chip goes first: attachments sit below the layer references.
       e.preventDefault();
-      attachments.remove(items[items.length - 1]!.id);
+      if (items.length > 0) attachments.remove(items[items.length - 1]!.id);
+      else editor.references.remove(references[references.length - 1]!.id);
     }
   };
   const onPaste = (e: ClipboardEvent<HTMLTextAreaElement>) => {
@@ -367,6 +384,7 @@ function Composer({ chat, snap, composerRef, attachments }: { chat: AgentChat; s
           {selectionLabel}
         </span>
       )}
+      <ReferenceChips items={references} onRemove={(id) => editor.references.remove(id)} />
       <AttachmentChips items={items} errors={errors} onRemove={attachments.remove} onPasteAsText={pasteAsText} onCopy={(t) => chat.copyText(t)} />
       <textarea
         ref={composerRef}

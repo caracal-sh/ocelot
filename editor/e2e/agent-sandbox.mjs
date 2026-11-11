@@ -72,12 +72,42 @@ export function filterModels(hostModels, selectors) {
 /** Model providers the confined agent must not load: `apple` (omp's on-device model) unpacks and loads a dylib at startup, which a sandboxed process cannot do, and the gateway does not serve it. */
 export const CONFINED_MODEL_PROVIDERS_OFF = ['apple'];
 
+/**
+ * Subagents (omp's `task` tool, the one built-in the sidebar agent keeps): at most `SUBAGENT_CONCURRENCY` run at once, none
+ * spawns another, and the bundled agents (scout, designer, reviewer…: all have shell, file and web tools) are disabled, so
+ * the only agent a spawn can name is `SUBAGENT_DEFINITION` below. Mirrored in AgentLaunch.swift.
+ */
+export const SUBAGENT_CONCURRENCY = 4;
+export const BUNDLED_AGENTS_OFF = ['scout', 'designer', 'reviewer', 'security-reviewer', 'librarian', 'sonic'];
+
 export function agentConfigYml({ disabledProviders, defaultModel, thinkingLevel }) {
-  let text = `tools:\n  xdev: false\ndisabledProviders:\n${disabledProviders.map((p) => `  - ${p}\n`).join('')}`;
+  let text = `tools:\n  xdev: false\nasync:\n  enabled: false\ntask:\n  maxConcurrency: ${SUBAGENT_CONCURRENCY}\n  maxRecursionDepth: 1\n  disabledAgents:\n${BUNDLED_AGENTS_OFF.map((a) => `    - ${a}\n`).join('')}disabledProviders:\n${disabledProviders.map((p) => `  - ${p}\n`).join('')}`;
   if (defaultModel) text += `modelRoles:\n  default: ${JSON.stringify(defaultModel)}\n`;
   if (thinkingLevel) text += `defaultThinkingLevel: ${JSON.stringify(thinkingLevel)}\n`;
   return text;
 }
+
+/** Where the definition lives, relative to the agent's working directory (omp's project-level agents, which win over bundled ones of the same name). */
+export const SUBAGENT_DEFINITION_PATH = '.omp/agents/task.md';
+
+/**
+ * The one agent a spawn can name: `task` (replaces omp's bundled agent of that name). `tools: yield` is its whole built-in tool
+ * list (`yield` ends the run); omp adds every connected MCP tool, i.e. Ocelot's, through the parent's connection. No `model`
+ * or `thinkingLevel`: it runs on the sidebar's model and effort. No `spawns`: it spawns nothing. Mirrored in AgentLaunch.swift.
+ */
+export const SUBAGENT_DEFINITION = `---
+name: task
+description: Builds one self-contained part of an Ocelot design (one artboard or screen) with the ocelot design tools, then reports what it made.
+tools: yield
+---
+You are one of several design agents building the same Ocelot document at the same time, each on its own part. The person watches the canvas; every change you make through the ocelot tools appears live.
+
+You have only the ocelot design tools and yield: no shell, no files, no web. Follow the Ocelot MCP server instructions, read the guide topics your assignment names (the design guide once), and use the token and theme names it gives you instead of inventing colors and fonts.
+
+Work in one artboard only: the one your assignment hands you by id, else the one you create first with create_artboard, named exactly as your agent id (the name after "Your id is" in your instructions). Never edit, move or delete another artboard, the theme or the design system. begin_edit on your artboard before your first write and end_edit when you are done. Settle the brief in your reasoning, start building early, one visual group per write, and look with get_screenshot at the end.
+
+Do not ask the person questions; decide yourself. Finish with yield: the artboard's name and id and, in one sentence, what it holds. No headings, no lists.
+`;
 
 /** Picks the model omp should start with when the sidebar has none selected. */
 export function defaultSelector(userDefault, selectors) {

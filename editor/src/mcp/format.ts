@@ -45,7 +45,17 @@ function textPreview(n: NodeData): string {
   return t ? `"${clip(t, 48)}"` : '';
 }
 
-export function nodeLine(n: NodeData): string {
+/** "[main: Button]", "[instance of Button, overrides]", "[instance part]" or ''. Names need the document; without it ids stand in. */
+export function componentTag(n: NodeData, doc?: OcelotDocument): string {
+  if (n.component) return `[main: ${doc?.component(n.component)?.name ?? n.component}]`;
+  if (n.instance) {
+    const name = doc?.component(n.instance.component)?.name ?? n.instance.component;
+    return `[instance of ${name}${Object.keys(n.instance.overrides ?? {}).length || Object.keys(n.instance.props ?? {}).length ? ', customized' : ''}]`;
+  }
+  return n.of ? '[instance part]' : '';
+}
+
+export function nodeLine(n: NodeData, doc?: OcelotDocument): string {
   const bits: string[] = [n.id, n.type];
   const preview = n.type === 'text' ? textPreview(n) : '';
   const defaultName = { frame: 'Frame', text: 'Text', image: 'Image', svg: 'Vector', code: 'Code', artboard: '' }[n.type];
@@ -63,6 +73,8 @@ export function nodeLine(n: NodeData): string {
   const states = Object.keys(n.states).map((s) => (s === 'active' ? 'pressed' : s));
   if (states.length) bits.push(`[states: ${states.join(', ')}]`);
   if (n.locked) bits.push('[layer-locked]');
+  const tag = componentTag(n, doc);
+  if (tag) bits.push(tag);
   return bits.join(' ');
 }
 
@@ -78,8 +90,13 @@ export function formatTree(doc: OcelotDocument, rootIds: string[], maxDepth: num
     const n = doc.get(id);
     if (!n) return;
     const pad = '  '.repeat(depth);
-    lines.push(pad + nodeLine(n));
+    lines.push(pad + nodeLine(n, doc));
     if (n.children.length === 0) return;
+    // An instance's layers are mirrored from its main: listing them under every instance would only repeat the main.
+    if (n.instance && depth > 0) {
+      lines.push(`${pad}  … ${n.children.length} layers mirrored from the main (get_node ${n.id}, or get_doc_component for the main's outline)`);
+      return;
+    }
     if (depth >= maxDepth) {
       lines.push(`${pad}  … ${n.children.length} children (raise depth or call get_tree with root_id ${n.id})`);
       return;

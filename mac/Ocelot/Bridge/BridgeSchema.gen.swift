@@ -253,8 +253,14 @@ struct AgentHistoryEntries: Codable, Sendable, Equatable {
     var entries: [AgentHistoryEntry]
 }
 
+struct AgentHistoryFile: Codable, Sendable, Equatable {
+    var name: String
+    var dataBase64: String
+}
+
 struct AgentHistoryTranscript: Codable, Sendable, Equatable {
     var text: String? = nil
+    var files: [AgentHistoryFile]? = nil
 }
 
 struct AgentHistoryWriteParams: Codable, Sendable, Equatable {
@@ -262,6 +268,7 @@ struct AgentHistoryWriteParams: Codable, Sendable, Equatable {
     var id: String
     var meta: String
     var transcript: String? = nil
+    var files: [AgentHistoryFile]? = nil
 }
 
 struct AgentSendParams: Codable, Sendable, Equatable {

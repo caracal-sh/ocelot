@@ -160,7 +160,12 @@ const PATHS = {
   arrowUp: <path d="M8 13V3.5M4.5 7 8 3.5 11.5 7" />,
   arrowDown: <path d="M8 3v9.5M4.5 9 8 12.5 11.5 9" />,
   history: <path d="M2.5 8a5.5 5.5 0 1 0 1.6-3.9M2.5 2.8v2.6h2.6M8 5.2V8l1.9 1.2" />,
+  askAgent: <path d="M4 3h8a1.5 1.5 0 0 1 1.5 1.5v5A1.5 1.5 0 0 1 12 11H8.2L5.5 13.5V11H4A1.5 1.5 0 0 1 2.5 9.5v-5A1.5 1.5 0 0 1 4 3zM8 5.2v3.1M6.45 6.75h3.1" />,
   trash: <path d="M3 4.5h10M6.5 4.5V3h3v1.5M4.5 4.5l.6 8.2a1 1 0 0 0 1 .8h3.8a1 1 0 0 0 1-.8l.6-8.2M7 7v4M9 7v4" />,
+  // Document components: the main is four diamonds, an instance one diamond around a smaller one.
+  component: <path d="M8 2.5 9.75 4.25 8 6 6.25 4.25zM11.75 6.25 13.5 8 11.75 9.75 10 8zM8 10 9.75 11.75 8 13.5 6.25 11.75zM4.25 6.25 6 8 4.25 9.75 2.5 8z" />,
+  instance: <path d="M8 2.5 13.5 8 8 13.5 2.5 8zM8 6.25 9.75 8 8 9.75 6.25 8z" />,
+  target: <path d="M2.5 8h2.5M11 8h2.5M8 2.5V5M8 11v2.5M8 6a2 2 0 1 0 0 4 2 2 0 0 0 0-4z" />,
 } satisfies Record<string, ReactNode>;
 
 export type IconName = keyof typeof PATHS;

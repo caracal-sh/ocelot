@@ -38,10 +38,22 @@ final class AgentLaunchTests: XCTestCase {
 
     func testOverlayDisablesDiscoveryAndNamesTheDefaultModel() {
         let yml = AgentLaunch.configOverlay(defaultModel: "anthropic/a", thinkingLevel: "auto")
-        XCTAssertTrue(yml.hasPrefix("tools:\n  xdev: false\ndisabledProviders:\n  - native\n"))
+        XCTAssertTrue(yml.hasPrefix("tools:\n  xdev: false\n"))
+        XCTAssertTrue(yml.contains("disabledProviders:\n  - native\n"))
         XCTAssertTrue(yml.contains("modelRoles:\n  default: \"anthropic/a\"\n"))
         XCTAssertTrue(yml.contains("defaultThinkingLevel: \"auto\""))
         XCTAssertFalse(AgentLaunch.configOverlay().contains("modelRoles"))
+    }
+
+    func testSubagentsAreCappedBlockingAndOnlyTheOcelotAgent() {
+        let yml = AgentLaunch.configOverlay()
+        XCTAssertTrue(yml.contains("async:\n  enabled: false\n"))
+        XCTAssertTrue(yml.contains("task:\n  maxConcurrency: \(AgentLaunch.subagentConcurrency)\n  maxRecursionDepth: 1\n  disabledAgents:\n"))
+        for agent in AgentLaunch.bundledAgentsOff { XCTAssertTrue(yml.contains("    - \(agent)\n"), agent) }
+        XCTAssertTrue(AgentLaunch.subagentDefinition.contains("\nname: task\n"))
+        XCTAssertTrue(AgentLaunch.subagentDefinition.contains("\ntools: yield\n"))
+        XCTAssertFalse(AgentLaunch.subagentDefinition.contains("\nspawns:"))
+        XCTAssertFalse(AgentLaunch.subagentDefinition.contains("\nmodel:"))
     }
 
     func testDefaultSelectorPrefersUserDefaultThenAnthropic() {
@@ -55,9 +67,11 @@ final class AgentLaunchTests: XCTestCase {
         XCTAssertEqual(env, ["HOME": "/h", "PI_CODING_AGENT_DIR": "/h/a", "TMPDIR": "/h/tmp", "PATH": "/usr/bin:/bin", "LANG": "en_US.UTF-8", "OCELOT_GATEWAY_TOKEN": "t", "OCELOT_MCP_TOKEN": "m"])
     }
 
-    func testArgumentsExposeOnlyMCPTools() {
+    func testArgumentsExposeOnlyMCPToolsAndTask() {
         let args = AgentLaunch.ompArguments(configFile: "/c", systemPromptFile: "/p", model: "anthropic/a", thinking: "low", sessionDirectory: "/s/p1/c1", resume: false)
-        for flag in ["--no-tools", "--no-skills", "--no-rules", "--no-context-files", "--no-extensions", "--no-lsp"] {
+        XCTAssertFalse(args.contains("--no-tools"))
+        XCTAssertEqual(args[args.firstIndex(of: "--tools")! + 1], "task")
+        for flag in ["--no-skills", "--no-rules", "--no-context-files", "--no-extensions", "--no-lsp"] {
             XCTAssertTrue(args.contains(flag), flag)
         }
         XCTAssertEqual(args.suffix(4), ["--model", "anthropic/a", "--thinking", "low"])
@@ -84,18 +98,6 @@ final class AgentLaunchTests: XCTestCase {
             XCTAssertNil(AgentConversationPaths.sessionDirectory(agentFolder: folder, projectId: "p", conversationId: bad), bad)
         }
         XCTAssertNil(AgentConversationPaths.sessionDirectory(agentFolder: folder, projectId: "p", conversationId: "a_b")) // underscores are project-id only
-    }
-
-    /// The sandboxed service only accepts the directory the entitlements cover: exactly one conversation folder, nothing above or beside it.
-    func testServiceAcceptsOnlyAConversationDirectory() {
-        let folder = "/home/d/Library/Application Support/Ocelot/Agent"
-        XCTAssertTrue(AgentConversationPaths.isSessionDirectory("\(folder)/conversations/p1/c1", agentFolder: folder))
-        for bad in [
-            "\(folder)/conversations", "\(folder)/conversations/p1", "\(folder)/conversations/p1/c1/sub", "\(folder)/conversations/p1/../../history/p1",
-            "\(folder)/conversations//c1", "\(folder)/history/p1/c1", "\(folder)/tmp", "/home/d/.omp/agent", "\(folder)/conversations/p1/c 1",
-        ] {
-            XCTAssertFalse(AgentConversationPaths.isSessionDirectory(bad, agentFolder: folder), bad)
-        }
     }
 
     func testMCPConfigCarriesTheScopedTokenAndNoWindowHeader() throws {

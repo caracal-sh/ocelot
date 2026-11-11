@@ -10,6 +10,7 @@ import type { LockManager } from './locks';
 import { SERVER_INSTRUCTIONS, TOOLS, callTool, type ToolContext } from './tools';
 import type { McpSession } from './toolkit';
 import { toolLabel } from '../agent/transcript';
+import { isOmpClient } from '../editor/questions';
 
 export const SUPPORTED_PROTOCOL_VERSIONS = ['2025-11-25', '2025-06-18', '2025-03-26', '2024-11-05'];
 export const SERVER_NAME = 'ocelot';
@@ -75,6 +76,8 @@ export interface ToolCallRecord {
   ms: number;
   isError: boolean;
   client: string;
+  /** The subagent that made the call (the sidebar agent's `task` workers share its client); absent for the client itself. */
+  agent?: { key: string; name: string };
   /** First line of the error text, for error analysis. */
   error?: string;
 }
@@ -175,7 +178,9 @@ export class McpServer {
         const { doc } = this.deps.editor;
         const activity = toolLabel({ kind: 'tool', id: '', tool: name, input: args, status: 'running' }, (id) => doc.get(id)?.name);
         this.deps.editor.mcpClients.touch(client, name, undefined, activity);
-        const ctx: ToolContext = { ...this.deps, clientName: client, session };
+        // The sidebar's subagents share its omp connection: a call it makes while subagents run may be theirs (editor.subagents).
+        const agent = isOmpClient(client) ? this.deps.editor.subagents.attribute(name, args) : null;
+        const ctx: ToolContext = { ...this.deps, clientName: client, session, ...(agent ? { agent } : {}) };
         const t0 = Date.now();
         const result = await callTool(name, args, ctx);
         const record: ToolCallRecord = {
@@ -184,6 +189,7 @@ export class McpServer {
           ms: Date.now() - t0,
           isError: !!result.isError,
           client,
+          ...(agent ? { agent: { key: agent.key, name: agent.name } } : {}),
           ...(result.isError ? { error: (result.content.find((c) => c.type === 'text') as { text: string } | undefined)?.text.split('\n')[0]?.slice(0, 240) } : {}),
         };
         this.calls.push(record);

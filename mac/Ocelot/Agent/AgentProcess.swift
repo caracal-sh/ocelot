@@ -83,12 +83,12 @@ final class XPCAgentProcess: AgentProcessHandle {
         self.connection = connection
     }
 
-    static func start(_ request: AgentServiceStart, sink: AsyncStream<AgentChunk>.Continuation) async throws -> XPCAgentProcess {
+    static func start(_ request: AgentServiceStart, sessionFiles: Data, sink: AsyncStream<AgentChunk>.Continuation) async throws -> XPCAgentProcess {
         let connection = AgentServiceConnection.shared
         connection.register(sessionId: request.sessionId, sink: sink)
         do {
             let payload = try JSONEncoder().encode(request)
-            try await connection.start(payload)
+            try await connection.start(payload, sessionFiles: sessionFiles)
         } catch {
             connection.unregister(sessionId: request.sessionId)
             sink.finish()
@@ -114,6 +114,8 @@ final class AgentServiceConnection: NSObject, OcelotAgentClientProtocol, @unchec
     private let lock = NSLock()
     private var connection: NSXPCConnection?
     private var sinks: [String: AsyncStream<AgentChunk>.Continuation] = [:]
+    /// The scratch copies a service instance left behind are taken home once per connection, before the first agent starts.
+    private var recovery: Task<Void, Never>?
 
     func register(sessionId: String, sink: AsyncStream<AgentChunk>.Continuation) {
         lock.lock()
@@ -128,11 +130,15 @@ final class AgentServiceConnection: NSObject, OcelotAgentClientProtocol, @unchec
     }
 
     private func proxy(onError: @escaping @Sendable (Error) -> Void) -> OcelotAgentServiceProtocol? {
+        ensureConnection().remoteObjectProxyWithErrorHandler(onError) as? OcelotAgentServiceProtocol
+    }
+
+    @discardableResult
+    private func ensureConnection() -> NSXPCConnection {
         lock.lock()
         let existing = connection
         lock.unlock()
-        let live = existing ?? makeConnection()
-        return live.remoteObjectProxyWithErrorHandler(onError) as? OcelotAgentServiceProtocol
+        return existing ?? makeConnection()
     }
 
     private func makeConnection() -> NSXPCConnection {
@@ -157,6 +163,7 @@ final class AgentServiceConnection: NSObject, OcelotAgentClientProtocol, @unchec
         let pending = sinks
         sinks = [:]
         connection = nil
+        recovery = nil // the next connection is a new service instance: what this one left behind has to be looked at again
         lock.unlock()
         Self.finish(pending.values, message: message)
     }
@@ -172,15 +179,65 @@ final class AgentServiceConnection: NSObject, OcelotAgentClientProtocol, @unchec
         }
     }
 
-    func start(_ payload: Data) async throws {
+    func start(_ payload: Data, sessionFiles: Data) async throws {
         let message: String? = try await withCheckedThrowingContinuation { continuation in
             guard let proxy = proxy(onError: { continuation.resume(throwing: BridgeFailure(.hostUnavailable, Self.unavailable($0))) }) else {
                 continuation.resume(throwing: BridgeFailure(.hostUnavailable, Self.unavailable(nil)))
                 return
             }
-            proxy.start(payload) { continuation.resume(returning: $0) }
+            proxy.start(payload, sessionFiles: sessionFiles) { continuation.resume(returning: $0) }
         }
         if let message { throw BridgeFailure(.hostUnavailable, message) }
+    }
+
+    /// The process's session files as the service's scratch holds them now (an `AgentSessionArchive`); nil when the scratch is gone.
+    func snapshot(sessionId: String) async throws -> Data? {
+        try await withCheckedThrowingContinuation { continuation in
+            guard let proxy = proxy(onError: { continuation.resume(throwing: BridgeFailure(.hostUnavailable, Self.unavailable($0))) }) else {
+                continuation.resume(throwing: BridgeFailure(.hostUnavailable, Self.unavailable(nil)))
+                return
+            }
+            proxy.snapshot(sessionId: sessionId) { continuation.resume(returning: $0) }
+        }
+    }
+
+    /// The scratch is stored in the app: the service may delete it.
+    func discard(sessionId: String) {
+        proxy(onError: { _ in })?.discard(sessionId: sessionId)
+    }
+
+    private func leftovers() async throws -> [AgentScratchInfo] {
+        let data: Data = try await withCheckedThrowingContinuation { continuation in
+            guard let proxy = proxy(onError: { continuation.resume(throwing: BridgeFailure(.hostUnavailable, Self.unavailable($0))) }) else {
+                continuation.resume(throwing: BridgeFailure(.hostUnavailable, Self.unavailable(nil)))
+                return
+            }
+            proxy.leftovers { continuation.resume(returning: $0) }
+        }
+        return try JSONDecoder().decode([AgentScratchInfo].self, from: data)
+    }
+
+    /// Takes home what an earlier service instance (or an earlier run of the app) left in the scratch: each session newer than the
+    /// stored one is stored, then the scratch is removed. Runs once per connection; callers wait for it, so no agent starts (and
+    /// copies a stale session in) before it is done. A failure is only logged: the files stay for the next connection.
+    func recoverLeftovers(store: AgentHistoryStore) async {
+        ensureConnection() // so the task below does not replace the connection (and its recovery) under itself
+        let task: Task<Void, Never> = {
+            lock.lock()
+            defer { lock.unlock() }
+            if let recovery { return recovery }
+            let task = Task { [self] in
+                guard let found = try? await leftovers(), !found.isEmpty else { return }
+                await AgentScratchRecovery.run(
+                    leftovers: found, store: store,
+                    fetch: { try await self.snapshot(sessionId: $0) },
+                    discard: { self.discard(sessionId: $0) }
+                )
+            }
+            recovery = task
+            return task
+        }()
+        await task.value
     }
 
     func send(sessionId: String, line: Data) {
@@ -193,13 +250,14 @@ final class AgentServiceConnection: NSObject, OcelotAgentClientProtocol, @unchec
 
     /// `userFolders`: also probe the user's Documents and Application Support. Off under XCTest, where the unsigned Debug service
     /// is not confined, so reading them would only make macOS ask the user for consent.
-    func selfTest(userFolders: Bool = !AppEnvironment.underTest) async throws -> [AgentProbeResult] {
+    func selfTest(userFolders: Bool = !AppEnvironment.underTest, targets: [AgentProbeTarget] = []) async throws -> [AgentProbeResult] {
+        let targetData = try JSONEncoder().encode(targets)
         let data: Data = try await withCheckedThrowingContinuation { continuation in
             guard let proxy = proxy(onError: { continuation.resume(throwing: BridgeFailure(.hostUnavailable, Self.unavailable($0))) }) else {
                 continuation.resume(throwing: BridgeFailure(.hostUnavailable, Self.unavailable(nil)))
                 return
             }
-            proxy.selfTest(userFolders: userFolders) { continuation.resume(returning: $0) }
+            proxy.selfTest(userFolders: userFolders, targets: targetData) { continuation.resume(returning: $0) }
         }
         return try JSONDecoder().decode([AgentProbeResult].self, from: data)
     }
@@ -209,6 +267,7 @@ final class AgentServiceConnection: NSObject, OcelotAgentClientProtocol, @unchec
         lock.lock()
         let live = connection
         connection = nil
+        recovery = nil
         let pending = sinks
         sinks = [:]
         lock.unlock()

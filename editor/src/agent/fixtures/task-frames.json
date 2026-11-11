@@ -1,0 +1,596 @@
+[
+ {
+  "type": "message_update",
+  "messageId": "msg-2",
+  "message": {
+   "role": "assistant"
+  },
+  "assistantMessageEvent": {
+   "type": "toolcall_start",
+   "contentIndex": 1,
+   "block": {
+    "type": "toolCall",
+    "id": "toolu_016tN8nVcr12MgKVAaLDXFck",
+    "name": "task",
+    "arguments": {}
+   }
+  }
+ },
+ {
+  "type": "tool_execution_start",
+  "toolCallId": "toolu_016tN8nVcr12MgKVAaLDXFck",
+  "toolName": "task",
+  "args": {
+   "context": "# Goal\nRun two independent subagents in parallel, each returning a single word.\n\n# Contract\n- Subagent 1: reply with \"ALPHA\"\n- Subagent 2: reply with \"BETA\"\n",
+   "tasks": [
+    {
+     "name": "SubagentAlpha",
+     "agent": "task",
+     "task": "Reply with the word ALPHA",
+     "solutionSpace": "one task: output single word"
+    },
+    {
+     "name": "SubagentBeta",
+     "agent": "task",
+     "task": "Reply with the word BETA",
+     "solutionSpace": "one task: output single word"
+    }
+   ]
+  },
+  "intent": "Spawn two parallel subagents returning words"
+ },
+ {
+  "type": "tool_execution_update",
+  "toolCallId": "toolu_016tN8nVcr12MgKVAaLDXFck",
+  "toolName": "task",
+  "args": {
+   "context": "# Goal\nRun two independent subagents in parallel, each returning a single word.\n\n# Contract\n- Subagent 1: reply with \"ALPHA\"\n- Subagent 2: reply with \"BETA\"\n",
+   "tasks": [
+    {
+     "name": "SubagentAlpha",
+     "agent": "task",
+     "task": "Reply with the word ALPHA",
+     "solutionSpace": "one task: output single word"
+    },
+    {
+     "name": "SubagentBeta",
+     "agent": "task",
+     "task": "Reply with the word BETA",
+     "solutionSpace": "one task: output single word"
+    }
+   ]
+  },
+  "partialResult": {
+   "content": [
+    {
+     "type": "text",
+     "text": "Running agent SubagentAlpha..."
+    }
+   ],
+   "details": {
+    "projectAgentsDir": null,
+    "results": [],
+    "totalDurationMs": 4,
+    "progress": [
+     {
+      "index": 0,
+      "id": "SubagentAlpha",
+      "agent": "task",
+      "status": "pending",
+      "task": "Complete assignment thoroughly:\n\nReply with the word ALPHA",
+      "assignment": "Reply with the word ALPHA",
+      "recentOutput": [],
+      "durationMs": 0
+     },
+     {
+      "index": 1,
+      "id": "SubagentBeta",
+      "agent": "task",
+      "status": "pending",
+      "task": "Complete assignment thoroughly:\n\nReply with the word BETA",
+      "assignment": "Reply with the word BETA",
+      "recentOutput": [],
+      "durationMs": 0
+     }
+    ],
+    "async": {
+     "state": "running",
+     "jobId": "SubagentAlpha",
+     "type": "task"
+    }
+   }
+  }
+ },
+ {
+  "type": "tool_execution_update",
+  "toolCallId": "toolu_016tN8nVcr12MgKVAaLDXFck",
+  "toolName": "task",
+  "args": {
+   "context": "# Goal\nRun two independent subagents in parallel, each returning a single word.\n\n# Contract\n- Subagent 1: reply with \"ALPHA\"\n- Subagent 2: reply with \"BETA\"\n",
+   "tasks": [
+    {
+     "name": "SubagentAlpha",
+     "agent": "task",
+     "task": "Reply with the word ALPHA",
+     "solutionSpace": "one task: output single word"
+    },
+    {
+     "name": "SubagentBeta",
+     "agent": "task",
+     "task": "Reply with the word BETA",
+     "solutionSpace": "one task: output single word"
+    }
+   ]
+  },
+  "partialResult": {
+   "content": [
+    {
+     "type": "text",
+     "text": "Running background task SubagentAlpha..."
+    }
+   ],
+   "details": {
+    "projectAgentsDir": null,
+    "results": [],
+    "totalDurationMs": 5,
+    "progress": [
+     {
+      "index": 0,
+      "id": "SubagentAlpha",
+      "agent": "task",
+      "status": "running",
+      "task": "Complete assignment thoroughly:\n\nReply with the word ALPHA",
+      "assignment": "Reply with the word ALPHA",
+      "recentOutput": [],
+      "durationMs": 0
+     },
+     {
+      "index": 1,
+      "id": "SubagentBeta",
+      "agent": "task",
+      "status": "pending",
+      "task": "Complete assignment thoroughly:\n\nReply with the word BETA",
+      "assignment": "Reply with the word BETA",
+      "recentOutput": [],
+      "durationMs": 0
+     }
+    ],
+    "async": {
+     "state": "running",
+     "jobId": "SubagentAlpha",
+     "type": "task"
+    }
+   }
+  }
+ },
+ {
+  "type": "tool_execution_update",
+  "toolCallId": "toolu_016tN8nVcr12MgKVAaLDXFck",
+  "toolName": "task",
+  "args": {
+   "context": "# Goal\nRun two independent subagents in parallel, each returning a single word.\n\n# Contract\n- Subagent 1: reply with \"ALPHA\"\n- Subagent 2: reply with \"BETA\"\n",
+   "tasks": [
+    {
+     "name": "SubagentAlpha",
+     "agent": "task",
+     "task": "Reply with the word ALPHA",
+     "solutionSpace": "one task: output single word"
+    },
+    {
+     "name": "SubagentBeta",
+     "agent": "task",
+     "task": "Reply with the word BETA",
+     "solutionSpace": "one task: output single word"
+    }
+   ]
+  },
+  "partialResult": {
+   "content": [
+    {
+     "type": "text",
+     "text": "Running background task SubagentBeta..."
+    }
+   ],
+   "details": {
+    "projectAgentsDir": null,
+    "results": [],
+    "totalDurationMs": 5,
+    "progress": [
+     {
+      "index": 0,
+      "id": "SubagentAlpha",
+      "agent": "task",
+      "status": "running",
+      "task": "Complete assignment thoroughly:\n\nReply with the word ALPHA",
+      "assignment": "Reply with the word ALPHA",
+      "recentOutput": [],
+      "durationMs": 0
+     },
+     {
+      "index": 1,
+      "id": "SubagentBeta",
+      "agent": "task",
+      "status": "running",
+      "task": "Complete assignment thoroughly:\n\nReply with the word BETA",
+      "assignment": "Reply with the word BETA",
+      "recentOutput": [],
+      "durationMs": 0
+     }
+    ],
+    "async": {
+     "state": "running",
+     "jobId": "SubagentAlpha",
+     "type": "task"
+    }
+   }
+  }
+ },
+ {
+  "type": "tool_execution_end",
+  "toolCallId": "toolu_016tN8nVcr12MgKVAaLDXFck",
+  "toolName": "task",
+  "result": {
+   "content": [
+    {
+     "type": "text",
+     "text": "Spawned 2 background agents using task.\n- `SubagentAlpha` (job `SubagentAlpha`)\n- `SubagentBeta` (job `SubagentBeta`)"
+    }
+   ],
+   "details": {
+    "projectAgentsDir": null,
+    "results": [],
+    "totalDurationMs": 4,
+    "progress": [
+     {
+      "index": 0,
+      "id": "SubagentAlpha",
+      "agent": "task",
+      "status": "pending",
+      "task": "Complete assignment thoroughly:\n\nReply with the word ALPHA",
+      "assignment": "Reply with the word ALPHA",
+      "recentOutput": [],
+      "durationMs": 0
+     },
+     {
+      "index": 1,
+      "id": "SubagentBeta",
+      "agent": "task",
+      "status": "pending",
+      "task": "Complete assignment thoroughly:\n\nReply with the word BETA",
+      "assignment": "Reply with the word BETA",
+      "recentOutput": [],
+      "durationMs": 0
+     }
+    ],
+    "async": {
+     "state": "running",
+     "jobId": "SubagentAlpha",
+     "type": "task"
+    }
+   }
+  },
+  "isError": false
+ },
+ {
+  "type": "tool_execution_update",
+  "toolCallId": "toolu_016tN8nVcr12MgKVAaLDXFck",
+  "toolName": "task",
+  "args": {
+   "context": "# Goal\nRun two independent subagents in parallel, each returning a single word.\n\n# Contract\n- Subagent 1: reply with \"ALPHA\"\n- Subagent 2: reply with \"BETA\"\n",
+   "tasks": [
+    {
+     "name": "SubagentAlpha",
+     "agent": "task",
+     "task": "Reply with the word ALPHA",
+     "solutionSpace": "one task: output single word"
+    },
+    {
+     "name": "SubagentBeta",
+     "agent": "task",
+     "task": "Reply with the word BETA",
+     "solutionSpace": "one task: output single word"
+    }
+   ]
+  },
+  "partialResult": {
+   "content": [
+    {
+     "type": "text",
+     "text": "Running agent SubagentBeta..."
+    }
+   ],
+   "details": {
+    "projectAgentsDir": null,
+    "results": [],
+    "totalDurationMs": 108,
+    "progress": [
+     {
+      "index": 0,
+      "id": "SubagentAlpha",
+      "agent": "task",
+      "status": "running",
+      "task": "Complete assignment thoroughly:\n\nReply with the word ALPHA",
+      "assignment": "Reply with the word ALPHA",
+      "recentOutput": [],
+      "durationMs": 0
+     },
+     {
+      "index": 1,
+      "id": "SubagentBeta",
+      "agent": "task",
+      "status": "running",
+      "task": "Complete assignment thoroughly:\n\nReply with the word BETA",
+      "assignment": "Reply with the word BETA",
+      "recentOutput": [],
+      "durationMs": 0
+     }
+    ],
+    "async": {
+     "state": "running",
+     "jobId": "SubagentAlpha",
+     "type": "task"
+    }
+   }
+  }
+ },
+ {
+  "type": "tool_execution_update",
+  "toolCallId": "toolu_016tN8nVcr12MgKVAaLDXFck",
+  "toolName": "task",
+  "args": {
+   "context": "# Goal\nRun two independent subagents in parallel, each returning a single word.\n\n# Contract\n- Subagent 1: reply with \"ALPHA\"\n- Subagent 2: reply with \"BETA\"\n",
+   "tasks": [
+    {
+     "name": "SubagentAlpha",
+     "agent": "task",
+     "task": "Reply with the word ALPHA",
+     "solutionSpace": "one task: output single word"
+    },
+    {
+     "name": "SubagentBeta",
+     "agent": "task",
+     "task": "Reply with the word BETA",
+     "solutionSpace": "one task: output single word"
+    }
+   ]
+  },
+  "partialResult": {
+   "content": [
+    {
+     "type": "text",
+     "text": "Running agent SubagentAlpha..."
+    }
+   ],
+   "details": {
+    "projectAgentsDir": null,
+    "results": [],
+    "totalDurationMs": 1442,
+    "progress": [
+     {
+      "index": 0,
+      "id": "SubagentAlpha",
+      "agent": "task",
+      "status": "running",
+      "task": "Complete assignment thoroughly:\n\nReply with the word ALPHA",
+      "assignment": "Reply with the word ALPHA",
+      "recentOutput": [
+       "ALPHA"
+      ],
+      "durationMs": 0
+     },
+     {
+      "index": 1,
+      "id": "SubagentBeta",
+      "agent": "task",
+      "status": "running",
+      "task": "Complete assignment thoroughly:\n\nReply with the word BETA",
+      "assignment": "Reply with the word BETA",
+      "recentOutput": [],
+      "durationMs": 0
+     }
+    ],
+    "async": {
+     "state": "running",
+     "jobId": "SubagentAlpha",
+     "type": "task"
+    }
+   }
+  }
+ },
+ {
+  "type": "tool_execution_update",
+  "toolCallId": "toolu_016tN8nVcr12MgKVAaLDXFck",
+  "toolName": "task",
+  "args": {
+   "context": "# Goal\nRun two independent subagents in parallel, each returning a single word.\n\n# Contract\n- Subagent 1: reply with \"ALPHA\"\n- Subagent 2: reply with \"BETA\"\n",
+   "tasks": [
+    {
+     "name": "SubagentAlpha",
+     "agent": "task",
+     "task": "Reply with the word ALPHA",
+     "solutionSpace": "one task: output single word"
+    },
+    {
+     "name": "SubagentBeta",
+     "agent": "task",
+     "task": "Reply with the word BETA",
+     "solutionSpace": "one task: output single word"
+    }
+   ]
+  },
+  "partialResult": {
+   "content": [
+    {
+     "type": "text",
+     "text": "Background task SubagentAlpha complete."
+    }
+   ],
+   "details": {
+    "projectAgentsDir": null,
+    "results": [],
+    "totalDurationMs": 1445,
+    "progress": [
+     {
+      "index": 0,
+      "id": "SubagentAlpha",
+      "agent": "task",
+      "status": "completed",
+      "task": "Complete assignment thoroughly:\n\nReply with the word ALPHA",
+      "assignment": "Reply with the word ALPHA",
+      "recentOutput": [
+       "ALPHA"
+      ],
+      "durationMs": 1936
+     },
+     {
+      "index": 1,
+      "id": "SubagentBeta",
+      "agent": "task",
+      "status": "running",
+      "task": "Complete assignment thoroughly:\n\nReply with the word BETA",
+      "assignment": "Reply with the word BETA",
+      "recentOutput": [],
+      "durationMs": 0
+     }
+    ],
+    "async": {
+     "state": "running",
+     "jobId": "SubagentAlpha",
+     "type": "task"
+    }
+   }
+  }
+ },
+ {
+  "type": "tool_execution_update",
+  "toolCallId": "toolu_016tN8nVcr12MgKVAaLDXFck",
+  "toolName": "task",
+  "args": {
+   "context": "# Goal\nRun two independent subagents in parallel, each returning a single word.\n\n# Contract\n- Subagent 1: reply with \"ALPHA\"\n- Subagent 2: reply with \"BETA\"\n",
+   "tasks": [
+    {
+     "name": "SubagentAlpha",
+     "agent": "task",
+     "task": "Reply with the word ALPHA",
+     "solutionSpace": "one task: output single word"
+    },
+    {
+     "name": "SubagentBeta",
+     "agent": "task",
+     "task": "Reply with the word BETA",
+     "solutionSpace": "one task: output single word"
+    }
+   ]
+  },
+  "partialResult": {
+   "content": [
+    {
+     "type": "text",
+     "text": "Running agent SubagentBeta..."
+    }
+   ],
+   "details": {
+    "projectAgentsDir": null,
+    "results": [],
+    "totalDurationMs": 2023,
+    "progress": [
+     {
+      "index": 0,
+      "id": "SubagentAlpha",
+      "agent": "task",
+      "status": "completed",
+      "task": "Complete assignment thoroughly:\n\nReply with the word ALPHA",
+      "assignment": "Reply with the word ALPHA",
+      "recentOutput": [
+       "ALPHA"
+      ],
+      "durationMs": 1936
+     },
+     {
+      "index": 1,
+      "id": "SubagentBeta",
+      "agent": "task",
+      "status": "running",
+      "task": "Complete assignment thoroughly:\n\nReply with the word BETA",
+      "assignment": "Reply with the word BETA",
+      "recentOutput": [
+       "BETA"
+      ],
+      "durationMs": 0
+     }
+    ],
+    "async": {
+     "state": "running",
+     "jobId": "SubagentAlpha",
+     "type": "task"
+    }
+   }
+  }
+ },
+ {
+  "type": "tool_execution_update",
+  "toolCallId": "toolu_016tN8nVcr12MgKVAaLDXFck",
+  "toolName": "task",
+  "args": {
+   "context": "# Goal\nRun two independent subagents in parallel, each returning a single word.\n\n# Contract\n- Subagent 1: reply with \"ALPHA\"\n- Subagent 2: reply with \"BETA\"\n",
+   "tasks": [
+    {
+     "name": "SubagentAlpha",
+     "agent": "task",
+     "task": "Reply with the word ALPHA",
+     "solutionSpace": "one task: output single word"
+    },
+    {
+     "name": "SubagentBeta",
+     "agent": "task",
+     "task": "Reply with the word BETA",
+     "solutionSpace": "one task: output single word"
+    }
+   ]
+  },
+  "partialResult": {
+   "content": [
+    {
+     "type": "text",
+     "text": "Background task SubagentBeta complete."
+    }
+   ],
+   "details": {
+    "projectAgentsDir": null,
+    "results": [],
+    "totalDurationMs": 2034,
+    "progress": [
+     {
+      "index": 0,
+      "id": "SubagentAlpha",
+      "agent": "task",
+      "status": "completed",
+      "task": "Complete assignment thoroughly:\n\nReply with the word ALPHA",
+      "assignment": "Reply with the word ALPHA",
+      "recentOutput": [
+       "ALPHA"
+      ],
+      "durationMs": 1936
+     },
+     {
+      "index": 1,
+      "id": "SubagentBeta",
+      "agent": "task",
+      "status": "completed",
+      "task": "Complete assignment thoroughly:\n\nReply with the word BETA",
+      "assignment": "Reply with the word BETA",
+      "recentOutput": [
+       "BETA"
+      ],
+      "durationMs": 2224
+     }
+    ],
+    "async": {
+     "state": "completed",
+     "jobId": "SubagentAlpha",
+     "type": "task"
+    }
+   }
+  }
+ }
+]

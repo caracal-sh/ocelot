@@ -7,7 +7,7 @@ enum AgentSelfTest {
     /// A probe that has not finished by then counts as "not denied": a denied read fails at once.
     static let probeTimeout: TimeInterval = 10
 
-    static func run(userFolders: Bool = true, timeout: TimeInterval = probeTimeout) -> [AgentProbeResult] {
+    static func run(userFolders: Bool = true, targets: [AgentProbeTarget] = [], timeout: TimeInterval = probeTimeout) -> [AgentProbeResult] {
         let realHome = realHomeDirectory()
         let ownHome = NSHomeDirectory()
         let secretName = "selftest-\(UUID().uuidString)"
@@ -26,7 +26,12 @@ enum AgentSelfTest {
                 ("List ~/Documents", "/bin/ls", ["\(realHome)/Documents"], false),
                 ("List ~/Library/Application Support (other apps' data)", "/bin/ls", ["\(realHome)/Library/Application Support"], false),
                 ("List Ocelot's agent folder (the saved transcripts of your chats, gateway files)", "/bin/ls", ["\(realHome)/Library/Application Support/Ocelot/Agent"], false),
+                ("List Ocelot's conversations (every chat's session files)", "/bin/ls", ["\(realHome)/Library/Application Support/Ocelot/Agent/conversations"], false),
             ]
+            // Paths the app made for the check, and others' conversations the agent must not reach (`ls` of a folder, `cat` of a file).
+            for target in targets {
+                probes.append((target.label, target.list ? "/bin/ls" : "/bin/cat", [target.path], false))
+            }
         }
         let results = probes.map { label, command, args, shouldSucceed -> AgentProbeResult in
             return ProbeProcess.result(label: label, outcome: ProbeProcess.exec(command, args, timeout: timeout), shouldSucceed: shouldSucceed, timeout: timeout)

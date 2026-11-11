@@ -52,13 +52,17 @@ import { PRESENT_TOOLS } from './presentTools';
 import { PREFERENCES_TOOLS } from './preferencesTools';
 import { SIDEBAR_AGENT_TOOLS } from './sidebarAgentTools';
 import { DESIGN_SYSTEM_TOOLS, designSystemInfo, designSystemTokens } from './designSystemTools';
+import { COMPONENT_TOOLS, componentNodeInfo, instancesLostByDeleting } from './componentTools';
+import { createInstanceHtmlHook } from './instanceHtml';
 import { BUNDLED_FONTS } from '../themes/fonts';
+import { pendingNotesText } from '../editor/layerReferences';
 import {
   NODE_ID,
   NODE_IDS,
   ToolError,
   agentLabel,
   assertEditable,
+  assertNotHeldByOtherAgent,
   enumArg,
   ids,
   json,
@@ -129,6 +133,7 @@ const CORE_TOOLS: ToolDef[] = [
         default_page_id: resolvePageId(ctx, {}),
         pages: doc.pageList().map((p, i) => pageSummary(ctx, p, i)),
         node_count: doc.nodes.size,
+        ...(doc.components.size ? { components: doc.componentList().map((d) => ({ id: d.id, name: d.name, main_id: d.root, instance_count: doc.instancesOf(d.id).length })) } : {}),
         ...(ds ? { design_system: ds } : {}),
         artboards,
         fonts_used: [...fonts].sort(),
@@ -193,7 +198,8 @@ const CORE_TOOLS: ToolDef[] = [
         ...(Object.keys(n.states).length ? { states: n.states } : {}),
         ...(n.link ? { link: linkInfo(doc, n.link) } : {}),
         locked: n.locked,
-        children: n.children.map((c) => nodeLine(doc.require(c))),
+        ...(componentNodeInfo(doc, n.id) ? { component: componentNodeInfo(doc, n.id) } : {}),
+        children: n.children.map((c) => nodeLine(doc.require(c), doc)),
       });
     },
   },
@@ -210,7 +216,10 @@ const CORE_TOOLS: ToolDef[] = [
         .map((id) => ctx.editor.doc.get(id))
         .filter((n): n is NonNullable<typeof n> => !!n)
         .map((n) => nodeLine(n));
-      return text(lines.length ? lines.join('\n') : 'Nothing is selected. Ask the user to select layers, or work from get_tree.');
+      // Notes the person pinned to layers ("Ask the agent about this") that no sidebar message has carried yet: this is where an external agent reads them.
+      const notes = pendingNotesText(ctx.editor.references.items, (id) => ctx.editor.doc.has(id));
+      const selected = lines.length ? lines.join('\n') : 'Nothing is selected. Ask the user to select layers, or work from get_tree.';
+      return text(notes ? `${selected}\n\n${notes}` : selected);
     },
   },
   {
@@ -363,7 +372,7 @@ const CORE_TOOLS: ToolDef[] = [
     readOnly: true,
     description:
       'Font families you can use in font-family. bundled_fonts ship with Ocelot (SIL OFL, Latin subsets): they render identically on every machine and in exports. ' +
-      'The Geist family (Geist = Geist Sans, Geist Serif, Geist Mono, Geist Pixel) is listed first and Geist is the default: each entry\'s "use" says what it is for. Change family only when the style asks (an applied theme, the user\'s brand, or a style Geist cannot carry), and pick with a reason; the themes use the other bundled fonts (list_themes). ' +
+      'The Geist family (Geist = Geist Sans, Geist Serif, Geist Mono, Geist Pixel) is listed first and Geist is the default: each entry\'s "use" says what it is for. Keep Geist for UI and body text; choose another display family once, for the document\'s system, when the voice calls for it (editorial, warm, historic, playful, loud) or the user\'s brand does, and say why. The themes use the other bundled fonts (list_themes). ' +
       'Also listed: fonts installed on this Mac and fonts already used in the document (those render on this Mac only). Web fonts (<link>) are not loaded. ' +
       'Pass query to filter (case-insensitive substring). Always include a generic fallback, e.g. "Geist, system-ui, sans-serif".',
     inputSchema: {
@@ -455,7 +464,8 @@ const CORE_TOOLS: ToolDef[] = [
       ctx.session.pageId = pageId;
       // A new artboard enters as an outlined empty frame; its first chunk waits for that beat.
       ctx.editor.reveals.frame(id);
-      ctx.editor.activity.createdArtboard(id);
+      ctx.editor.activity.createdArtboard(id, ctx.agent?.key);
+      if (ctx.agent) ctx.editor.subagents.claim(ctx.agent.key, id); // what a subagent creates is its own: its later calls on it are attributed to it
       const n = ctx.editor.doc.require(id);
       return json({
         artboard_id: id,
@@ -534,9 +544,10 @@ const CORE_TOOLS: ToolDef[] = [
     },
     run(args, ctx) {
       const nodeIds = ids(args, 'node_ids');
+      assertNotHeldByOtherAgent(ctx, nodeIds);
       let lock;
       try {
-        lock = ctx.locks.begin(nodeIds, str(args, 'label', {}), agentLabel(ctx), (num(args, 'timeout_seconds') ?? 90) * 1000);
+        lock = ctx.locks.begin(nodeIds, str(args, 'label', {}), agentLabel(ctx), (num(args, 'timeout_seconds') ?? 90) * 1000, ctx.agent?.key);
       } catch (err) {
         throw new ToolError(errorMessage(err));
       }
@@ -578,6 +589,7 @@ const CORE_TOOLS: ToolDef[] = [
       '"append"/"prepend" keep them. Mapping: <img> → image, <svg> → vector, elements holding only text/inline markup → text layers, ' +
       'everything else → frames. Add data-name="…" to name layers. <a href> text becomes a link layer; src/alt/href stay as attributes (edit them later with set_attributes). ' +
       'Ocelot supports flex, grid and absolute positioning; prefer flex/grid for structure. Add ONE visual group per call (a header, one card, one row), not a whole page. ' +
+      'Reusable parts the document already has (list_doc_components) go in as <oc-instance of="Button" label="Save" variant="secondary" style="margin-left:8px"></oc-instance> (props as attributes, <oc-override target="Label" text="…" color="…"></oc-override> children; always close the tag) instead of rebuilt markup. ' +
       'Returns the new ids and an outline of what was created. Then call get_screenshot to check the result.',
     inputSchema: {
       type: 'object',
@@ -607,7 +619,8 @@ const CORE_TOOLS: ToolDef[] = [
       try {
         // <ds-button> and friends expand to design system instances; without a design system the parser drops them with a warning.
         const hook = rec && /<ds-/i.test(html) ? createDsHtmlHook(await loadComponentSet(rec.style), rec, ctx.editor.doc.artboardScheme(ctx.editor.doc.artboardOf(id) ?? id)) : undefined;
-        parsed = htmlToSpecs(html, undefined, hook);
+        // <oc-instance> places instances of the document's own components (mcp/instanceHtml.ts).
+        parsed = htmlToSpecs(html, undefined, hook, /<oc-instance/i.test(html) ? createInstanceHtmlHook(ctx.editor.doc) : undefined);
       } catch (err) {
         throw new ToolError(errorMessage(err));
       }
@@ -796,14 +809,18 @@ const CORE_TOOLS: ToolDef[] = [
     name: 'delete_nodes',
     title: 'Delete nodes',
     readOnly: false,
-    description: 'Deletes nodes and everything inside them (artboards included). The human can undo it. Refuses layer-locked nodes.',
+    description: 'Deletes nodes and everything inside them (artboards included). The human can undo it. Refuses layer-locked nodes. Deleting the main of a document component detaches its instances (they stay as plain layers); layers inside an instance cannot be deleted one by one (edit the main, or detach_instance).',
     inputSchema: { type: 'object', properties: { node_ids: NODE_IDS }, required: ['node_ids'], additionalProperties: false },
     run(args, ctx) {
       const list = ids(args, 'node_ids');
       list.forEach((t) => requireNode(ctx, t));
       assertEditable(ctx, list);
+      const detached = instancesLostByDeleting(ctx.editor.doc, list);
       write(ctx, 'Delete', () => ctx.editor.agent.deleteNodes(list));
-      return json({ deleted: list });
+      return json({
+        deleted: list,
+        ...(detached.length ? { detached_instances: detached, note: `${detached.length} instance(s) of a deleted component main were detached: they stay as plain layers exactly as they looked.` } : {}),
+      });
     },
   },
   {
@@ -901,7 +918,8 @@ const CORE_TOOLS: ToolDef[] = [
       'match exactly (spacing scale, keywords, font weights) and arbitrary values otherwise (e.g. p-[13px], bg-[#0f172a]), so the output ' +
       'renders like the canvas. Returns the component source (a default export named after the layer). Stored images are referenced as /assets/<id>.<ext> (public path); call save_export to write the component and copy the image files into public/assets. ' +
       'Links to other screens become route paths (/<artboard-name-slug>) with a comment that wiring the router is up to the app; external URLs stay. ' +
-      'In a document with a design system, instances export as real component imports (<Button variant="outline">, from @/components/ui/button) unless components is "inline"; changes made to an instance stay as className additions.',
+      'In a document with a design system, instances export as real component imports (<Button variant="outline">, from @/components/ui/button) unless components is "inline"; changes made to an instance stay as className additions. ' +
+      'Document components (make_component) export once each as components/<Name>.tsx, imported as "@/components/<Name>": every instance is <Name label="Save" variant="secondary" /> with its props, and its own placement and size as className; an instance with an override no prop covers stays inline (the result says which).',
     inputSchema: {
       type: 'object',
       properties: { node_id: NODE_ID, components: { type: 'string', enum: ['ui', 'inline'], description: 'ui (default with a design system): instances import the design system\'s components. inline: the canvas markup, no imports.' } },
@@ -913,13 +931,15 @@ const CORE_TOOLS: ToolDef[] = [
       requireNode(ctx, id);
       const r = exportNode(ctx.editor.doc, id, 'react', ctx.editor.assets, await reactOptions(ctx.editor.doc, enumArg(args, 'components', ['ui', 'inline'] as const)));
       const note = assetNote(r);
-      return text(`// ${r.componentName}.tsx: ${REACT_EXPORT_NOTES}${note ? `\n// ${note}` : ''}\n${r.code}`);
+      // Document components are separate files the screen imports: the agent needs their source too.
+      const files = (r.components ?? []).map((c) => `\n\n// ${c.path} (imported as "@/components/${c.name}")\n${c.code}`).join('');
+      return text(`// ${r.componentName}.tsx: ${REACT_EXPORT_NOTES}${note ? `\n// ${note}` : ''}\n${r.code}${files}`);
     },
   },
 ];
 
 /** Every tool, in the order agents see them: guide first, then read, write, structure. */
-export const TOOLS: ToolDef[] = [...QUERY_TOOLS.slice(0, 1), ...CORE_TOOLS, ...HANDOFF_TOOLS, ...INSPECT_TOOLS, ...QUERY_TOOLS.slice(1), ...PAGE_TOOLS, ...DECK_TOOLS, ...EDIT_TOOLS, ...FILL_TOOLS, ...CANVAS_TOOLS, ...ARRANGE_TOOLS, ...MOTION_TOOLS, ...LINK_TOOLS, ...PRESENT_TOOLS, ...CODE_TOOLS, ...TIMELINE_TOOLS, ...THEME_TOOLS, ...DESIGN_SYSTEM_TOOLS, ...PATTERN_TOOLS, ...ASSET_TOOLS, ...ASSET_MANAGE_TOOLS, ...COLOR_TOOLS, ...EXPORT_TOOLS, ...DECK_EXPORT_TOOLS, ...VIDEO_TOOLS, ...CLIPBOARD_TOOLS, ...HISTORY_TOOLS, ...PREFERENCES_TOOLS, ...SIDEBAR_AGENT_TOOLS, ...ASK_TOOLS];
+export const TOOLS: ToolDef[] = [...QUERY_TOOLS.slice(0, 1), ...CORE_TOOLS, ...HANDOFF_TOOLS, ...INSPECT_TOOLS, ...QUERY_TOOLS.slice(1), ...PAGE_TOOLS, ...DECK_TOOLS, ...EDIT_TOOLS, ...FILL_TOOLS, ...CANVAS_TOOLS, ...ARRANGE_TOOLS, ...MOTION_TOOLS, ...LINK_TOOLS, ...PRESENT_TOOLS, ...CODE_TOOLS, ...TIMELINE_TOOLS, ...THEME_TOOLS, ...DESIGN_SYSTEM_TOOLS, ...COMPONENT_TOOLS, ...PATTERN_TOOLS, ...ASSET_TOOLS, ...ASSET_MANAGE_TOOLS, ...COLOR_TOOLS, ...EXPORT_TOOLS, ...DECK_EXPORT_TOOLS, ...VIDEO_TOOLS, ...CLIPBOARD_TOOLS, ...HISTORY_TOOLS, ...PREFERENCES_TOOLS, ...SIDEBAR_AGENT_TOOLS, ...ASK_TOOLS];
 
 /**
  * Runs a tool by name, converting failures into agent-readable tool errors. Every result of the calling agent carries, once,

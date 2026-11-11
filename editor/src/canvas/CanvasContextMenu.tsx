@@ -6,6 +6,7 @@ import { removeBackgroundBlock, removeBackgroundForNode, removeBackgroundSupport
 import { loadImagePrefs } from '../panels/assetLogic';
 import { hitChain } from './geometry';
 import { pickTarget } from './selectionRules';
+import { CREATE_COMPONENT_KEYS, createComponentBlock, createComponentFromSelection, detachWithToast } from '../editor/componentUi';
 import { ALIGN_ACTIONS, DISTRIBUTE_ACTIONS, alignAvailability } from '../editor/alignUi';
 import { copySelectionAsPng, requestExportDialog } from '../export/exportActions';
 
@@ -73,10 +74,21 @@ export function CanvasContextMenu({ surfaceRef }: { surfaceRef: RefObject<HTMLDi
   const tidyCount = editor.actions.tidyTargets().length;
   const items: ContextMenuItem[] = [];
   if (targetId) {
+    const role = editor.doc.componentRole(targetId);
+    const block = createComponentBlock(editor, editor.selection.ids);
+    items.push({ id: 'create-component', label: 'Create component', shortcut: CREATE_COMPONENT_KEYS, disabled: !!block, ...(block ? { reason: block } : {}), onSelect: () => createComponentFromSelection(editor) });
+    if (role === 'instance' || role === 'part') {
+      const root = editor.doc.instanceRootOf(targetId);
+      items.push({ id: 'go-to-main', label: 'Go to main component', onSelect: () => editor.components.selectMain(targetId) });
+      if (root) items.push({ id: 'detach-instance', label: 'Detach instance', onSelect: () => detachWithToast(editor, [root]) });
+    }
+  }
+  if (targetId) {
     const reason = removeBackgroundReason(editor, targetId, support);
     items.push({
       id: 'remove-bg',
       label: 'Remove background',
+      separatorBefore: true,
       disabled: !!reason,
       ...(reason ? { reason } : {}),
       onSelect: () => void removeBackgroundForNode(editor, targetId, { cropToSubject: !!loadImagePrefs().cropToSubject && support?.ok === true && support.canCrop }),

@@ -23,9 +23,10 @@ export function regionOf(editor: Editor, ids: readonly string[]): Rect | null {
   return unionRect(ids.map((id) => boxOf(editor, id)).filter((b): b is Rect => !!b && b.width > 0 && b.height > 0));
 }
 
-/** True while an agent holds a lock on the artboard (or inside it) or its indicator rests there: its content is not finished yet. */
+/** True while an agent holds a lock on the artboard (or inside it) or an agent's indicator rests there: its content is not finished yet. */
 export function agentWorksOn(editor: Editor, artboardId: string): boolean {
   const doc = editor.doc;
   if (editor.locks.active.some((l) => l.nodeIds.some((n) => n === artboardId || doc.artboardOf(n) === artboardId))) return true;
-  return !!editor.activity.presence && editor.activity.target?.artboardId === artboardId;
+  for (const target of editor.activity.targets.values()) if (target.artboardId === artboardId) return true;
+  return false;
 }

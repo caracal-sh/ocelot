@@ -11,10 +11,10 @@ import { execFile, spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { mkdir, realpath, rm, symlink, writeFile } from 'node:fs/promises';
 import { homedir, platform } from 'node:os';
-import { delimiter, join } from 'node:path';
+import { delimiter, dirname, join } from 'node:path';
 import { createHistoryStore } from './agent-history.mjs';
 import { AgentGateway, cleanStaleClients, ephemeralGatewayHome, sweepStaleGatewayHomes } from './agent-gateway.mjs';
-import { agentConfigYml, CONFINED_MODEL_PROVIDERS_OFF, confinedEnv, defaultSelector, filterModels, MCP_TOKEN_ENV, modelsYml, pickerSelectors, seatbeltProfile } from './agent-sandbox.mjs';
+import { agentConfigYml, CONFINED_MODEL_PROVIDERS_OFF, confinedEnv, defaultSelector, filterModels, MCP_TOKEN_ENV, modelsYml, pickerSelectors, seatbeltProfile, SUBAGENT_DEFINITION, SUBAGENT_DEFINITION_PATH } from './agent-sandbox.mjs';
 
 export const SANDBOX_EXEC = '/usr/bin/sandbox-exec';
 
@@ -50,7 +50,7 @@ export function ompArgs({ systemPromptFile, configFile, model, thinking, session
     '--mode', 'rpc',
     '--session-dir', sessionDir,
     ...(resume ? ['--continue'] : []),
-    '--no-tools',
+    '--tools', 'task',
     '--no-skills',
     '--no-rules',
     '--no-context-files',
@@ -143,7 +143,31 @@ export function createAgentHost({ bin = 'omp', unconfined = process.env.OCELOT_A
     return gateway;
   };
   const running = new Set();
-  const history = createHistoryStore(stateDir);
+  const store = createHistoryStore(stateDir);
+  // Agent processes by conversation, and conversations deleted while one still ran: a process that is still exiting writes its
+  // session file into the conversation's folder, so a delete waits for it (and removes the folder once more if it ends late).
+  const liveProcesses = new Map();
+  const deleted = new Set();
+  const history = {
+    ...store,
+    /** Removes the conversation after its agent process is gone: stops it when it runs, kills it after a while, and removes again when it ends late. */
+    async remove(projectId, id) {
+      const key = store.sessionDirectoryPath(projectId, id);
+      deleted.add(key);
+      const processes = [...(liveProcesses.get(key) ?? [])];
+      for (const p of processes) p.stop();
+      if (processes.length) {
+        const gone = Promise.all(processes.map((p) => p.closed)).then(() => true);
+        const timer = (ms) => new Promise((resolve) => setTimeout(resolve, ms, false)).then((v) => v);
+        if (!(await Promise.race([gone, timer(10_000)]))) {
+          for (const p of processes) p.kill();
+          await Promise.race([gone, timer(5_000)]);
+        }
+      }
+      await store.remove(projectId, id);
+      if (!liveProcesses.get(key)?.size) deleted.delete(key);
+    },
+  };
   let prepared = null; // { models, selectors, defaultModel, thinking }: what the gateway serves; worked out by the first confined start
 
   /** Starts the gateway (first use) and works out which models the confined agent may use. */
@@ -195,7 +219,22 @@ export function createAgentHost({ bin = 'omp', unconfined = process.env.OCELOT_A
     return { ...base, loggedIn: selectors.length > 0, models: filterModels(models, selectors), ...(gateway?.status().port ? { gatewayPort: gateway.status().port } : {}) };
   }
 
-  async function start({ processId, systemPrompt, model, thinking, projectId, conversationId, resume, mcp, onEvent }) {
+  async function start(args) {
+    const key = store.sessionDirectoryPath(args.projectId, args.conversationId);
+    const handle = await startProcess(args);
+    const set = liveProcesses.get(key) ?? new Set();
+    set.add(handle);
+    liveProcesses.set(key, set);
+    void handle.closed.then(async () => {
+      set.delete(handle);
+      if (set.size) return;
+      liveProcesses.delete(key);
+      if (deleted.delete(key)) await rm(key, { recursive: true, force: true }).catch(() => {});
+    });
+    return handle;
+  }
+
+  async function startProcess({ processId, systemPrompt, model, thinking, projectId, conversationId, resume, mcp, onEvent }) {
     const sessionDir = await history.sessionDirectory(projectId, conversationId);
     if (mode === 'unconfined') return startUnconfined({ bin, processId, systemPrompt, model, thinking, sessionDir, resume, mcp, onEvent, running });
     if (typeof processId !== 'string' || !SESSION_ID.test(processId)) throw new Error('Invalid agent session id.');
@@ -231,6 +270,7 @@ export function createAgentHost({ bin = 'omp', unconfined = process.env.OCELOT_A
     await writeFile(files.configFile, agentConfigYml({ disabledProviders: [...DISABLED_PROVIDERS, ...CONFINED_MODEL_PROVIDERS_OFF], defaultModel: p.defaultModel, thinkingLevel: p.thinking }));
     await writeFile(files.systemPromptFile, systemPrompt);
     await writeFile(join(session, '.mcp.json'), JSON.stringify(confinedMcpConfig(mcp), null, 2));
+    await writeSubagentDefinition(session);
     // omp's unpacked native addon (110 MB) is the host's; link it read-only instead of unpacking it per session.
     const readOnly = [];
     const natives = await realpath(join(homedir(), '.omp', 'natives')).catch(() => null);
@@ -279,6 +319,13 @@ export function createAgentHost({ bin = 'omp', unconfined = process.env.OCELOT_A
   };
 }
 
+/** The one agent the sidebar's `task` tool can spawn (agent-sandbox.mjs): project-level in the agent's working directory. */
+async function writeSubagentDefinition(cwd) {
+  const file = join(cwd, SUBAGENT_DEFINITION_PATH);
+  await mkdir(dirname(file), { recursive: true });
+  await writeFile(file, SUBAGENT_DEFINITION);
+}
+
 async function readModels(bin) {
   const m = await run(bin, ['models', '--json'], 60_000);
   try {
@@ -294,6 +341,7 @@ async function startUnconfined({ bin, processId, systemPrompt, model, thinking, 
   const systemPromptFile = join(cwd, 'system-prompt.md');
   const configFile = join(cwd, 'config.yml');
   await writeFile(join(cwd, '.mcp.json'), JSON.stringify(mcpConfig(mcp), null, 2));
+  await writeSubagentDefinition(cwd);
   await writeFile(configFile, CONFIG_OVERLAY);
   await writeFile(systemPromptFile, systemPrompt);
   const child = spawn(bin, ompArgs({ systemPromptFile, configFile, model, thinking, sessionDir, resume }), { cwd, stdio: ['pipe', 'pipe', 'pipe'], env: process.env });
@@ -322,7 +370,13 @@ function attach(child, onEvent, running, cleanup) {
   child.on('error', (err) => {
     stderr += `\n${err.message}`;
   });
+  let markClosed;
+  const closed = new Promise((resolve) => {
+    markClosed = resolve;
+  });
   const handle = {
+    /** Settles once the process has exited and its files are cleaned up. */
+    closed,
     send(command) {
       if (!command || typeof command !== 'object' || !ALLOWED_COMMANDS.has(command.type)) {
         throw new Error(`The agent sidebar may not send "${command?.type}" commands.`);
@@ -334,6 +388,9 @@ function attach(child, onEvent, running, cleanup) {
       child.stdin.end(); // omp drains and exits on EOF
       setTimeout(() => child.exitCode === null && child.kill('SIGTERM'), 2000).unref();
     },
+    kill() {
+      if (child.exitCode === null) child.kill('SIGKILL');
+    },
   };
   running.add(handle);
   child.on('close', (code) => {
@@ -341,7 +398,10 @@ function attach(child, onEvent, running, cleanup) {
     const rest = buf.trim() ? [buf.trim()] : [];
     Promise.resolve(cleanup())
       .catch(() => {})
-      .finally(() => onEvent({ lines: rest, done: true, exitCode: code ?? -1, stderr }));
+      .finally(() => {
+        markClosed();
+        onEvent({ lines: rest, done: true, exitCode: code ?? -1, stderr });
+      });
   });
   return handle;
 }

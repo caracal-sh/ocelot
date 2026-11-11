@@ -66,6 +66,36 @@ describe('agent history store', () => {
     await store.remove('p1', 'c1'); // already gone: no error
   });
 
+  const name = (c, ext = 'png') => `${c.repeat(64)}.${ext}`;
+  const file = (n, text) => ({ name: n, dataBase64: Buffer.from(text).toString('base64') });
+
+  it('stores image files once next to the transcript and returns them with it', async () => {
+    await store.write('p1', 'c1', '{}', '{"v":2}', [file(name('a'), 'first'), file(name('b', 'jpg'), 'second')]);
+    await store.write('p1', 'c1', '{}', '{"v":2}', [file(name('a'), 'ignored: the same name is the same image')]);
+    const read = await store.read('p1', 'c1');
+    expect(read.text).toBe('{"v":2}');
+    expect(read.files.map((f) => [f.name, Buffer.from(f.dataBase64, 'base64').toString()])).toEqual([[name('a'), 'first'], [name('b', 'jpg'), 'second']]);
+    expect((await stat(join(dir, 'history', 'p1', 'c1.files'))).mode & 0o777).toBe(0o700);
+    expect((await stat(join(dir, 'history', 'p1', 'c1.files', name('a')))).mode & 0o777).toBe(0o600);
+    expect((await store.read('p1', 'c2')).files).toBeUndefined();
+  });
+
+  it('delete removes the image files with the conversation, and only that conversation\'s', async () => {
+    await store.write('p1', 'c1', '{}', '{}', [file(name('a'), 'x')]);
+    await store.write('p1', 'c2', '{}', '{}', [file(name('a'), 'x')]);
+    await store.remove('p1', 'c1');
+    await expect(stat(join(dir, 'history', 'p1', 'c1.files'))).rejects.toThrow();
+    expect((await store.read('p1', 'c2')).files).toHaveLength(1);
+  });
+
+  it('refuses image files that are not plain names or not base64', async () => {
+    for (const bad of ['../x.png', 'a/b.png', 'a.gif', 'x.png.png', '.png', `${'x'.repeat(100)}.png`]) {
+      await expect(store.write('p1', 'c1', '{}', '{}', [file(bad, 'x')])).rejects.toThrow(/Invalid file name/);
+    }
+    await expect(store.write('p1', 'c1', '{}', '{}', [{ name: 'ok.png', dataBase64: 'not base64!!' }])).rejects.toThrow(/base64/);
+    expect(await store.read('p1', 'c1')).toEqual({});
+  });
+
   it('refuses ids that are paths', async () => {
     for (const bad of ['../x', 'a/b', '', 'a.b', 'x'.repeat(65)]) {
       await expect(store.write('p1', bad, '{}', '{}')).rejects.toThrow(/Invalid conversation id/);

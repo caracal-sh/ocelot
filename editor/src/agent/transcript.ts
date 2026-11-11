@@ -5,16 +5,32 @@
 // as soon as the model starts writing a call (`toolcall_start`), get their
 // arguments and intent at `tool_execution_start`, and their result (including
 // screenshots) at `tool_execution_end`.
+//
+// The `task` tool (the sidebar agent spawning subagents that build parts of the design in parallel) is one grouped step with a live
+// row per subagent. omp answers it as soon as the subagents are spawned (`tool_execution_end`), then keeps sending
+// `tool_execution_update` frames whose `partialResult.details.progress[]` carry each subagent's status until the last one is done.
 
 import type { Attachment } from './attachments';
+import type { LayerReference } from '../editor/layerReferences';
 import { describeCall } from '../mcp/describe';
 import { patternById } from '../patterns/catalog';
 
 export type ToolStatus = 'running' | 'ok' | 'error';
 
+/** One subagent of a `task` step. */
+export interface SubagentRow {
+  /** The subagent's id (omp's job id; the name the agent gave it unless omp renamed it). */
+  id: string;
+  /** What the row says: the name the agent gave the task ("Pricing screen"). */
+  name: string;
+  status: 'running' | 'done' | 'failed';
+  /** The last thing it said (while running and when done), or why it failed. One line. */
+  note?: string;
+}
+
 export type ChatItem =
   /** `attachments` are what the person attached; the bubble shows them as chips, never the envelope text the agent received. */
-  | { kind: 'user'; id: string; text: string; /** The external agent that sent it through the sidebar_agent tool ("Claude Code"); absent when the person typed it. */ from?: string; context?: string; attachments?: Attachment[]; /** Delivered at the agent's next step while it worked (sent with ⌘↩). */ steered?: boolean }
+  | { kind: 'user'; id: string; text: string; /** The external agent that sent it through the sidebar_agent tool ("Claude Code"); absent when the person typed it. */ from?: string; context?: string; attachments?: Attachment[]; /** Layers the person pointed at with a note; the bubble shows them as chips. */ references?: LayerReference[]; /** Delivered at the agent's next step while it worked (sent with ⌘↩). */ steered?: boolean }
   | { kind: 'assistant'; id: string; text: string; streaming: boolean }
   | {
       kind: 'tool';
@@ -31,6 +47,8 @@ export type ChatItem =
       image?: string;
       /** generate_image / edit_image / remove_background that started a background job: its id (`j3`). The row follows the job, not the call. */
       job?: string;
+      /** `task` calls: the subagents it spawned and where each one is. The step stays running until all of them are done, long after the call itself returned. */
+      agents?: SubagentRow[];
     }
   | { kind: 'notice'; id: string; tone: 'info' | 'error'; text: string; action?: 'signIn' }
   /** What the person answered to an agent's question (`ask_user`): the card collapses into this row. */
@@ -163,8 +181,18 @@ export function applyEvent(state: TranscriptState, ev: Json): TranscriptState {
         input: isObj(ev['args']) ? ev['args'] : null,
         status: 'running',
         ...(intent ? { intent } : {}),
+        ...(tool === 'task' ? { agents: mergeAgents(undefined, ev['args'], []) } : {}),
       };
       return { ...state, thinking: false, items: existing ? upsert(state.items, { ...item, ...(existing.kind === 'tool' && existing.image ? { image: existing.image } : {}) }) : [...state.items, item] };
+    }
+    case 'tool_execution_update': {
+      // Only `task` reports progress this way; every other tool's updates are partial output the sidebar does not show.
+      const id = str(ev['toolCallId']);
+      if (!id || toolName(ev['toolName']) !== 'task') return state;
+      const args = isObj(ev['args']) ? ev['args'] : null;
+      const progress = progressOf(ev['partialResult']);
+      const base: ChatItem[] = state.items.some((x) => x.id === id) ? state.items : [...state.items, { kind: 'tool', id, tool: 'task', input: args, status: 'running' }];
+      return { ...state, thinking: false, items: patch(base, id, 'tool', (it) => ({ ...it, input: it.input ?? args, agents: mergeAgents(it.agents, args ?? it.input, progress) })) };
     }
     case 'tool_execution_end': {
       const id = str(ev['toolCallId']);
@@ -180,6 +208,7 @@ export function applyEvent(state: TranscriptState, ev: Json): TranscriptState {
             status: isError ? 'error' : 'ok',
             ...(isError ? { error: firstLine(text) || 'The tool call failed.' } : {}),
             ...(image ? { image } : {}),
+            ...(it.tool === 'task' ? { agents: mergeAgents(it.agents, it.input, progressOf(result)) } : {}),
             ...(!isError && IMAGE_JOB_TOOLS[it.tool] === true && startedJobId(text) ? { job: startedJobId(text) } : {}),
           })),
         ),
@@ -220,11 +249,77 @@ export function settle(state: TranscriptState, toolStatus: ToolStatus = 'error')
     }
     if (it.kind === 'tool' && it.status === 'running') {
       changed = true;
-      return { ...it, status: toolStatus, ...(toolStatus === 'error' ? { error: 'Stopped before the tool answered.' } : {}) };
+      return { ...it, status: toolStatus, ...(toolStatus === 'error' ? { error: 'Stopped before the tool answered.' } : {}), ...(it.agents ? { agents: settleAgents(it.agents, toolStatus) } : {}) };
+    }
+    // The call returned when it spawned its subagents; they can still be running when the turn ends.
+    if (it.kind === 'tool' && it.agents?.some((a) => a.status === 'running')) {
+      changed = true;
+      return { ...it, agents: settleAgents(it.agents, toolStatus) };
     }
     return it;
   });
   return changed ? { items, thinking: false } : state;
+}
+
+// ---------- Subagents (the `task` tool) ----------
+
+const RUNNING = new Set(['pending', 'queued', 'starting', 'running']);
+const DONE = new Set(['completed', 'complete', 'done', 'success', 'succeeded', 'finished']);
+const FAILED = new Set(['failed', 'error', 'aborted', 'cancelled', 'canceled', 'killed', 'timeout', 'timed_out']);
+
+/** omp's per-subagent status as a row status; undefined for one this does not know (the row keeps what it had). */
+function subagentStatus(raw: unknown): SubagentRow['status'] | undefined {
+  const s = typeof raw === 'string' ? raw.toLowerCase() : '';
+  if (RUNNING.has(s)) return 'running';
+  if (DONE.has(s)) return 'done';
+  return FAILED.has(s) ? 'failed' : undefined;
+}
+
+/** `details.progress[]` of a task result or partial result. */
+function progressOf(result: unknown): Json[] {
+  const details = isObj(result) ? result['details'] : undefined;
+  const progress = isObj(details) ? details['progress'] : undefined;
+  return Array.isArray(progress) ? progress.filter(isObj) : [];
+}
+
+/**
+ * The rows of a task step: one per task the agent asked for (its names), then what omp reports for each. omp's `progress` entries
+ * carry `index` (the task's place in `tasks[]`), `id`, `status` and `recentOutput`.
+ */
+function mergeAgents(prev: SubagentRow[] | undefined, args: unknown, progress: readonly Json[]): SubagentRow[] {
+  const tasks = isObj(args) && Array.isArray(args['tasks']) ? args['tasks'] : [];
+  const length = Math.max(prev?.length ?? 0, tasks.length, ...progress.map((p, i) => (typeof p['index'] === 'number' ? p['index'] : i) + 1));
+  const rows: SubagentRow[] = [];
+  for (let i = 0; i < length; i++) {
+    const task = tasks[i];
+    const named = isObj(task) ? str(task['name'])?.trim() : undefined;
+    const before = prev?.[i];
+    rows.push(before ?? { id: named || `task-${i + 1}`, name: named || `Task ${i + 1}`, status: 'running' });
+    if (before && named && before.name !== named) rows[i] = { ...before, name: named };
+  }
+  progress.forEach((p, position) => {
+    const i = typeof p['index'] === 'number' ? p['index'] : position;
+    const row = rows[i];
+    if (!row) return;
+    const id = str(p['id']) ?? row.id;
+    const status = subagentStatus(p['status']) ?? row.status;
+    const said = Array.isArray(p['recentOutput']) ? p['recentOutput'].filter((l): l is string => typeof l === 'string' && l.trim() !== '').at(-1) : undefined;
+    const note = status === 'failed' ? (str(p['error']) ?? said) : said;
+    // A row that has no name of its own (the agent gave none) is called by omp's id.
+    const name = row.name.startsWith('Task ') && str(p['id']) ? id : row.name;
+    const { note: _old, ...rest } = row;
+    rows[i] = { ...rest, id, name, status, ...(note ? { note: clip(note, 90) } : _old ? { note: _old } : {}) };
+  });
+  return rows;
+}
+
+function settleAgents(agents: SubagentRow[], toolStatus: ToolStatus): SubagentRow[] {
+  return agents.map((a): SubagentRow => (a.status === 'running' ? { ...a, status: toolStatus === 'error' ? 'failed' : 'done' } : a));
+}
+
+/** True while a tool row is still going: its call is open, or (a `task` step) any subagent it spawned still runs. */
+export function toolRunning(item: ToolItem): boolean {
+  return item.status === 'running' || !!item.agents?.some((a) => a.status === 'running');
 }
 
 const AUTH_ERROR = /authenticat|log ?in|oauth|api key|credential|unauthori[sz]ed|\b401\b/i;
@@ -261,7 +356,7 @@ export function imageJobLabel(tool: string, state: ImageJobState): string {
  * what they build or touch (the agent's intent, else the layer names in the call); `nameOf` turns node ids into names.
  */
 export function toolLabel(item: ToolItem, nameOf?: (id: string) => string | undefined): string {
-  const running = item.status === 'running';
+  const running = toolRunning(item);
   const pick = (doing: string, done: string) => (running ? doing : done);
   const input = item.input;
   const described = describeCall(item.tool, input, { intent: item.intent, nameOf });
@@ -315,6 +410,9 @@ export function toolLabel(item: ToolItem, nameOf?: (id: string) => string | unde
     case 'list_components':
     case 'get_component':
       return pick('Reading the component catalog', 'Read the component catalog');
+    case 'list_doc_components':
+    case 'get_doc_component':
+      return pick('Reading the document components', 'Read the document components');
     case 'refresh_design_system_instances':
       return pick('Refreshing component instances', 'Refreshed component instances');
     case 'build_design_system_page':
@@ -376,6 +474,20 @@ export function toolLabel(item: ToolItem, nameOf?: (id: string) => string | unde
       return input?.['hidden'] === false ? pick('Showing layers', 'Showed layers') : pick('Hiding layers', 'Hid layers');
     case 'set_locked':
       return input?.['locked'] === false ? pick('Unlocking layers', 'Unlocked layers') : pick('Locking layers', 'Locked layers');
+    case 'make_component':
+      return pick('Making a component', 'Made a component');
+    case 'update_component':
+      return pick('Updating a component', 'Updated a component');
+    case 'place_instance':
+      return pick('Placing a component', 'Placed a component');
+    case 'set_instance':
+      return pick('Customizing component instances', 'Customized component instances');
+    case 'reset_instance':
+      return pick('Resetting component instances', 'Reset component instances');
+    case 'detach_instance':
+      return pick('Detaching component instances', 'Detached component instances');
+    case 'remove_component':
+      return pick('Removing a component', 'Removed a component');
     case 'set_link':
       return input?.['link'] === null ? pick('Removing a link', 'Removed a link') : pick('Linking layers', 'Linked layers');
     case 'get_links':
@@ -444,9 +556,22 @@ export function toolLabel(item: ToolItem, nameOf?: (id: string) => string | unde
       return pick('Looking at an asset', 'Looked at an asset');
     case 'save_export':
       return pick('Saving the export', 'Saved the export');
+    case 'task':
+      return taskLabel(item, pick);
     default:
       return item.tool.replace(/_/g, ' ');
   }
+}
+
+/** "Working in parallel: Welcome, Goals, Reminders": the names of the subagents, the first few and how many more. */
+function taskLabel(item: ToolItem, pick: (doing: string, done: string) => string): string {
+  const tasks = isObj(item.input) && Array.isArray(item.input['tasks']) ? item.input['tasks'] : [];
+  const names = item.agents?.map((a) => a.name) ?? tasks.map((t, i) => (isObj(t) ? str(t['name'])?.trim() : undefined) || `Task ${i + 1}`);
+  if (names.length === 0) return pick('Starting parallel work', 'Worked in parallel');
+  const list = names.length > 4 ? `${names.slice(0, 3).join(', ')} and ${names.length - 3} more` : names.join(', ');
+  const failed = item.agents?.filter((a) => a.status === 'failed').length ?? 0;
+  const tail = failed && !toolRunning(item) ? ` (${failed} failed)` : '';
+  return names.length === 1 ? pick(`Working in the background: ${list}`, `Worked in the background: ${list}${tail}`) : pick(`Working in parallel: ${list}`, `Worked in parallel: ${list}${tail}`);
 }
 
 /** One line, whitespace collapsed, cut to `max` characters with an ellipsis. */

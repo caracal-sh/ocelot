@@ -10,7 +10,7 @@ import { sidebarAgentOf } from '../agent/sidebarAgentRegistry';
 import type { AgentChat, AgentModel } from '../agent/AgentChat';
 import { ToolError, agentLabel, bool, json, str, type Args, type ToolContext, type ToolDef } from './toolkit';
 
-const KEYS = ['follow_agent', 'sidebar_open', 'sidebar_tab', 'agent_model', 'agent_effort'] as const;
+const KEYS = ['follow_agent', 'follow_agent_key', 'sidebar_open', 'sidebar_tab', 'agent_model', 'agent_effort'] as const;
 
 /** The reasoning efforts the picker offers for a model: "off" and the ones it supports. */
 const effortsOf = (m: AgentModel): string[] => ['off', ...m.efforts];
@@ -36,10 +36,11 @@ async function read(ctx: ToolContext) {
   const chat = sidebarAgentOf(ctx.editor);
   const out: Record<string, unknown> = {
     follow_agent: ui.followAgent,
+    follow_agent_key: ui.followAgentKey,
     sidebar_open: ui.sidebarOpen,
     sidebar_tab: ui.sidebarTab,
   };
-  const valid: Record<string, unknown> = { sidebar_tab: SIDEBAR_TABS };
+  const valid: Record<string, unknown> = { sidebar_tab: SIDEBAR_TABS, follow_agent_key: ctx.editor.activity.presences.map((p) => ({ key: p.key, name: p.name })) };
   if (chat) {
     const models = await knownModels(chat);
     const snap = chat.snapshot;
@@ -61,9 +62,9 @@ export const PREFERENCES_TOOLS: ToolDef[] = [
     title: 'Get editor preferences',
     readOnly: true,
     description:
-      'Reads the person\'s editor preferences (they belong to the person\'s window, not the document): follow_agent (Zoom > Follow agent: the camera follows your work when it is off screen), ' +
+      'Reads the person\'s editor preferences (they belong to the person\'s window, not the document): follow_agent (Zoom > Follow agent: the camera follows your work when it is off screen), follow_agent_key (with several agents at work, the one the camera follows; null follows whichever focuses last), ' +
       'sidebar_open (⌃⌘S) and sidebar_tab (agent | layers | assets) of the left sidebar, and the in-app agent\'s default agent_model and agent_effort (the pickers under its prompt). ' +
-      '"valid" lists what each can be set to, including every model the picker offers with its efforts. null means the in-app agent\'s own default. Change them with set_preferences. ' +
+      '"valid" lists what each can be set to, including the agents currently on the canvas for follow_agent_key and every model the picker offers with its efforts. null means the in-app agent\'s own default. Change them with set_preferences. ' +
       'Security settings (agent confinement, tokens, credentials, MCP access, installing omp or signing in) are never exposed to agents.',
     inputSchema: { type: 'object', properties: {}, additionalProperties: false },
     async run(_args, ctx) {
@@ -75,7 +76,7 @@ export const PREFERENCES_TOOLS: ToolDef[] = [
     title: 'Set editor preferences',
     readOnly: false,
     description:
-      'Changes the person\'s editor preferences, exactly as their menus and pickers do (they see the change). Pass any of: follow_agent (boolean; false keeps the camera where the person put it), ' +
+      'Changes the person\'s editor preferences, exactly as their menus and pickers do (they see the change). Pass any of: follow_agent (boolean; false keeps the camera where the person put it), follow_agent_key (the key of an agent on the canvas, from get_preferences "valid.follow_agent_key": the camera follows only that agent; null follows whichever agent focuses last), ' +
       'sidebar_open (boolean; ⌃⌘S), sidebar_tab ("agent" | "layers" | "assets"; showing a tab opens the sidebar unless sidebar_open is false in the same call), ' +
       'agent_model (a model id from get_preferences "valid.agent_model") and agent_effort ("off" or an effort that model supports). ' +
       'All-or-nothing: if anything is invalid nothing changes and the error lists the valid values. Returns the new preferences. ' +
@@ -85,6 +86,7 @@ export const PREFERENCES_TOOLS: ToolDef[] = [
       type: 'object',
       properties: {
         follow_agent: { type: 'boolean', description: 'Zoom > Follow agent: the camera follows the agent\'s work when it is off screen.' },
+        follow_agent_key: { type: ['string', 'null'], description: 'With several agents at work: the key of the one the camera follows (see get_preferences valid.follow_agent_key), or null to follow whichever focuses last.' },
         sidebar_open: { type: 'boolean', description: 'Show (true) or hide (false) the left sidebar.' },
         sidebar_tab: { type: 'string', enum: [...SIDEBAR_TABS], description: 'Which sidebar tab is shown. Opens the sidebar unless sidebar_open is false.' },
         agent_model: { type: 'string', description: 'The in-app agent\'s model, an id from get_preferences valid.agent_model (e.g. "anthropic/claude-haiku-4-5"). Applies to the next message.' },
@@ -97,12 +99,19 @@ export const PREFERENCES_TOOLS: ToolDef[] = [
       if (unknown.length) throw new ToolError(`Unknown preference ${unknown.map((k) => `"${k}"`).join(', ')}. set_preferences changes ${KEYS.join(', ')}; call get_preferences to see them.`);
       const follow = bool(args, 'follow_agent');
       const open = bool(args, 'sidebar_open');
+      const rawKey = args['follow_agent_key'];
+      if (rawKey !== undefined && rawKey !== null && typeof rawKey !== 'string') throw new ToolError('"follow_agent_key" must be an agent key (a string from get_preferences valid.follow_agent_key) or null.');
+      const followKey = rawKey as string | null | undefined;
+      const present = ctx.editor.activity.presences;
+      if (typeof followKey === 'string' && !present.some((p) => p.key === followKey)) {
+        throw new ToolError(`No agent "${followKey}" is on the canvas. ${present.length ? `Agents now: ${present.map((p) => `${p.key} (${p.name})`).join(', ')}.` : 'No agent is working right now.'} Pass null to follow whichever agent focuses last.`);
+      }
       const tabName = str(args, 'sidebar_tab', { optional: true });
       if (tabName !== undefined && !(SIDEBAR_TABS as readonly string[]).includes(tabName)) throw new ToolError(`"sidebar_tab" must be one of ${SIDEBAR_TABS.join(', ')}; got "${tabName}".`);
       const tab = tabName as SidebarTab | undefined;
       const modelName = str(args, 'agent_model', { optional: true });
       const effort = str(args, 'agent_effort', { optional: true });
-      if (follow === undefined && open === undefined && tab === undefined && modelName === undefined && effort === undefined) {
+      if (follow === undefined && followKey === undefined && open === undefined && tab === undefined && modelName === undefined && effort === undefined) {
         throw new ToolError(`set_preferences needs at least one of ${KEYS.join(', ')}, e.g. {"follow_agent": false}. Call get_preferences to see the current values.`);
       }
 
@@ -128,6 +137,10 @@ export const PREFERENCES_TOOLS: ToolDef[] = [
       if (follow !== undefined && follow !== ui.followAgent) {
         ui.setFollowAgent(follow);
         changes.push(`follow agent ${follow ? 'on' : 'off'}`);
+      }
+      if (followKey !== undefined && followKey !== ui.followAgentKey) {
+        ui.setFollowAgentKey(followKey);
+        changes.push(followKey === null ? 'following whichever agent focuses last' : `following ${present.find((p) => p.key === followKey)?.name ?? followKey}`);
       }
       if (tab !== undefined && tab !== ui.sidebarTab) {
         // Asking for a tab shows it (like clicking the tab), unless the same call hides the sidebar.

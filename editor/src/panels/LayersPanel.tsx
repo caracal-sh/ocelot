@@ -4,6 +4,9 @@ import type { Editor } from '../editor/Editor';
 import { isContainer, type NodeData } from '../model/types';
 import { Icon, type IconName } from '../app/Icon';
 import { PagesSection } from './PagesSection';
+import { ContextMenu, type ContextMenuItem } from '../app/ContextMenu';
+import { CREATE_COMPONENT_KEYS, createComponentBlock, createComponentFromSelection, detachWithToast, type ComponentRole } from '../editor/componentUi';
+import './Components.css';
 
 const ICON: Record<NodeData['type'], IconName> = { artboard: 'artboard', frame: 'frame', text: 'text', image: 'image', svg: 'vector', code: 'code' };
 
@@ -21,7 +24,7 @@ function useTreeVersion(editor: Editor): number {
         ref.current++;
         cb();
       };
-      const offs = [editor.on('change', bump), editor.on('document', bump), editor.on('page', bump), editor.selection.subscribe(bump), editor.locks.subscribe(bump)];
+      const offs = [editor.on('change', bump), editor.on('document', bump), editor.on('page', bump), editor.on('components', bump), editor.selection.subscribe(bump), editor.locks.subscribe(bump)];
       return () => offs.forEach((off) => off());
     },
     () => ref.current,
@@ -34,6 +37,7 @@ export function LayersPanel() {
   useTreeVersion(editor);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [drag, setDrag] = useState<DragState | null>(null);
+  const [menu, setMenu] = useState<{ x: number; y: number; id: string } | null>(null);
   const [focusedId, setFocusedId] = useState<string | null>(null);
   const press = useRef<{ x: number; y: number } | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
@@ -161,6 +165,40 @@ export function LayersPanel() {
     e.stopPropagation(); // arrows would otherwise nudge the selection on the canvas
   };
 
+  const roleOf = (id: string): ComponentRole | null => editor.doc.componentRole(id);
+  const componentNameOf = (id: string): string | null => {
+    const role = roleOf(id);
+    if (!role) return null;
+    const root = role === 'main' ? id : editor.doc.instanceRootOf(id);
+    const def = role === 'main' ? editor.doc.componentOfMain(id) : root ? editor.doc.instanceInfo(root)?.component : null;
+    return def?.name ?? null;
+  };
+
+  /** Right-click on a row: selects it (unless it is part of the selection) and offers the component actions. */
+  const openMenu = (id: string, x: number, y: number) => {
+    if (!editor.selection.has(id)) editor.selection.set([id]);
+    setMenu({ x, y, id });
+  };
+  const menuItems = (id: string): ContextMenuItem[] => {
+    const role = roleOf(id);
+    const ids = editor.selection.ids;
+    const block = createComponentBlock(editor, ids);
+    const items: ContextMenuItem[] = [
+      { id: 'create-component', label: 'Create component', shortcut: CREATE_COMPONENT_KEYS, disabled: !!block, ...(block ? { reason: block } : {}), onSelect: () => createComponentFromSelection(editor) },
+    ];
+    if (role === 'instance' || role === 'part') {
+      const root = editor.doc.instanceRootOf(id);
+      items.push({ id: 'go-to-main', label: 'Go to main component', onSelect: () => editor.components.selectMain(id) });
+      if (root) items.push({ id: 'detach-instance', label: 'Detach instance', onSelect: () => detachWithToast(editor, [root]) });
+    }
+    if (role === 'main') {
+      const def = editor.doc.componentOfMain(id);
+      const instances = def ? editor.doc.instancesOf(def.id) : [];
+      items.push({ id: 'select-instances', label: instances.length === 1 ? 'Select the instance' : `Select ${instances.length} instances`, disabled: instances.length === 0, onSelect: () => editor.selection.set(instances) });
+    }
+    return items;
+  };
+
   return (
     <div className="at-layers" onPointerUp={drop} onPointerLeave={() => drag && setDrag({ ...drag, over: null })} data-testid="layers">
       <PagesSection />
@@ -182,10 +220,14 @@ export function LayersPanel() {
             press={press}
             tabbable={node.id === tabId}
             onFocusRow={setFocusedId}
+            role={roleOf(node.id)}
+            compName={componentNameOf(node.id)}
+            onContextMenu={openMenu}
           />
         ))}
         {rows.length === 0 && <div className="at-empty">No layers yet.</div>}
       </div>
+      {menu && <ContextMenu x={menu.x} y={menu.y} items={menuItems(menu.id)} onClose={() => setMenu(null)} label="Layer actions" />}
     </div>
   );
 }
@@ -208,6 +250,10 @@ interface RowProps {
   onToggle(id: string): void;
   onDragStart(id: string): void;
   onDragOver(id: string, where: 'before' | 'after' | 'inside'): void;
+  /** Whether the layer is the main of a component, an instance of one, or a part inside an instance; with the component's name. */
+  role: ComponentRole | null;
+  compName: string | null;
+  onContextMenu(id: string, x: number, y: number): void;
 }
 
 const LayerRow = memo(function LayerRow(p: RowProps) {
@@ -230,14 +276,15 @@ const LayerRow = memo(function LayerRow(p: RowProps) {
     p.press.current = { x: e.clientX, y: e.clientY };
   };
   const onPointerMove = (e: React.PointerEvent) => {
-    if (p.press.current && e.buttons === 1 && !p.dragging && Math.abs(e.clientY - p.press.current.y) > 4 && node.type !== 'artboard') {
+    if (p.press.current && e.buttons === 1 && !p.dragging && Math.abs(e.clientY - p.press.current.y) > 4 && node.type !== 'artboard' && p.role !== 'part') {
       p.onDragStart(node.id);
       p.press.current = null;
     }
-    if (p.dragging) {
+    // A part is the main's layer drawn again: nothing is dropped on or between parts, and an instance takes no children.
+    if (p.dragging && p.role !== 'part') {
       const r = e.currentTarget.getBoundingClientRect();
       const f = (e.clientY - r.top) / r.height;
-      const container = isContainer(node.type);
+      const container = isContainer(node.type) && p.role !== 'instance';
       p.onDragOver(node.id, container && f > 0.3 && f < 0.7 ? 'inside' : f < 0.5 ? (node.type === 'artboard' ? 'inside' : 'before') : node.type === 'artboard' ? 'inside' : 'after');
     }
   };
@@ -256,17 +303,21 @@ const LayerRow = memo(function LayerRow(p: RowProps) {
         if (e.target === e.currentTarget) p.onFocusRow(node.id);
       }}
       onKeyDown={(e) => {
-        if (e.target !== e.currentTarget || renaming || e.metaKey || e.ctrlKey || e.altKey || (e.key !== 'Enter' && e.key !== 'F2')) return;
+        if (e.target !== e.currentTarget || renaming || p.role === 'part' || e.metaKey || e.ctrlKey || e.altKey || (e.key !== 'Enter' && e.key !== 'F2')) return;
         e.preventDefault();
         e.stopPropagation(); // Enter would otherwise select the layer's children on the canvas
         setRenaming(true);
       }}
-      className={`at-layer${p.selected ? ' is-selected' : ''}${node.hidden ? ' is-hidden' : ''}${p.dropHint ? ` drop-${p.dropHint}` : ''}`}
+      className={`at-layer${p.selected ? ' is-selected' : ''}${node.hidden ? ' is-hidden' : ''}${p.dropHint ? ` drop-${p.dropHint}` : ''}${p.role ? ` is-${p.role}` : ''}`}
       style={{ paddingLeft: 2 + p.depth * 14 }}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={() => (p.press.current = null)}
-      onDoubleClick={() => setRenaming(true)}
+      onDoubleClick={() => p.role !== 'part' && setRenaming(true)}
+      onContextMenu={(e) => {
+        e.preventDefault();
+        p.onContextMenu(node.id, e.clientX, e.clientY);
+      }}
       data-layer-id={node.id}
     >
       <button
@@ -281,7 +332,9 @@ const LayerRow = memo(function LayerRow(p: RowProps) {
       >
         <Icon name="chevron" size={12} />
       </button>
-      <span className="at-layer__icon"><Icon name={ICON[node.type]} size={14} /></span>
+      <span className="at-layer__icon" data-tip={p.role === 'main' ? `Main of ${p.compName}` : p.role === 'instance' ? `Instance of ${p.compName}` : p.role === 'part' ? `Part of an instance of ${p.compName}` : undefined}>
+        <Icon name={p.role === 'main' ? 'component' : p.role === 'instance' ? 'instance' : ICON[node.type]} size={14} />
+      </span>
       {renaming ? (
         <input
           className="at-layer__rename"
@@ -309,6 +362,29 @@ const LayerRow = memo(function LayerRow(p: RowProps) {
         <>
           {p.slide !== undefined && <span className="at-layer__slide" data-testid="layer-slide-number">{p.slide}</span>}
           <span className="at-layer__name">{label}</span>
+          {p.role === 'instance' && p.compName && node.name !== p.compName && (
+            <button
+              type="button"
+              className="at-layer__comp"
+              data-tip={`Instance of ${p.compName}. Double-click to select the main.`}
+              aria-label={`Instance of ${p.compName}: double-click or press Enter to select the main component`}
+              tabIndex={p.tabbable ? 0 : -1}
+              onDoubleClick={(e) => {
+                e.stopPropagation(); // not a rename
+                editor.components.selectMain(node.id);
+              }}
+              onKeyDown={(e) => {
+                if (e.key !== 'Enter' || e.metaKey || e.ctrlKey || e.altKey) return;
+                e.preventDefault();
+                e.stopPropagation(); // Enter on the row renames
+                editor.components.selectMain(node.id);
+              }}
+              data-testid="layer-main-link"
+            >
+              {p.compName}
+            </button>
+          )}
+          {p.role === 'main' && <span className="at-layer__comp at-layer__comp--tag" data-testid="layer-main-tag">Main</span>}
         </>
       )}
       {p.agentLocked && <span className="at-layer__agent" data-tip="An agent is editing this" />}

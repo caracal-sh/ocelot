@@ -78,6 +78,25 @@ describe('set_preferences', () => {
     expect(t.editor.ui.toasts.at(-1)).toMatchObject({ kind: 'agent', message: 'Claude Code changed preferences: follow agent off, sidebar hidden' });
   });
 
+  it('picks which agent the camera follows (follow_agent_key), only among the agents on the canvas, and null goes back to all', async () => {
+    const t = await setup();
+    t.editor.activity.begin('Welcome', 'sub-1');
+    t.editor.activity.begin('Goals', 'sub-2');
+    const read = await t.call('get_preferences');
+    expect(read.json).toMatchObject({ follow_agent_key: null });
+    expect(read.json!['valid']['follow_agent_key']).toEqual([{ key: 'sub-1', name: 'Welcome' }, { key: 'sub-2', name: 'Goals' }]);
+    const r = await t.call('set_preferences', { follow_agent_key: 'sub-2' });
+    expect(r.json).toMatchObject({ changed: ['following Goals'], preferences: { follow_agent_key: 'sub-2' } });
+    expect(t.editor.ui.followAgentKey).toBe('sub-2');
+    const bad = await t.call('set_preferences', { follow_agent_key: 'nobody', follow_agent: false });
+    expect(bad.isError).toBe(true);
+    expect(bad.text).toMatch(/No agent "nobody" is on the canvas\. Agents now: sub-1 \(Welcome\), sub-2 \(Goals\)\. Pass null/);
+    expect(t.editor.ui.followAgent).toBe(true);
+    expect((await t.call('set_preferences', { follow_agent_key: 7 })).text).toMatch(/must be an agent key/);
+    const back = await t.call('set_preferences', { follow_agent_key: null });
+    expect(back.json).toMatchObject({ changed: ['following whichever agent focuses last'], preferences: { follow_agent_key: null } });
+  });
+
   it('a tab shows the sidebar (like clicking it) unless the call hides it', async () => {
     const t = await setup();
     t.editor.ui.setSidebarOpen(false);
@@ -138,7 +157,7 @@ describe('set_preferences', () => {
     const t = await setup();
     const unknown = await t.call('set_preferences', { run_agent_unconfined: true });
     expect(unknown.isError).toBe(true);
-    expect(unknown.text).toMatch(/Unknown preference "run_agent_unconfined"\. set_preferences changes follow_agent, sidebar_open/);
+    expect(unknown.text).toMatch(/Unknown preference "run_agent_unconfined"\. set_preferences changes follow_agent, follow_agent_key, sidebar_open/);
     expect((await t.call('set_preferences', {})).text).toMatch(/needs at least one of/);
     expect((await t.call('set_preferences', { sidebar_tab: 'nope' })).text).toMatch(/"sidebar_tab" must be one of agent, layers, assets/);
     expect((await t.call('set_preferences', { follow_agent: 'yes' })).text).toMatch(/true or false/);

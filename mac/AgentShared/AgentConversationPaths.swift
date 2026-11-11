@@ -1,12 +1,13 @@
 import Foundation
 
-/// Where the sidebar agent's conversations live on disk, shared by the app (which creates and deletes them) and the
-/// sandboxed service (which only checks that a directory it is handed is one of them). Mirrors editor/e2e/agent-history.mjs.
+/// Where the sidebar agent's conversations live on disk, shared by the app, which creates, copies and deletes them. Mirrors editor/e2e/agent-history.mjs.
 ///
 /// Under the agent folder (`~/Library/Application Support/Ocelot/Agent`):
 ///
 ///     conversations/<projectId>/<conversationId>/   omp's session files (`--session-dir`, `--continue`): the model's memory.
-///                                                   The only place the sandboxed agent may read and write for this.
+///                                                   The sandboxed agent never reaches this folder: it works on a private
+///                                                   copy in its scratch, which the app copies in before the start and out
+///                                                   after every turn (`AgentSessionArchive`).
 ///     history/<projectId>/<id>.meta.json            what the sidebar lists
 ///     history/<projectId>/<id>.transcript.json      what the sidebar shows again (the person's private chat: the agent
 ///                                                   cannot reach it)
@@ -29,13 +30,5 @@ enum AgentConversationPaths {
     static func sessionDirectory(agentFolder: String, projectId: String, conversationId: String) -> String? {
         guard isValidProjectId(projectId), isValidConversationId(conversationId) else { return nil }
         return "\(agentFolder)/\(conversationsFolder)/\(projectId)/\(conversationId)"
-    }
-
-    /// True when `path` is exactly a conversation directory under `agentFolder` (the one place the service's sandbox lets omp write).
-    static func isSessionDirectory(_ path: String, agentFolder: String) -> Bool {
-        let prefix = "\(agentFolder)/\(conversationsFolder)/"
-        guard path.hasPrefix(prefix) else { return false }
-        let parts = path.dropFirst(prefix.count).split(separator: "/", omittingEmptySubsequences: false).map(String.init)
-        return parts.count == 2 && isValidProjectId(parts[0]) && isValidConversationId(parts[1])
     }
 }

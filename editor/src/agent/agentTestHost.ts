@@ -27,7 +27,7 @@ export interface AgentTestHost {
   /** Process ids the sidebar asked the host to stop. */
   stopped: string[];
   /** The host's saved conversations by id (summary and transcript texts), as `host.agentHistory*` keep them. */
-  stored: Map<string, { meta: string; transcript?: string; projectId?: string }>;
+  stored: Map<string, { meta: string; transcript?: string; projectId?: string; files?: Map<string, string> }>;
   /** Makes the next `host.agentHistoryWrite` fail with this message. */
   failWrites: { message: string | null };
   /** Frames from a specific (maybe older) process. */
@@ -43,7 +43,7 @@ export function createAgentTestHost(opts: { codec?: ImageCodec } = {}): AgentTes
   const replies: Record<string, Reply> = {};
   const starts: Array<Record<string, unknown>> = [];
   const stopped: string[] = [];
-  const stored = new Map<string, { meta: string; transcript?: string; projectId?: string }>();
+  const stored = new Map<string, { meta: string; transcript?: string; projectId?: string; files?: Map<string, string> }>();
   const failWrites: { message: string | null } = { message: null };
   let processId = '';
   const emitFor = (id: string, frames: unknown[]) =>
@@ -58,11 +58,16 @@ export function createAgentTestHost(opts: { codec?: ImageCodec } = {}): AgentTes
         return {};
       }
       if (method === 'host.agentHistoryList') return { entries: [...stored].filter(([, v]) => v.projectId === undefined || v.projectId === p['projectId']).map(([id, v]) => ({ id, meta: v.meta })) };
-      if (method === 'host.agentHistoryRead') return { ...(stored.get(p['id'] as string)?.transcript !== undefined ? { text: stored.get(p['id'] as string)!.transcript } : {}) };
+      if (method === 'host.agentHistoryRead') {
+        const entry = stored.get(p['id'] as string);
+        return { ...(entry?.transcript !== undefined ? { text: entry.transcript } : {}), ...(entry?.files?.size ? { files: [...entry.files].map(([name, dataBase64]) => ({ name, dataBase64 })) } : {}) };
+      }
       if (method === 'host.agentHistoryWrite') {
         if (failWrites.message) throw new Error(failWrites.message);
         const id = p['id'] as string;
-        stored.set(id, { projectId: p['projectId'] as string, meta: p['meta'] as string, ...(typeof p['transcript'] === 'string' ? { transcript: p['transcript'] } : stored.get(id)?.transcript !== undefined ? { transcript: stored.get(id)!.transcript! } : {}) });
+        const files = new Map(stored.get(id)?.files);
+        for (const f of (p['files'] as Array<{ name: string; dataBase64: string }> | undefined) ?? []) files.set(f.name, f.dataBase64);
+        stored.set(id, { projectId: p['projectId'] as string, meta: p['meta'] as string, files, ...(typeof p['transcript'] === 'string' ? { transcript: p['transcript'] } : stored.get(id)?.transcript !== undefined ? { transcript: stored.get(id)!.transcript! } : {}) });
         return {};
       }
       if (method === 'host.agentHistoryDelete') {

@@ -8,6 +8,7 @@ import { isContainer, type NodeSpec } from '../model/types';
 import { pasteImageFiles } from '../canvas/assetDrop';
 import { imageFiles } from '../panels/assetLogic';
 import type { AlignMode } from './align';
+import { createComponentFromSelection } from './componentUi';
 
 export function isEditableTarget(target: EventTarget | null): boolean {
   if (!(target instanceof Element)) return false;
@@ -34,6 +35,7 @@ export function useKeyboardShortcuts(editor: Editor): void {
       let handled = true;
       if (e.ctrlKey && e.altKey && !e.metaKey && !e.shiftKey && e.code === 'KeyT') editor.actions.tidyArtboards();
       else if (e.ctrlKey && e.altKey && !e.metaKey && !e.shiftKey && (e.code === 'KeyH' || e.code === 'KeyV')) editor.actions.distributeSelection(e.code === 'KeyH' ? 'horizontal' : 'vertical');
+      else if (mod && e.altKey && !e.shiftKey && e.code === 'KeyK') createComponentFromSelection(editor); // by physical key: ⌥K types "˚" on a Mac
       else if (!mod && e.altKey && !e.shiftKey && alignShortcut(e.code)) editor.actions.alignSelection(alignShortcut(e.code)!);
       else if (mod && key === 'z' && !e.shiftKey) editor.undo();
       else if (mod && ((key === 'z' && e.shiftKey) || key === 'y')) editor.redo();
@@ -45,7 +47,10 @@ export function useKeyboardShortcuts(editor: Editor): void {
       else if (mod && key === 'a') selectAll(editor);
       else if (mod && e.shiftKey && !e.altKey && e.code === 'KeyL') editor.actions.toggleLockSelection();
       else if (mod && e.shiftKey && !e.altKey && e.code === 'KeyH') editor.actions.toggleHideSelection();
-      else if (!mod && e.shiftKey && e.code === 'Digit1') editor.zoomToFit();
+      else if (mod && e.shiftKey && !e.altKey && e.code === 'KeyK') {
+        // "Ask the agent about this": opens the note popover next to the selection (canvas/AskAboutLayer.tsx).
+        if (sel.length) editor.ui.setAskOpen(true);
+      } else if (!mod && e.shiftKey && e.code === 'Digit1') editor.zoomToFit();
       else if (!mod && e.shiftKey && e.code === 'Digit2') zoomToSelection(editor);
       else if (!mod && e.shiftKey && e.code === 'Digit0') editor.viewport.zoomToCenter(1);
       else if (!mod && (key === 'backspace' || key === 'delete')) editor.actions.deleteSelection();

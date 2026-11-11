@@ -64,7 +64,7 @@ describe('guides name real tools', () => {
   });
 
   it('every tool a guide is built around exists', () => {
-    for (const name of ['set_slide', 'get_deck', 'export_deck', 'get_timeline', 'get_frames', 'export_video', 'list_themes', 'get_theme', 'apply_theme', 'create_theme', 'start_presentation', 'get_code_errors', 'set_keyframes', 'create_page', 'update_page', 'create_design_system', 'insert_component', 'update_design_system', 'export_design_system']) {
+    for (const name of ['set_slide', 'get_deck', 'export_deck', 'get_timeline', 'get_frames', 'export_video', 'list_themes', 'get_theme', 'apply_theme', 'create_theme', 'start_presentation', 'get_code_errors', 'set_keyframes', 'create_page', 'update_page', 'create_design_system', 'insert_component', 'update_design_system', 'export_design_system', 'make_component', 'place_instance', 'set_instance', 'reset_instance', 'detach_instance', 'update_component', 'remove_component', 'list_doc_components', 'get_doc_component']) {
       expect(registry.has(name), name).toBe(true);
     }
   });
@@ -104,6 +104,8 @@ describe('guide topics', () => {
     // design-guide: +250 words for the property-to-tool rows of the app tools, preferences, sidebar chat, present/timeline/viewport
     // control, export/clipboard/handoff and image-import tools (everything a person can do has a row).
     // theme-guide: +70 words for your own theme (create_theme), the flow a new design without a given style now takes (it replaces the mood-word brief that never became tokens).
+    // Reuse (document components) was added to the server instructions (one line) and the design-guide (a short section and the tool-map rows) without raising
+    // a budget: the same words were trimmed from copy that repeated itself, and the design-system-guide got one cross-reference.
     // product-guide: its own topic (1,700 words) because the design-guide is at its cap; agents fetch it only for app screens.
     const budget: Record<string, number> = { 'design-guide': 5950, 'motion-guide': 2800, 'slides-guide': 1900, 'video-guide': 2300, 'theme-guide': 1470, 'design-system-guide': 1550, 'product-guide': 1750 };
     for (const [topic, max] of Object.entries(budget)) expect(words(readGuide(topic)), topic).toBeLessThanOrEqual(max);
@@ -215,5 +217,38 @@ describe('product-guide', () => {
     expect(SERVER_INSTRUCTIONS).toContain('get_guide({ topic: "product-guide" })');
     expect(readGuide('design-guide')).toContain('get_guide({ topic: "product-guide" })');
     expect(g).not.toMatch(/\b(uizze|mobbin|refero|linear|stripe|notion|shopify)\b/i);
+  });
+});
+
+describe('reuse: components', () => {
+  const design = readGuide('design-guide');
+  const section = design.slice(design.indexOf('### Reuse: components'), design.indexOf('## 9. Context and exploration order'));
+
+  it('the server instructions say to build what repeats once and place instances, and no longer tell agents to duplicate it', () => {
+    expect(SERVER_INSTRUCTIONS).toMatch(/Reuse \(design-guide "Reuse: components"\)/);
+    for (const s of ['make_component', 'place_instance', '<oc-instance of="Name">', 'Edit shared parts on the main', 'insert_component parts are already shared', 'Before spawning parallel agents, make each shared bar a component named in their brief; they place it, never rebuild it']) expect(SERVER_INSTRUCTIONS, s).toContain(s);
+    expect(SERVER_INSTRUCTIONS).toMatch(/Repeats inside one screen: duplicate_nodes/);
+    expect(SERVER_INSTRUCTIONS).not.toMatch(/To repeat something, duplicate_nodes/);
+  });
+
+  it('the design-guide has a Reuse section with props, instances, edits on the main, design-system parts and parallel agents', () => {
+    expect(section.length).toBeGreaterThan(0);
+    for (const s of ['nav bar, sidebar, top bar, status bar, toolbar, page header, tab bar, footer, buttons', 'make_component({ node_ids, name, props })', 'a boolean for icon visibility', 'a variant for primary / secondary', 'place_instance', '<oc-instance of="Button"', '<oc-override target="Label"', 'Edit shared parts on the main', 'reset_instance', 'detach_instance', 'insert_component and <ds-*> parts are already shared', 'never wrap one alone', 'Parallel agents: before spawning, make every shared bar a component and put its <oc-instance of="Name"> line in their brief (never prose); they place instances, never rebuild']) expect(section, s).toContain(s);
+    expect(design).not.toMatch(/For repeated items, create the container and the first item, then duplicate_nodes/);
+  });
+
+  it('the property-to-tool map has the component tools and points duplicate_nodes at one screen\'s filler', () => {
+    expect(design).toMatch(/\| Reusable part \(component\)[^|]*\| make_component, place_instance, set_instance, reset_instance, detach_instance, update_component, remove_component; list_doc_components, get_doc_component/);
+    expect(design).toMatch(/\| Duplicate \(one screen's filler; a part that repeats across screens is a component\)/);
+  });
+
+  it('the design-system-guide tells agents not to wrap a design-system component again', () => {
+    const g = readGuide('design-system-guide');
+    expect(g).toContain('never wrap one alone in make_component');
+    expect(g).toContain('(design-guide "Reuse: components")');
+  });
+
+  it('names no product', () => {
+    expect([SERVER_INSTRUCTIONS.slice(SERVER_INSTRUCTIONS.indexOf('- Reuse'), SERVER_INSTRUCTIONS.indexOf('- Review your work')), section].join('\n')).not.toMatch(/\b(figma|sketch|framer|paper|linear|stripe|notion|shopify|apple|google)\b/i);
   });
 });

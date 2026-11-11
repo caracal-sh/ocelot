@@ -304,7 +304,7 @@ export async function startHeadlessHost(opts = {}) {
     // The sidebar's saved conversations: the host only stores them (summary and transcript are the editor's own JSON).
     'host.agentHistoryList': async ({ projectId }) => ({ entries: await agentHost.history.list(projectId) }),
     'host.agentHistoryRead': ({ projectId, id }) => agentHost.history.read(projectId, id),
-    'host.agentHistoryWrite': async ({ projectId, id, meta, transcript }) => (await agentHost.history.write(projectId, id, meta, transcript ?? undefined), {}),
+    'host.agentHistoryWrite': async ({ projectId, id, meta, transcript, files }) => (await agentHost.history.write(projectId, id, meta, transcript ?? undefined, files ?? undefined), {}),
     'host.agentHistoryDelete': async ({ projectId, id }) => (await agentHost.history.remove(projectId, id), {}),
     ...assetsHost.handlers,
     ...exportHost.handlers,

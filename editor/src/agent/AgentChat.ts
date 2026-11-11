@@ -8,11 +8,12 @@
 import { errorMessage } from '../bridge/rpc';
 import type { AgentEventParams, AgentInfo, JsonValue, StartAttachment } from '../bridge/schema.gen';
 import type { Editor } from '../editor/Editor';
+import { referencesLead, referencesPrompt, type LayerReference } from '../editor/layerReferences';
 import { isOmpClient, type QuestionRecord } from '../editor/questions';
 import { editorEndpoint, type Host } from '../host/host';
 import { attachmentErrors, browserImageCodec, buildMessage, DEFAULT_ATTACHMENT_PROMPT, firstAttachmentError, ingestPayload, type Attachment, type ImageCodec } from './attachments';
 import { modelShortName } from './agentName';
-import { newConversationId, parseMeta, parseTranscript, serializeMeta, serializeTranscript, sortConversations, titleFromPrompt, upsertConversation, type ConversationMeta } from './conversations';
+import { newConversationId, parseMeta, parseTranscript, newTranscriptFiles, packTranscript, serializeMeta, sortConversations, titleFromPrompt, upsertConversation, type ConversationMeta, type TranscriptFiles } from './conversations';
 import { FrameDecoder } from './frames';
 import { LiveWriteTracker } from './liveWrite';
 import { applyEvent, emptyTranscript, isAuthError, isObj, settle, type AnswerEntry, type ChatItem, type TranscriptState } from './transcript';
@@ -37,6 +38,8 @@ interface StartedTurn {
   context: { line: string; label: string } | null;
   /** The external agent that sent this message through the sidebar_agent tool ("Claude Code"); absent for the person's own. */
   from?: string;
+  /** Layers the person referenced with a note; their ids go to the agent in the lead of the message. */
+  references?: readonly LayerReference[];
 }
 
 export interface AgentModel {
@@ -84,6 +87,8 @@ interface Conversation {
   verifyMemory: boolean;
   /** The host has a copy (written at least once). */
   saved: boolean;
+  /** The image files of its transcript: which are stored in the host, which are still to be written. */
+  files: TranscriptFiles;
 }
 
 const MODEL_KEY = 'ocelot.agent.model';
@@ -95,10 +100,13 @@ const SAVE_DEBOUNCE_MS = 1500;
 const RETIRE_GRACE_MS = 4000;
 const REQUEST_TIMEOUT_MS = 15_000;
 const OCELOT_TOOL_PREFIX = 'mcp__ocelot_';
+/** omp's subagent tool: the only built-in tool the sidebar agent has. */
+const SPAWN_TOOL = 'task';
 
 const SYSTEM_PROMPT = [
   "You are the design agent inside Ocelot, a macOS design tool whose canvas is real HTML and CSS. The person you are talking to watches the canvas while you work: every change you make through the ocelot tools appears live, and they can undo your edits with ⌘Z.",
-  'You can only act through the ocelot MCP tools; there is no shell and no file access. Follow the Ocelot MCP server instructions below, including loading the design guide once per conversation. Read get_guide "slides-guide" before building a deck, "video-guide" before a film or animation sequence, "theme-guide" before applying a theme, "design-system-guide" before creating a design system or inserting components, and "motion-guide" before any motion.',
+  'You can only act through the ocelot MCP tools and task (subagents that have the same ocelot tools); there is no shell and no file access. Follow the Ocelot MCP server instructions below, including loading the design guide once per conversation. Read get_guide "slides-guide" before building a deck, "video-guide" before a film or animation sequence, "theme-guide" before applying a theme, "design-system-guide" before creating a design system or inserting components, and "motion-guide" before any motion.',
+  'Two or more screens (a flow\'s steps, an app\'s tabs), even linked ones, MUST be built by subagents: first create the shared theme or design system, then build what repeats across the screens once yourself: every bar the screens share (sidebar, top bar, status bar, tab bar, toolbar, page header, footer) written on the first artboard and made a component with make_component. Then call task once with one task per screen. Set each task\'s name to its screen\'s name (the subagent creates that artboard); its text holds the brief, token names, guide topics to read, and one <oc-instance of="Name"> line per shared component with its props: subagents place those, never rebuild or describe them in prose, and are never told to avoid components. Layers used on one screen only stay plain layers. A single screen, or dependent edits, you build yourself. Afterwards check each screen with get_screenshot and link them.',
   'A message may start with a [Selection: …] line listing what the person has selected on the canvas; "this", "it" or "the selection" usually refers to it.',
   'Start building early. Settle the brief in your reasoning, never in chat: no brief, palette or plan before your first write, and your first write comes within your first few tool calls. While you work, every message you write is one short sentence, and most steps need none. Write one visual group per call in reading order, and look with get_screenshot every 2-3 groups and at the end, not after every group.',
   'Screens that belong together (the pages of one website, the steps of a flow, an app\'s tabs) are always linked so the person can click through them in Preview: set_link on nav items, buttons and back arrows, then get_links until nothing is broken, before your final reply.',
@@ -283,8 +291,8 @@ export class AgentChat {
    * message through the sidebar_agent tool: the bubble says so, the agent is told the person did not type it, and the
    * person's canvas selection is not attached (it would not be what that agent means).
    */
-  async send(text: string, attachments: readonly Attachment[] = [], mode: SendMode = 'queue', from?: string): Promise<boolean> {
-    const prompt = text.trim();
+  async send(text: string, attachments: readonly Attachment[] = [], mode: SendMode = 'queue', from?: string, references: readonly LayerReference[] = []): Promise<boolean> {
+    const prompt = text.trim() || (!attachments.length && references.length ? referencesPrompt(references) : '');
     if ((!prompt && !attachments.length) || this.#loading || this.#snapshot.turn?.stopping || this.#snapshot.availability.kind !== 'ready') return false;
     const problem = firstAttachmentError(attachments);
     if (problem) {
@@ -292,16 +300,16 @@ export class AgentChat {
       return false;
     }
     // While the agent works the message is queued (delivered after the turn) or steers it (delivered at its next step).
-    if (this.#snapshot.turn) return this.#sendWhileWorking(prompt, attachments, mode, from);
-    const started = this.#beginTurn(prompt, attachments, from);
+    if (this.#snapshot.turn) return this.#sendWhileWorking(prompt, attachments, mode, from, references);
+    const started = this.#beginTurn(prompt, attachments, from, references);
     return this.#runTurn(started, prompt, attachments);
   }
 
   /** Shows the person's message and the working state at once, before anything is checked or sent. */
-  #beginTurn(prompt: string, attachments: readonly Attachment[], from?: string): StartedTurn {
+  #beginTurn(prompt: string, attachments: readonly Attachment[], from?: string, references: readonly LayerReference[] = []): StartedTurn {
     const context = from ? null : this.#selectionContext();
     const turnId = `t-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
-    const item: ChatItem = { kind: 'user', id: turnId, text: prompt || DEFAULT_ATTACHMENT_PROMPT, ...(from ? { from } : {}), ...(context ? { context: context.label } : {}), ...(attachments.length ? { attachments: [...attachments] } : {}) };
+    const item: ChatItem = { kind: 'user', id: turnId, text: prompt || DEFAULT_ATTACHMENT_PROMPT, ...(from ? { from } : {}), ...(context ? { context: context.label } : {}), ...(attachments.length ? { attachments: [...attachments] } : {}), ...(references.length ? { references: [...references] } : {}) };
     this.#transcript = { ...this.#transcript, items: [...this.#transcript.items, item] };
     const conversation = this.#current;
     conversation.turns += 1;
@@ -311,7 +319,7 @@ export class AgentChat {
     this.#update({ items: this.#transcript.items, turn: { id: turnId, startedAt: Date.now(), stopping: false } });
     // A new document's empty artboard shows the agent planning from the first moment, whichever way the turn starts.
     if (!this.editor.locks.planning) this.#showPlanning();
-    return { turnId, context, ...(from ? { from } : {}) };
+    return { turnId, context, ...(from ? { from } : {}), ...(references.length ? { references } : {}) };
   }
 
   /** Takes back a turn that never reached the agent (omp turned out missing or signed out): the message and the working state go. */
@@ -332,7 +340,7 @@ export class AgentChat {
   }
 
   /** Starts the agent process if needed and hands it the prompt of a turn that is already on screen. */
-  async #runTurn({ turnId, context, from }: StartedTurn, prompt: string, attachments: readonly Attachment[]): Promise<boolean> {
+  async #runTurn({ turnId, context, from, references }: StartedTurn, prompt: string, attachments: readonly Attachment[]): Promise<boolean> {
     try {
       await this.#ensureProcess();
       // Fail closed: the host disables omp's other config sources by name, so verify that
@@ -349,7 +357,7 @@ export class AgentChat {
       const stored = await this.#storeImages(attachments);
       const { message, images } = buildMessage(prompt, stored);
       if (attachments.length) this.#patchUser(turnId, stored);
-      await this.#sendCommand({ id: turnId, type: 'prompt', message: withLead(message, from, context), ...(images.length ? { images } : {}) });
+      await this.#sendCommand({ id: turnId, type: 'prompt', message: withLead(message, from, context, this.#referencesLead(references)), ...(images.length ? { images } : {}) });
       // omp has a session file for the conversation from here on: a later process continues it.
       this.#current.resume = true;
       void this.#save();
@@ -494,14 +502,15 @@ export class AgentChat {
     if (!meta) return false;
     this.#leave(true); // also retires any conversation still being opened
     const seq = ++this.#switchSeq;
-    this.#current = { ...meta, projectId: this.#projectId(), resume: true, verifyMemory: true, saved: true };
+    this.#current = { ...meta, projectId: this.#projectId(), resume: true, verifyMemory: true, saved: true, files: newTranscriptFiles() };
     this.#loading = true;
     this.#showEmpty();
     let items: ChatItem[] | null = null;
     let failure = '';
+    const tracked = this.#current.files;
     try {
-      const { text } = await this.host.call('host.agentHistoryRead', { projectId: this.#projectId(), id });
-      items = text ? parseTranscript(text) : null;
+      const { text, files } = await this.host.call('host.agentHistoryRead', { projectId: this.#projectId(), id });
+      items = text ? parseTranscript(text, files ?? [], tracked) : null;
       if (!items) failure = 'The messages of this conversation could not be read. The agent still remembers it: ask for a recap.';
     } catch (err) {
       failure = `The messages of this conversation could not be read: ${errorMessage(err)}`;
@@ -589,11 +598,17 @@ export class AgentChat {
     const conversation = this.#current;
     if (!conversation.turns || this.#loading) return this.#writing; // while its transcript is still being read there is nothing of it to write
     const meta = this.#meta(conversation);
-    const params = { projectId: conversation.projectId, id: conversation.id, meta: serializeMeta(meta), transcript: serializeTranscript(this.#transcript.items) };
+    const items = this.#transcript.items;
+    const projectId = conversation.projectId;
     conversation.saved = true;
     this.#update({ conversations: upsertConversation(this.#snapshot.conversations, meta) });
     this.#writing = this.#writing
-      .then(() => this.host.call('host.agentHistoryWrite', params))
+      .then(async () => {
+        // The images go to files next to the transcript, each once; the transcript names them.
+        const packed = await packTranscript(items, conversation.files, this.imageCodec);
+        await this.host.call('host.agentHistoryWrite', { projectId, id: conversation.id, meta: serializeMeta(meta), transcript: packed.text, ...(packed.files.length ? { files: packed.files } : {}) });
+        packed.commit();
+      })
       .then(
         () => {
           this.#saveFailed = false;
@@ -620,7 +635,8 @@ export class AgentChat {
   #discard(conversation: Pick<Conversation, 'id' | 'projectId'>): void {
     const projectId = conversation.projectId || this.#projectId();
     this.#writing = this.#writing
-      .then(() => this.host.call('host.agentHistoryDelete', { projectId, id: conversation.id }))
+      // The host waits for the conversation's agent to be gone before it deletes (a stop in progress takes a few seconds).
+      .then(() => this.host.call('host.agentHistoryDelete', { projectId, id: conversation.id }, { timeoutMs: 30_000 }))
       .then(
         () => undefined,
         (err: unknown) => {
@@ -782,6 +798,8 @@ export class AgentChat {
 
   #onFrame(frame: Record<string, unknown>): void {
     this.#live.handle(frame);
+    // `task` frames name the subagents and say when each runs: they are presences on the canvas, and their MCP calls carry their names.
+    this.editor.subagents.handleFrame(frame, this.#agentName() || 'The agent');
     switch (frame['type']) {
       case 'ready':
         // Lossless large frames (screenshots), compact streaming updates, then the live model.
@@ -883,12 +901,12 @@ export class AgentChat {
    * step. Images and the selection line go along as for any message. The chip comes from omp's `queue_update`, the bubble from
    * the delivery (`#onUserMessage`); a message omp refuses leaves a notice and no trace.
    */
-  async #sendWhileWorking(prompt: string, attachments: readonly Attachment[], mode: SendMode, from?: string): Promise<boolean> {
+  async #sendWhileWorking(prompt: string, attachments: readonly Attachment[], mode: SendMode, from?: string, references: readonly LayerReference[] = []): Promise<boolean> {
     const context = from ? null : this.#selectionContext();
     const stored = await this.#storeImages(attachments);
     const { message, images } = buildMessage(prompt, stored);
-    const key = withLead(message, from, context);
-    const meta = { key, text: prompt || DEFAULT_ATTACHMENT_PROMPT, ...(from ? { from } : {}), ...(context ? { context: context.label } : {}), attachments: stored };
+    const key = withLead(message, from, context, this.#referencesLead(references));
+    const meta = { key, text: prompt || DEFAULT_ATTACHMENT_PROMPT, ...(from ? { from } : {}), ...(context ? { context: context.label } : {}), attachments: stored, ...(references.length ? { references: [...references] } : {}) };
     this.#queued.add(meta);
     try {
       await this.#request({ type: 'prompt', message: key, ...(images.length ? { images } : {}), streamingBehavior: mode === 'steer' ? 'steer' : 'followUp' });
@@ -909,7 +927,7 @@ export class AgentChat {
     const meta = this.#queued.take(text);
     if (!meta) return false;
     const id = `u-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
-    this.#push({ kind: 'user', id, text: meta.text, ...(meta.from ? { from: meta.from } : {}), ...(meta.context ? { context: meta.context } : {}), ...(meta.attachments.length ? { attachments: meta.attachments } : {}), ...(message['steering'] === true ? { steered: true } : {}) });
+    this.#push({ kind: 'user', id, text: meta.text, ...(meta.from ? { from: meta.from } : {}), ...(meta.context ? { context: meta.context } : {}), ...(meta.attachments.length ? { attachments: meta.attachments } : {}), ...(meta.references?.length ? { references: meta.references } : {}), ...(message['steering'] === true ? { steered: true } : {}) });
     return true;
   }
 
@@ -948,6 +966,11 @@ export class AgentChat {
     const items = this.#transcript.items.map((it) => (it.id === id && it.kind === 'user' ? { ...it, attachments } : it));
     this.#transcript = { ...this.#transcript, items };
     this.#update({ items });
+  }
+
+  /** The layer references as the agent reads them: every id, the layer name, its artboard and the note. */
+  #referencesLead(references: readonly LayerReference[] | undefined): string {
+    return references ? referencesLead(references, (id) => this.editor.doc.has(id)) : '';
   }
 
   #selectionContext(): { line: string; label: string } | null {
@@ -1024,6 +1047,7 @@ export class AgentChat {
     this.editor.mcpClients.setSidebarAgentName(name);
     // The agent is on the canvas for the whole turn (the toolbar chip), from the moment the message is sent.
     this.editor.activity.holdTurn(turn ? name || 'The agent' : null);
+    if (!turn) this.editor.subagents.clear();
     const planning = this.editor.locks.planning;
     if (!planning) return;
     if (!turn) this.editor.locks.setPlanning(null);
@@ -1049,26 +1073,26 @@ function scopedToProcess(frame: Record<string, unknown>, processId: string): Rec
 
 function blankConversation(): Conversation {
   const now = Date.now();
-  return { id: newConversationId(), projectId: '', title: '', createdAt: now, updatedAt: now, turns: 0, resume: false, verifyMemory: false, saved: false };
+  return { id: newConversationId(), projectId: '', title: '', createdAt: now, updatedAt: now, turns: 0, resume: false, verifyMemory: false, saved: false, files: newTranscriptFiles() };
 }
 
 /** What the agent reads before the person's words: who really sent the message (an external agent), then the selection line. */
-function withLead(message: string, from: string | undefined, context: { line: string } | null): string {
-  const lines = [...(from ? [`[Sent by ${from}, an external agent connected to this document. The person did not type this message.]`] : []), ...(context ? [context.line] : [])];
+function withLead(message: string, from: string | undefined, context: { line: string } | null, references = ''): string {
+  const lines = [...(from ? [`[Sent by ${from}, an external agent connected to this document. The person did not type this message.]`] : []), ...(context ? [context.line] : []), ...(references ? [references] : [])];
   return lines.length ? `${lines.join('\n')}\n\n${message}` : message;
 }
 
 /**
- * Tools in a `get_state` response that are not Ocelot's MCP tools. The sidebar's
- * omp runs with no built-in tools, so anything else (or a missing tool list) means
- * isolation failed. `dumpTools` lists MCP tools by name because the host's config
- * overlay sets `tools.xdev: false`.
+ * Tools in a `get_state` response that are neither Ocelot's MCP tools nor `task` (omp's subagent spawner, the one
+ * built-in the sidebar agent keeps: its subagents get Ocelot's MCP tools and nothing else, through the agent definition the host writes).
+ * Anything else (or a missing tool list) means isolation failed. `dumpTools` lists MCP tools by name because the
+ * host's config overlay sets `tools.xdev: false`.
  */
 export function foreignTools(state: unknown): string[] {
   const tools = isObj(state) && Array.isArray(state['dumpTools']) ? state['dumpTools'] : null;
   if (!tools) return ['(the agent did not report its tools)'];
   const names = tools.map((t) => (isObj(t) && typeof t['name'] === 'string' ? t['name'] : '(unnamed tool)'));
-  return names.filter((name) => !name.startsWith(OCELOT_TOOL_PREFIX));
+  return names.filter((name) => name !== SPAWN_TOOL && !name.startsWith(OCELOT_TOOL_PREFIX));
 }
 
 /** Chat models from `omp models --json`, without dated duplicates of an alias. */

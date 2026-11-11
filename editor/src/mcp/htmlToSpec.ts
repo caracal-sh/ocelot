@@ -7,6 +7,8 @@
 //                                 -> text node with that tag (`text`, or sanitized `html` if it has inline tags)
 //   anything else                 -> frame node with children
 //   loose text next to elements   -> text node <span>
+//   <oc-instance of="Name" prop="…"><oc-override target="…" …></oc-override></oc-instance>
+//                                 -> an instance of a document component (instanceHtml.ts)
 // Inline `style` attributes become the node's styles. `data-name` becomes the layer name.
 // Unsafe or unsupported content is dropped and reported in `warnings`.
 
@@ -34,13 +36,22 @@ export interface HtmlParseResult {
 /** Expands `<ds-*>` design-system elements into layers (see designsystem/components/expand.ts). `children()` converts the markup inside the element. */
 export type DsHtmlHook = (el: Element, children: () => NodeSpec[]) => NodeSpec;
 
-export function htmlToSpecs(html: string, parser: DOMParser = new DOMParser(), ds?: DsHtmlHook): HtmlParseResult {
+/**
+ * Turns `<oc-instance of="Button" label="Save">…<oc-override target="Label" text="…"></oc-override></oc-instance>` into an instance spec
+ * (see mcp/instanceHtml.ts). Without a hook the element is dropped with a warning.
+ */
+export type InstanceHtmlHook = (el: Element, warnings: Set<string>) => NodeSpec;
+
+export const INSTANCE_TAG = 'oc-instance';
+export const OVERRIDE_TAG = 'oc-override';
+
+export function htmlToSpecs(html: string, parser: DOMParser = new DOMParser(), ds?: DsHtmlHook, instances?: InstanceHtmlHook): HtmlParseResult {
   const warnings = new Set<string>();
   const doc = parser.parseFromString(`<!doctype html><html><body>${html}</body></html>`, 'text/html');
   // Content placed in <head> by the parser (e.g. a leading <style>) is reported too.
   for (const el of Array.from(doc.head.children)) warnDropped(el.tagName.toLowerCase(), warnings);
   let count = 0;
-  const specs = convertChildren(doc.body, warnings, () => ++count, ds);
+  const specs = convertChildren(doc.body, warnings, () => ++count, ds, instances);
   if (count > MAX_NODES_PER_WRITE) {
     throw new Error(`The HTML has ${count} elements; the limit per write_html call is ${MAX_NODES_PER_WRITE}. Split it into several calls (e.g. one per section).`);
   }
@@ -57,7 +68,7 @@ function warnDropped(tag: string, warnings: Set<string>): void {
   else if (tag !== 'title' && tag !== 'meta') warnings.add(`Dropped <${tag}>: not supported on the canvas.`);
 }
 
-function convertChildren(parent: Element, warnings: Set<string>, tick: () => number, ds?: DsHtmlHook): NodeSpec[] {
+function convertChildren(parent: Element, warnings: Set<string>, tick: () => number, ds?: DsHtmlHook, instances?: InstanceHtmlHook): NodeSpec[] {
   const out: NodeSpec[] = [];
   for (const child of Array.from(parent.childNodes)) {
     if (child.nodeType === 3 /* text */) {
@@ -66,16 +77,28 @@ function convertChildren(parent: Element, warnings: Set<string>, tick: () => num
       continue;
     }
     if (child.nodeType !== 1 /* element */) continue;
-    const spec = convertElement(child as Element, warnings, tick, ds);
+    const spec = convertElement(child as Element, warnings, tick, ds, instances);
     if (spec) out.push(spec);
   }
   return out;
 }
 
-function convertElement(el: Element, warnings: Set<string>, tick: () => number, ds?: DsHtmlHook): NodeSpec | null {
+function convertElement(el: Element, warnings: Set<string>, tick: () => number, ds?: DsHtmlHook, instances?: InstanceHtmlHook): NodeSpec | null {
   const tag = el.tagName.toLowerCase();
   if (DROP_TAGS.has(tag)) {
     warnDropped(tag, warnings);
+    return null;
+  }
+  if (tag === INSTANCE_TAG) {
+    if (!instances) {
+      warnings.add(`Dropped <${tag}>: instances of document components are not available here. Call place_instance on the saved document instead.`);
+      return null;
+    }
+    tick();
+    return instances(el, warnings);
+  }
+  if (tag === OVERRIDE_TAG) {
+    warnings.add(`Dropped <${tag}>: it only works as a child of <${INSTANCE_TAG}>.`);
     return null;
   }
   if (tag.startsWith('ds-')) {
@@ -84,7 +107,7 @@ function convertElement(el: Element, warnings: Set<string>, tick: () => number, 
       return null;
     }
     tick();
-    return ds(el, () => convertChildren(el, warnings, tick, ds));
+    return ds(el, () => convertChildren(el, warnings, tick, ds, instances));
   }
   tick();
   const { styles, attrs, name } = readAttributes(el, warnings);
@@ -101,7 +124,7 @@ function convertElement(el: Element, warnings: Set<string>, tick: () => number, 
       ? { type: 'text', ...base, html: sanitizeMarkup(el, warnings, false).trim() }
       : { type: 'text', ...base, text: collapse(el.textContent ?? '').trim() };
   }
-  return { type: 'frame', ...base, children: convertChildren(el, warnings, tick, ds) };
+  return { type: 'frame', ...base, children: convertChildren(el, warnings, tick, ds, instances) };
 }
 
 /** True if `el` contains non-empty text and only inline elements without images or SVG. */

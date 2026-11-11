@@ -57,7 +57,6 @@ final class AgentHistoryTests: XCTestCase {
         let session = try store.sessionDirectory(projectId: "p1", conversationId: "c1")
         let base = root.resolvingSymlinksInPath().path
         XCTAssertEqual(session.path, "\(base)/conversations/p1/c1")
-        XCTAssertTrue(AgentConversationPaths.isSessionDirectory(session.path, agentFolder: base))
         XCTAssertFalse(session.path.hasPrefix("\(base)/history"))
     }
 
@@ -74,6 +73,38 @@ final class AgentHistoryTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: s1.path))
         XCTAssertEqual(try String(contentsOf: s2.appendingPathComponent("b.jsonl"), encoding: .utf8), "y")
         XCTAssertNoThrow(try store.remove(projectId: "p1", id: "c1")) // already gone
+    }
+
+    private func file(_ name: String, _ text: String) -> AgentHistoryFile { AgentHistoryFile(name: name, dataBase64: Data(text.utf8).base64EncodedString()) }
+
+    func testImageFilesAreStoredOnceNextToTheTranscriptAndComeBackWithIt() throws {
+        let one = String(repeating: "a", count: 64) + ".png", two = String(repeating: "b", count: 64) + ".jpg"
+        try store.write(projectId: "p1", id: "c1", meta: "{}", transcript: "{\"items\":[]}", files: [file(one, "first"), file(two, "second")])
+        try store.write(projectId: "p1", id: "c1", meta: "{}", transcript: "{\"items\":[]}", files: [file(one, "ignored: the same name is the same image")])
+        let read = try store.read(projectId: "p1", id: "c1")
+        XCTAssertEqual(read.files?.map(\.name), [one, two])
+        XCTAssertEqual(read.files?.compactMap { Data(base64Encoded: $0.dataBase64) }.map { String(decoding: $0, as: UTF8.self) }, ["first", "second"])
+        let dir = root.resolvingSymlinksInPath().appendingPathComponent("history/p1/c1.files")
+        XCTAssertEqual(try mode(dir), 0o700)
+        XCTAssertEqual(try mode(dir.appendingPathComponent(one)), 0o600)
+        XCTAssertNil(try store.read(projectId: "p1", id: "c2").files)
+    }
+
+    func testDeleteRemovesTheImageFilesToo() throws {
+        let name = String(repeating: "a", count: 64) + ".png"
+        try store.write(projectId: "p1", id: "c1", meta: "{}", transcript: "{}", files: [file(name, "x")])
+        try store.write(projectId: "p1", id: "c2", meta: "{}", transcript: "{}", files: [file(name, "x")])
+        try store.remove(projectId: "p1", id: "c1")
+        let history = root.resolvingSymlinksInPath().appendingPathComponent("history/p1")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: history.appendingPathComponent("c1.files").path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: history.appendingPathComponent("c2.files/\(name)").path))
+    }
+
+    func testRefusesImageFilesThatAreNotPlainNamesOrNotBase64() {
+        for bad in ["../x.png", "a/b.png", "a.gif", "x.png.png", ".png", String(repeating: "x", count: 100) + ".png"] {
+            XCTAssertThrowsError(try store.write(projectId: "p1", id: "c1", meta: "{}", transcript: "{}", files: [file(bad, "x")]), bad)
+        }
+        XCTAssertThrowsError(try store.write(projectId: "p1", id: "c1", meta: "{}", transcript: "{}", files: [AgentHistoryFile(name: "ok.png", dataBase64: "not base64!!")]))
     }
 
     func testRefusesIdsThatArePaths() {

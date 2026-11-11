@@ -2,6 +2,7 @@
 // wrapper (one undo step per call) and the layer-lock rule.
 
 import type { Editor } from '../editor/Editor';
+import type { SubagentIdentity } from '../editor/subagents';
 import type { Host } from '../host/host';
 import type { NodeData } from '../model/types';
 import type { LockManager } from './locks';
@@ -28,6 +29,8 @@ export interface ToolContext {
   /** Client name from MCP initialize (e.g. "claude-code"). */
   clientName: string;
   session: McpSession;
+  /** Set when the call is one of the sidebar agent's subagents' (they share the sidebar's MCP connection): its name and key replace the client's. */
+  agent?: SubagentIdentity;
 }
 
 export type JsonSchema = Record<string, unknown>;
@@ -123,13 +126,13 @@ export const json = (value: unknown): ToolResult => text(JSON.stringify(value, n
 export function write<T>(ctx: ToolContext, label: string, fn: () => T): T {
   ctx.locks.touch();
   // The agent is on the canvas from its first write (the toolbar chip, the writing indicator): `begin` names it for the chunk the reconciler reports next.
-  ctx.editor.activity.begin(agentLabel(ctx));
+  ctx.editor.activity.begin(agentLabel(ctx), ctx.agent?.key, ctx.agent?.parentKey);
   return ctx.editor.history.agentStep(label, () => ctx.editor.agent.transact(fn));
 }
 
-/** Name shown on lock badges: the calling client's `clientInfo.name`, made readable ("Claude Code"); the sidebar's own agent goes by the chosen model's name. */
+/** Name shown on lock badges: the calling client's `clientInfo.name`, made readable ("Claude Code"); the sidebar's own agent goes by the chosen model's name, and a subagent of it by its task name ("Pricing screen"). */
 export function agentLabel(ctx: ToolContext): string {
-  return ctx.editor.mcpClients.label(ctx.clientName);
+  return ctx.agent?.name ?? ctx.editor.mcpClients.label(ctx.clientName);
 }
 
 export const NODE_ID = { type: 'string', description: 'Node id, e.g. "n_k3j9x2a1qp". Get ids from get_tree, get_document_info or earlier results.' };
@@ -159,12 +162,30 @@ export function layerLockOf(ctx: ToolContext, id: string): NodeData | null {
 }
 
 /**
+ * A subagent (the sidebar agent's `task` workers share one MCP connection) may not change or lock what another agent holds a
+ * begin_edit lock on: parallel subagents each work in their own artboard. A no-op for every other caller.
+ */
+export function assertNotHeldByOtherAgent(ctx: ToolContext, idList: readonly string[]): void {
+  const me = ctx.agent;
+  if (!me) return;
+  for (const id of idList) {
+    const held = ctx.locks.lockFor(id);
+    if (!held || (held.agentKey ?? held.agentName) === me.key) continue;
+    throw new ToolError(
+      `Layer "${ctx.editor.doc.get(id)?.name ?? id}" (${id}) is being edited by ${held.agentName} (“${held.label}”), so nothing was changed. ` +
+        `Each agent works in its own artboard: build in yours, and leave this one to ${held.agentName}.`,
+    );
+  }
+}
+
+/**
  * Refuses to change layers the user locked (layer lock, the padlock in the
  * layers panel), including everything inside a locked layer. Unlocking is
  * possible, but only deliberately, with set_locked. Checks every id before any
- * write happens so a batch is all-or-nothing.
+ * write happens so a batch is all-or-nothing. Also refuses what another agent has locked (see assertNotHeldByOtherAgent).
  */
 export function assertEditable(ctx: ToolContext, idList: readonly string[]): void {
+  assertNotHeldByOtherAgent(ctx, idList);
   for (const id of idList) {
     const locked = layerLockOf(ctx, id);
     if (!locked) continue;

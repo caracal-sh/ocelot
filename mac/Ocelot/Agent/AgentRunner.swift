@@ -22,10 +22,13 @@ final class AgentRunner {
     private var prepared: Prepared?
     /// Starts still awaiting omp/the XPC service: a stop that arrives meanwhile must not be lost.
     private var pendingStarts = PendingStarts()
+    /// Which processes run for which conversation, until their session files are stored: a start and a delete wait for it.
+    private let activity = ConversationActivity()
 
     private struct Running {
         let handle: any AgentProcessHandle
         let windowId: String
+        let key: ConversationKey
     }
 
     /// What `status()` worked out for confined starts: the picker's models, the default model and effort.
@@ -89,12 +92,12 @@ final class AgentRunner {
         }
         host.register(HostMethods.AgentHistoryWrite.self) { [weak self] params in
             guard let self else { throw BridgeFailure(.hostUnavailable, "Ocelot is shutting down.") }
-            try await self.history { try $0.write(projectId: params.projectId, id: params.id, meta: params.meta, transcript: params.transcript) }
+            try await self.history { try $0.write(projectId: params.projectId, id: params.id, meta: params.meta, transcript: params.transcript, files: params.files ?? []) }
             return Empty()
         }
         host.register(HostMethods.AgentHistoryDelete.self) { [weak self] params in
             guard let self else { throw BridgeFailure(.hostUnavailable, "Ocelot is shutting down.") }
-            try await self.history { try $0.remove(projectId: params.projectId, id: params.id) }
+            try await self.deleteConversation(projectId: params.projectId, id: params.id)
             return Empty()
         }
     }
@@ -103,6 +106,21 @@ final class AgentRunner {
     private func history<T: Sendable>(_ work: @escaping @Sendable (AgentHistoryStore) throws -> T) async throws -> T {
         let store = AgentHistoryStore(root: try OmpCLI.agentDirectory())
         return try await Task.detached { try work(store) }.value
+    }
+
+    /// Deletes a conversation after its agent process is gone: a process still exiting writes its session file into the folder
+    /// (and the confined one's last copy comes home), which would leave a stray file in a deleted conversation. Stops the
+    /// process when it still runs, waits for it (the hard way after a while), then deletes; and once more when it ends late.
+    private func deleteConversation(projectId: String, id: String) async throws {
+        let key = ConversationKey(projectId: projectId, conversationId: id)
+        activity.markDeleted(key)
+        for (processId, running) in processes where running.key == key { stop(processId) }
+        if !(await activity.waitUntilIdle(key, timeout: .seconds(10))) {
+            activity.terminate(key)
+            _ = await activity.waitUntilIdle(key, timeout: .seconds(5))
+        }
+        try await history { try $0.remove(projectId: projectId, id: id) }
+        activity.settle(key)
     }
 
     /// Stops every agent, the sandbox service connection and the credential path (app quit, or the
@@ -180,6 +198,9 @@ final class AgentRunner {
     private func prepare(cli: OmpCLI, hostModels: JSONValue?) async throws -> (Prepared, JSONValue) {
         // Unpack omp's helper dylib for the sandbox once per omp version (the first time takes a few seconds).
         _ = try await cli.prepareAgentTemporaryDirectory(version: await Self.version(cli))
+        // Session copies a crash left in the sandbox come home now, the first time the sandbox is looked at after a launch.
+        let agentFolder = try OmpCLI.agentDirectory()
+        Task { await AgentServiceConnection.shared.recoverLeftovers(store: AgentHistoryStore(root: agentFolder)) }
         let gateway = AuthGateway.shared
         let served = try await gateway.servedModelIds()
         let selectors = AgentModels.pickerSelectors(hostModels: hostModels, served: served)
@@ -228,6 +249,15 @@ final class AgentRunner {
         guard let cli = await OmpLocator.shared.cli() else {
             throw BridgeFailure(.hostUnavailable, "omp was not found. Install it with \"bun install -g @oh-my-pi/pi-coding-agent\".")
         }
+        let key = ConversationKey(projectId: params.projectId, conversationId: params.conversationId)
+        let store = AgentHistoryStore(root: try OmpCLI.agentDirectory())
+        // Session files an earlier crash left in the sandbox's scratch come home first (the copy below must not be stale), and the
+        // previous agent of this conversation must have stored its own.
+        if !isolation.unconfined { await AgentServiceConnection.shared.recoverLeftovers(store: store) }
+        guard await activity.waitUntilIdle(key, timeout: .seconds(20)) else {
+            throw BridgeFailure(.hostUnavailable, "The previous agent of this conversation is still shutting down. Try again in a moment.")
+        }
+        guard !activity.deleted.contains(key) else { throw BridgeFailure(.invalidParams, "This conversation was deleted.") }
         // The conversation's own session directory (omp's memory of it); created before anything else starts.
         let sessionDirectory = try await history { try $0.sessionDirectory(projectId: params.projectId, conversationId: params.conversationId) }
         let resume = params.resume ?? false
@@ -244,6 +274,9 @@ final class AgentRunner {
         let (chunks, sink) = AsyncStream.makeStream(of: AgentChunk.self)
         let handle: any AgentProcessHandle
         var cleanupDirectory: URL?
+        var sync: AgentSessionSync?
+        let started = ProcessBox()
+        activity.begin(key, processId: processId) { started.handle?.terminate() }
         do {
             if isolation.unconfined {
                 let dir = try OmpCLI.agentDirectory().appendingPathComponent(windowId, isDirectory: true)
@@ -251,6 +284,7 @@ final class AgentRunner {
                 let overlay = dir.appendingPathComponent("config.yml")
                 let prompt = dir.appendingPathComponent("system-prompt.md")
                 try mcpConfig.write(to: dir.appendingPathComponent(".mcp.json"))
+                try AgentLaunch.writeSubagentDefinition(in: dir)
                 try AgentLaunch.configOverlay().write(to: overlay, atomically: true, encoding: .utf8)
                 try params.systemPrompt.write(to: prompt, atomically: true, encoding: .utf8)
                 let args = AgentLaunch.ompArguments(configFile: overlay.path, systemPromptFile: prompt.path, model: params.model, thinking: params.thinking, sessionDirectory: sessionDirectory.path, resume: resume)
@@ -270,6 +304,8 @@ final class AgentRunner {
                 try await gateway.start()
                 let client = try await gateway.mintAgentClient()
                 gatewayClient = client.name
+                // The agent never sees `Agent/conversations/`: this conversation's session files go into its private scratch.
+                let sessionFiles = try await history { try $0.packSession(projectId: params.projectId, conversationId: params.conversationId) }
                 let request = AgentServiceStart(
                     sessionId: processId, ompPath: cli.resolvedPath, systemPrompt: params.systemPrompt,
                     model: params.model, thinking: params.thinking,
@@ -277,21 +313,29 @@ final class AgentRunner {
                     modelsYml: try AgentLaunch.modelsYml(baseURL: gateway.baseURL, providers: AgentModels.providers(picker.selectors)),
                     overlay: AgentLaunch.configOverlay(defaultModel: picker.defaultModel, thinkingLevel: picker.thinking, extraDisabled: AgentLaunch.confinedModelProvidersOff),
                     gatewayToken: client.token, mcpToken: mcpToken, temporaryDirectory: tmp.path,
-                    sessionDirectory: sessionDirectory.resolvingSymlinksInPath().path, resume: resume)
-                handle = try await XPCAgentProcess.start(request, sink: sink)
+                    projectId: params.projectId, conversationId: params.conversationId, resume: resume)
+                handle = try await XPCAgentProcess.start(request, sessionFiles: sessionFiles, sink: sink)
+                sync = AgentSessionSync(
+                    fetch: { try await AgentServiceConnection.shared.snapshot(sessionId: processId) },
+                    store: { try store.restoreSession(projectId: key.projectId, conversationId: key.conversationId, archive: $0) },
+                    discard: { AgentServiceConnection.shared.discard(sessionId: processId) }
+                )
             }
         } catch {
+            activity.end(processId: processId)
             mcp.revokeToken(mcpToken)
             if let gatewayClient { await AuthGateway.shared.revokeClient(gatewayClient) }
             sink.finish()
             throw error
         }
         isolation.lastError = nil
-        processes[processId] = Running(handle: handle, windowId: windowId)
+        started.handle = handle
+        processes[processId] = Running(handle: handle, windowId: windowId, key: key)
         settled = true
         let stopRequested = pendingStarts.finish(processId)
         log.info("agent \(processId, privacy: .public) started (\(self.isolation.unconfined ? "unconfined" : "sandboxed", privacy: .public))")
 
+        let sessionSync = sync
         Task { @MainActor [weak self, weak bridge] in
             var buffer = Data()
             var errTail = Data()
@@ -305,6 +349,7 @@ final class AgentRunner {
                     if !lines.isEmpty {
                         guard let bridge else { handle.terminate(); continue }
                         await Self.deliver(bridge, AgentEventParams(processId: processId, lines: lines, done: false))
+                        if lines.contains(where: Self.endsTurn) { sessionSync?.turnEnded() }
                     }
                 case .stderr(let data):
                     errTail.append(data)
@@ -315,6 +360,9 @@ final class AgentRunner {
                     exitCode = code
                 }
                 if stdoutClosed, let code = exitCode {
+                    // The session files come home before the editor hears that the agent is gone: it may start the next process
+                    // of this conversation at once, which copies them out again.
+                    if let sessionSync { await sessionSync.finish() }
                     let rest = String(decoding: buffer, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
                     let done = AgentEventParams(processId: processId, lines: rest.isEmpty ? [] : [rest], done: true, exitCode: Int(code), stderr: String(decoding: errTail, as: UTF8.self))
                     if let bridge { await Self.deliver(bridge, done) }
@@ -327,9 +375,19 @@ final class AgentRunner {
             if let cleanupDirectory { try? FileManager.default.removeItem(at: cleanupDirectory.appendingPathComponent(".mcp.json")) }
             self?.processes[processId] = nil
             self?.log.info("agent \(processId, privacy: .public) exited")
+            self?.conversationEnded(key, processId: processId, store: store)
         }
         // A stop that arrived while omp was starting: end it now; the task above revokes the credentials.
         if stopRequested { stop(processId) }
+    }
+
+    /// The process is over and its session files are stored. A conversation deleted while it ran is deleted again: the process
+    /// may have written its session file into the folder after the delete.
+    private func conversationEnded(_ key: ConversationKey, processId: String, store: AgentHistoryStore) {
+        activity.end(processId: processId)
+        guard activity.deleted.contains(key) else { return }
+        if !activity.isActive(key) { try? store.remove(projectId: key.projectId, id: key.conversationId) }
+        activity.settle(key)
     }
 
     private func send(_ params: AgentSendParams) throws {
@@ -362,6 +420,11 @@ final class AgentRunner {
         }
     }
 
+    /// omp's `agent_end` frame: a turn finished (completed or aborted), so its session file is complete.
+    nonisolated private static func endsTurn(_ line: String) -> Bool {
+        line.prefix(80).contains("\"agent_end\"")
+    }
+
     private static func version(_ cli: OmpCLI) async -> String {
         (await cli.capture(["--version"], timeout: 15))?.stdout.split(whereSeparator: { $0.isWhitespace || $0 == "/" }).last.map(String.init) ?? "unknown"
     }
@@ -388,6 +451,12 @@ final class AgentRunner {
     nonisolated private static func shellQuote(_ s: String) -> String {
         "'" + s.replacingOccurrences(of: "'", with: "'\\''") + "'"
     }
+}
+
+/// The process of a start, known once it runs: what `ConversationActivity` terminates when a conversation is deleted while its agent will not exit.
+@MainActor
+final class ProcessBox {
+    var handle: (any AgentProcessHandle)?
 }
 
 /// Agent starts in flight (they await omp's location, the gateway and the XPC service). A stop or a window

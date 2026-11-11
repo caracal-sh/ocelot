@@ -197,6 +197,8 @@ const DESCRIBED: Record<string, true> = {
   set_attributes: true,
   set_tag: true,
   insert_component: true,
+  make_component: true,
+  place_instance: true,
 };
 
 /** The agent's intent as a row label: first sentence, no closing full stop, capitalised. */
@@ -243,6 +245,12 @@ export function describeCall(tool: string, input: Json | null | undefined, opts:
       return onTargets(args, nameOf, 'Changing the element type of', 'Changed the element type of', { doing: 'Changing the element type', done: 'Changed the element type' });
     case 'insert_component':
       return insertComponent(args, nameOf);
+    case 'make_component':
+      return onTargets(args, nameOf, 'Making a component from', 'Made a component from', { doing: 'Making a component', done: 'Made a component' });
+    case 'place_instance': {
+      const name = str(input?.['component']);
+      return name ? { doing: `Placing ${clipText(name, NAME_MAX)}`, done: `Placed ${clipText(name, NAME_MAX)}` } : { doing: 'Placing a component', done: 'Placed a component' };
+    }
     default:
       return null;
   }

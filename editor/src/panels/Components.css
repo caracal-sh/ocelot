@@ -1,0 +1,113 @@
+/* Document components (model/components.ts): layer rows, canvas outline and label, the inspector section and the
+   Assets > Components cards. Mains and instances share one tint (--at-component, theme.css); parts are dimmed. */
+
+/* ---------- Layers ---------- */
+.at-layer.is-main .at-layer__icon, .at-layer.is-instance .at-layer__icon { color: var(--at-component); }
+.at-layer.is-main .at-layer__name, .at-layer.is-instance .at-layer__name { color: var(--at-component); }
+/* Parts read as secondary by shape, not by pale ink: italic names and a component-tinted icon, text at about 11:1 (light) / 14:1 (dark) on the panel. */
+.at-layer.is-part .at-layer__name { color: color-mix(in srgb, var(--at-text) 70%, var(--at-text-2)); font-style: italic; }
+.at-layer.is-part .at-layer__icon { color: color-mix(in srgb, var(--at-component) 65%, var(--at-text-2)); }
+.at-layer__comp {
+  flex: none; max-width: 45%; height: 16px; margin: 0; padding: 0 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  border: 0; border-radius: 8px; background: color-mix(in srgb, var(--at-component) 14%, transparent); color: var(--at-component);
+  font: var(--at-type-small); cursor: default;
+}
+.at-layer__comp--tag { max-width: none; display: inline-flex; align-items: center; }
+@media (hover: hover) { button.at-layer__comp:hover { background: color-mix(in srgb, var(--at-component) 24%, transparent); } }
+.at-layer__comp:focus-visible { outline: 2px solid var(--at-accent); outline-offset: 1px; }
+
+/* ---------- Canvas (world space: sizes divide by zoom so they stay constant on screen) ---------- */
+.at-selection--main, .at-selection--instance, .at-hover--component { outline-color: var(--at-component); }
+.at-selection--part { outline-color: var(--at-component); outline-style: dashed; }
+/* The instance a selected part belongs to: the box its label sits above, outside it with the same gap as "Main component" / "Instance of". */
+.at-selection.at-selection--part-host { outline: calc(1px / var(--at-zoom, 1)) solid color-mix(in srgb, var(--at-component) 60%, transparent); }
+.at-component-label {
+  position: absolute; pointer-events: none; display: flex; align-items: center; gap: calc(4px / var(--at-zoom, 1));
+  transform: translateY(-100%); margin-top: calc(-4px / var(--at-zoom, 1));
+  padding: calc(1px / var(--at-zoom, 1)) calc(6px / var(--at-zoom, 1)); border-radius: calc(var(--at-radius-s) / var(--at-zoom, 1));
+  background: var(--at-component); color: var(--at-on-component);
+  font-size: calc(11px / var(--at-zoom, 1)); font-weight: 500; line-height: 1.4; white-space: nowrap;
+}
+.at-component-label .at-icon { width: calc(12px / var(--at-zoom, 1)); height: calc(12px / var(--at-zoom, 1)); }
+
+/* ---------- Inspector ---------- */
+.at-cmp-head { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.at-cmp-head__icon { flex: none; display: grid; place-items: center; color: var(--at-component); }
+.at-cmp-head__name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: var(--at-type-title); color: var(--at-text); }
+.at-cmp-head > .at-ifld { flex: 1; }
+.at-cmp-props { display: flex; flex-direction: column; gap: 6px; }
+.at-cmp-prop { display: flex; align-items: center; justify-content: space-between; gap: 6px; min-height: 24px; }
+.at-cmp-prop--stack { flex-direction: column; align-items: stretch; justify-content: flex-start; gap: 2px; }
+.at-cmp-prop__head { display: flex; align-items: center; gap: 6px; font: var(--at-type-small); color: var(--at-text-2); }
+.at-cmp-check { flex: 1; min-width: 0; }
+.at-cmp-check input, .at-cmp-ed .at-check input { accent-color: var(--at-accent); }
+.at-cmp-dot {
+  position: relative; flex: none; width: 8px; height: 8px; padding: 0; border: 0; border-radius: 50%;
+  background: var(--at-component); box-shadow: 0 0 0 0 transparent; cursor: default;
+}
+.at-cmp-dot::after { content: ''; position: absolute; inset: -7px; }
+@media (hover: hover) { .at-cmp-dot:hover { box-shadow: 0 0 0 3px color-mix(in srgb, var(--at-component) 28%, transparent); } }
+.at-cmp-dot:focus-visible { outline: 2px solid var(--at-accent); outline-offset: 2px; }
+.at-ifld .at-cmp-dot { margin: 0 9px 0 4px; }
+.at-cmp-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.at-cmp-row__text { font: var(--at-type-small); color: var(--at-text-2); font-variant-numeric: tabular-nums; }
+.at-cmp-wide { align-self: stretch; }
+.at-cmp-actions { display: flex; align-items: center; gap: 6px; }
+.at-cmp-actions > .at-btn { flex: 1; }
+.at-cmp-confirm { display: flex; flex-direction: column; gap: 6px; }
+
+.at-cmp-ovr { margin: 0; padding: 0; list-style: none; max-height: 140px; overflow: auto; border-radius: var(--at-radius-s); box-shadow: inset 0 0 0 1px var(--at-border); }
+.at-cmp-ovr__row { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) auto; align-items: center; gap: 6px; min-height: 24px; padding: 0 2px 0 8px; font: var(--at-type-small); }
+.at-cmp-ovr__row + .at-cmp-ovr__row { box-shadow: inset 0 1px 0 var(--at-border); }
+.at-cmp-ovr__name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--at-text); }
+.at-cmp-ovr__field { color: var(--at-text-2); }
+.at-cmp-ovr__value { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--at-text-2); }
+
+.at-cmp-plist { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 4px; }
+.at-cmp-pl__row { display: flex; align-items: center; gap: 6px; min-height: 24px; }
+.at-cmp-pl__type { flex: none; min-width: 22px; padding: 1px 4px; border-radius: 9px; background: color-mix(in srgb, var(--at-component) 14%, transparent); color: var(--at-component); font: var(--at-type-small); text-align: center; }
+.at-cmp-pl__name { flex: none; max-width: 40%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: var(--at-type-small-strong); color: var(--at-text); }
+.at-cmp-pl__sum { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: var(--at-type-small); color: var(--at-text-2); }
+.at-cmp-pl__btn { flex: none; height: 20px; padding: 0 8px; font: var(--at-type-small); color: var(--at-text); }
+.at-cmp-pl__row .at-ibtn { width: 20px; height: 20px; }
+
+.at-cmp-ed { display: flex; flex-direction: column; gap: 6px; margin: 2px 0 4px; padding: 8px; border-radius: var(--at-radius-m); background: var(--at-hover); }
+.at-cmp-ed .at-isub { margin-top: 2px; }
+.at-cmp-ed__row { display: flex; align-items: center; gap: 4px; }
+.at-cmp-ed__row > .at-ifld { flex: 1 1 0; }
+.at-cmp-ed__row--ovr { flex-wrap: wrap; }
+.at-cmp-ed__row--ovr > .at-ifld { flex: 1 1 40%; }
+.at-cmp-ed__list { display: flex; flex-direction: column; gap: 2px; max-height: 120px; overflow: auto; }
+.at-cmp-ed__layer { min-height: 20px; }
+.at-cmp-ed__more { align-self: flex-start; height: 20px; padding: 0 4px; font: var(--at-type-small); color: var(--at-text-2); }
+.at-cmp-opt { display: flex; flex-direction: column; gap: 4px; padding-bottom: 6px; }
+.at-cmp-opt + .at-cmp-opt { padding-top: 6px; box-shadow: inset 0 1px 0 var(--at-border); }
+
+/* ---------- Assets > Components ---------- */
+.at-cmps { flex: 1; min-height: 0; overflow: auto; border-bottom: 0; display: flex; flex-direction: column; gap: 8px; }
+.at-cmps__empty { display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
+.at-cmps__empty p { margin: 0; }
+.at-cmps__lede { margin: 0; }
+/* The search field reads as a field: a border, the panel's own surface and a placeholder at 4.5:1 (the shared .at-input placeholder is disabled-grey). */
+.at-cmps .at-input { height: 26px; padding: 0 8px; font: var(--at-type-body); background: var(--at-panel); border-color: color-mix(in srgb, var(--at-text-2) 45%, transparent); }
+.at-cmps .at-input::placeholder { color: var(--at-text-2); }
+.at-cmps .at-input:focus { border-color: var(--at-accent); }
+.at-cmps__list { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.at-cmps__list > li { min-width: 0; }
+.at-cmp { position: relative; display: flex; flex-direction: column; gap: 6px; height: 100%; padding: 6px; border-radius: calc(var(--at-radius-m) + 6px); background: var(--at-bg); box-shadow: inset 0 0 0 1px var(--at-border); }
+.at-cmp.is-selected { box-shadow: inset 0 0 0 1.5px var(--at-component); }
+.at-cmp__stage { position: relative; aspect-ratio: 16 / 10; overflow: hidden; border-radius: var(--at-radius-m); box-shadow: inset 0 0 0 1px var(--at-border); isolation: isolate; user-select: none; -webkit-user-select: none; }
+.at-cmp__stage--none { display: grid; place-items: center; padding: 8px; background: var(--at-panel); color: var(--at-text-2); font: var(--at-type-small); text-align: center; }
+.at-cmp__stage[data-crop]::after { content: ''; position: absolute; inset: 0; pointer-events: none; background: linear-gradient(to top, var(--background, #fff), transparent 22px); }
+.at-cmp__inner { position: absolute; left: 0; top: 0; width: max-content; max-width: none; transform-origin: 0 0; }
+.at-cmp__pick { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; min-width: 0; margin: 0; padding: 0 2px; border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: default; }
+.at-cmp__pick::after { content: ''; position: absolute; inset: 0; border-radius: inherit; }
+.at-cmp__pick:focus-visible { outline: none; }
+.at-cmp__pick:focus-visible::after { outline: 2px solid var(--at-accent); outline-offset: -2px; border-radius: calc(var(--at-radius-m) + 6px); }
+.at-cmp__name { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: var(--at-type-title); color: var(--at-text); }
+.at-cmp__meta { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: var(--at-type-small); color: var(--at-text-2); font-variant-numeric: tabular-nums; }
+.at-cmp__place { position: relative; z-index: 1; align-self: stretch; }
+@media (prefers-reduced-motion: no-preference) {
+  .at-cmp { transition: box-shadow 150ms var(--at-ease-out); }
+  .at-cmp-dot { transition: box-shadow 120ms var(--at-ease-out); }
+}

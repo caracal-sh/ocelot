@@ -4,11 +4,16 @@ import Foundation
 /// stores an opaque summary and an opaque transcript per conversation, and creates and removes the directory omp keeps its
 /// own session in (the model's memory). Layout and limits: `AgentConversationPaths`; mirrored by editor/e2e/agent-history.mjs.
 ///
-/// Everything is owner-only and outside the document package. The transcripts are never reachable from the sandboxed agent:
-/// its entitlement covers `conversations/` only.
+/// Everything is owner-only and outside the document package. Nothing here is reachable from the sandboxed agent: it has no
+/// entitlement for the agent folder, and works on a private copy of its own conversation's session files that the app puts in
+/// before the start and takes out after every turn (`packSession` / `restoreSession`).
+///
+/// A transcript names its attachments and tool thumbnails by file (`history/<projectId>/<id>.files/<name>`, content-addressed by
+/// the editor, so one image is stored once however often it is shown); they go with the conversation.
 struct AgentHistoryStore: Sendable {
     static let maxMetaBytes = 64 * 1024
     static let maxTranscriptBytes = 64 * 1024 * 1024
+    static let maxFileBytes = 16 * 1024 * 1024
 
     /// The agent folder (`~/Library/Application Support/Ocelot/Agent`).
     let root: URL
@@ -33,6 +38,16 @@ struct AgentHistoryStore: Sendable {
 
     private func transcriptFile(_ projectId: String, _ id: String) throws -> URL {
         try historyDirectory(projectId).appendingPathComponent("\(checked(id)).transcript.json")
+    }
+
+    /// `history/<projectId>/<id>.files/`: the images a transcript refers to.
+    private func filesDirectory(_ projectId: String, _ id: String) throws -> URL {
+        try historyDirectory(projectId).appendingPathComponent("\(checked(id)).files", isDirectory: true)
+    }
+
+    /// A file name the editor chose: letters, digits and dashes and an image extension, never a path.
+    static func isValidFileName(_ name: String) -> Bool {
+        name.range(of: #"^[A-Za-z0-9-]{1,96}\.(png|jpg)$"#, options: .regularExpression) != nil
     }
 
     /// `conversations/<projectId>/<id>`; symlink-free, because the sandbox matches real paths only.
@@ -86,25 +101,71 @@ struct AgentHistoryStore: Sendable {
         guard fm.fileExists(atPath: file.path) else { return AgentHistoryTranscript() }
         let data = try Data(contentsOf: file)
         guard let text = String(data: data, encoding: .utf8) else { throw BridgeFailure(.internal, "The saved conversation is not readable text. Delete it from the history.") }
-        return AgentHistoryTranscript(text: text)
+        let directory = try filesDirectory(projectId, id)
+        var files: [AgentHistoryFile] = []
+        for name in ((try? fm.contentsOfDirectory(atPath: directory.path)) ?? []).sorted() where Self.isValidFileName(name) {
+            guard let bytes = try? Data(contentsOf: directory.appendingPathComponent(name)) else { continue }
+            files.append(AgentHistoryFile(name: name, dataBase64: bytes.base64EncodedString()))
+        }
+        return AgentHistoryTranscript(text: text, files: files.isEmpty ? nil : files)
     }
 
-    func write(projectId: String, id: String, meta: String, transcript: String?) throws {
+    func write(projectId: String, id: String, meta: String, transcript: String?, files: [AgentHistoryFile] = []) throws {
         guard meta.utf8.count <= Self.maxMetaBytes else { throw BridgeFailure(.invalidParams, "The conversation summary is too large to store.") }
         if let transcript, transcript.utf8.count > Self.maxTranscriptBytes {
             throw BridgeFailure(.invalidParams, "The conversation is too large to store. Start a new conversation.")
         }
         try ensureDirectory(historyDirectory(projectId))
-        // The transcript first: a summary never points at a conversation that was not written.
+        // Files first, then the transcript that names them, then the summary: nothing points at what was not written.
+        if !files.isEmpty {
+            let directory = try filesDirectory(projectId, id)
+            try ensureDirectory(directory)
+            for file in files {
+                guard Self.isValidFileName(file.name) else { throw BridgeFailure(.invalidParams, "Invalid file name in the conversation: \(file.name).") }
+                guard let bytes = Data(base64Encoded: file.dataBase64), bytes.count <= Self.maxFileBytes else {
+                    throw BridgeFailure(.invalidParams, "An image of the conversation is not valid base64 or is too large to store.")
+                }
+                let target = directory.appendingPathComponent(file.name)
+                if !fm.fileExists(atPath: target.path) { try writeFile(bytes, to: target) } // content-addressed: the same name is the same image
+            }
+        }
         if let transcript { try writeFile(Data(transcript.utf8), to: transcriptFile(projectId, id)) }
         try writeFile(Data(meta.utf8), to: metaFile(projectId, id))
     }
 
-    /// Removes the conversation: summary, transcript and omp's session files.
+    /// Removes the conversation: summary, transcript, its image files and omp's session files.
     func remove(projectId: String, id: String) throws {
-        for url in [try metaFile(projectId, id), try transcriptFile(projectId, id), try conversationDirectory(projectId, id)] where fm.fileExists(atPath: url.path) {
+        for url in [try metaFile(projectId, id), try transcriptFile(projectId, id), try filesDirectory(projectId, id), try conversationDirectory(projectId, id)] where fm.fileExists(atPath: url.path) {
             try fm.removeItem(at: url)
         }
+    }
+
+    // MARK: Session files (copy-in / copy-out)
+
+    /// The conversation's omp session files as an archive, for the agent's private scratch. Nothing in it for a new conversation.
+    func packSession(projectId: String, conversationId: String) throws -> Data {
+        try AgentSessionArchive.pack(directory: conversationDirectory(projectId, conversationId))
+    }
+
+    /// True when the conversation's session directory exists (it is made when an agent starts and goes with a delete).
+    func hasSession(projectId: String, conversationId: String) -> Bool {
+        guard let dir = try? conversationDirectory(projectId, conversationId) else { return false }
+        return fm.fileExists(atPath: dir.path)
+    }
+
+    /// The newest modification time of the stored session files; nil when there are none.
+    func sessionModified(projectId: String, conversationId: String) -> Date? {
+        guard let dir = try? conversationDirectory(projectId, conversationId) else { return nil }
+        return AgentSessionArchive.newestModification(of: dir)
+    }
+
+    /// Replaces the conversation's stored session files with the agent's copy, in one step. False (and nothing written) when the
+    /// conversation was deleted meanwhile: a late copy must not bring a deleted conversation's files back.
+    @discardableResult
+    func restoreSession(projectId: String, conversationId: String, archive: Data) throws -> Bool {
+        guard hasSession(projectId: projectId, conversationId: conversationId) else { return false }
+        try AgentSessionArchive.replace(directory: conversationDirectory(projectId, conversationId), withArchive: archive)
+        return true
     }
 
     private func writeFile(_ data: Data, to url: URL) throws {

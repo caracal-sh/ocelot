@@ -34,12 +34,15 @@ final class AgentIsolationModel: ObservableObject {
 
     var mode: Mode { unconfined ? .unconfined : .sandboxed }
 
-    /// Runs read probes from inside the sandboxed service: your omp credentials, ~/.ssh and ~/Documents must be unreadable.
+    /// Runs read probes from inside the sandboxed service: your omp credentials, ~/.ssh, ~/Documents and the saved conversations
+    /// (the folder of all of them, and a conversation of another document, made for the check and removed after it) must be unreadable.
     func verify() async {
         verifying = true
         defer { verifying = false }
+        let sentinel = AgentProbeSentinel.make()
+        defer { sentinel?.remove() }
         do {
-            probes = try await AgentServiceConnection.shared.selfTest()
+            probes = try await AgentServiceConnection.shared.selfTest(targets: sentinel?.targets ?? [])
             lastError = nil
         } catch {
             probes = nil
@@ -104,4 +107,26 @@ struct AgentSettingsView: View {
             }
         }
     }
+}
+
+/// A conversation made for "Verify isolation": an agent that runs for a document must not read the conversation of another one.
+/// It has the shape and place of a real one (`Agent/conversations/<project>/<conversation>/<session file>`) and is removed after the check.
+struct AgentProbeSentinel {
+    let project: URL
+    let targets: [AgentProbeTarget]
+
+    /// nil under XCTest (reading the user's folders makes macOS ask for consent) or when the folder cannot be made.
+    static func make() -> AgentProbeSentinel? {
+        guard !AppEnvironment.underTest, let root = try? OmpCLI.agentDirectory() else { return nil }
+        let store = AgentHistoryStore(root: root)
+        guard let directory = try? store.sessionDirectory(projectId: "selftest-\(UUID().uuidString)", conversationId: "probe") else { return nil }
+        let file = directory.appendingPathComponent("session.jsonl")
+        guard (try? Data("ocelot isolation probe: another conversation's session\n".utf8).write(to: file)) != nil else { return nil }
+        return AgentProbeSentinel(project: directory.deletingLastPathComponent(), targets: [
+            AgentProbeTarget(label: "List another conversation's folder", path: directory.path, list: true),
+            AgentProbeTarget(label: "Read another conversation's session file", path: file.path, list: false),
+        ])
+    }
+
+    func remove() { try? FileManager.default.removeItem(at: project) }
 }

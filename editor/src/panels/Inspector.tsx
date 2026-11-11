@@ -12,6 +12,8 @@ import { LinkSection } from './LinkSection';
 import { SlideSection } from './SlideSection';
 import { BorderSection, EffectsSection, FillSection, ShadowSection, type StyleCtx } from './StyleSections';
 import { AlignBar } from './AlignBar';
+import { ComponentSection, OverrideDot } from './ComponentSection';
+import { layerOverride, overridesStyle } from '../editor/componentUi';
 
 /** Unitless numbers typed into these properties get "px". */
 const PX_PROPS = new Set(['width', 'height', 'gap', 'row-gap', 'column-gap', 'font-size', 'letter-spacing', 'border-radius', 'left', 'top', 'right', 'bottom', 'padding', 'margin', 'min-width', 'max-width', 'min-height', 'max-height']);
@@ -31,7 +33,7 @@ function useInspectorVersion(editor: Editor): number {
         ref.current++;
         cb();
       };
-      const offs = [editor.on('change', bump), editor.on('document', bump), editor.selection.subscribe(bump), editor.locks.subscribe(bump), editor.ui.subscribe(bump)];
+      const offs = [editor.on('change', bump), editor.on('document', bump), editor.on('components', bump), editor.selection.subscribe(bump), editor.locks.subscribe(bump), editor.ui.subscribe(bump)];
       return () => offs.forEach((off) => off());
     },
     () => ref.current,
@@ -90,8 +92,11 @@ export function Inspector() {
   const set = (styles: Record<string, string | null>, opts?: { gesture?: boolean }) =>
     editState ? editor.actions.setStateStyles(ids, editState, styles, opts) : editor.actions.updateStyles(ids, styles, opts);
   const ctx: StyleCtx = { editor, nodes, editState, common, set };
+  // The layer's overrides when it is an instance or a part: a dot beside each field the instance sets, one click back to the main.
+  const layer = !editState && nodes.length === 1 ? layerOverride(editor.doc, first.id) : null;
+  const dot = (prop: string) => (layer && overridesStyle(layer, prop) ? <OverrideDot editor={editor} layer={layer} field={`style:${prop}`} label={prop} /> : undefined);
   const field = (prop: string, props: Omit<FieldProps, 'value' | 'onCommit' | 'testId'>) => (
-    <Field {...props} value={common(prop)} testId={`field-${prop}`} onCommit={(v) => set({ [prop]: v === '' ? null : normalizeValue(prop, v) })} />
+    <Field {...props} value={common(prop)} testId={`field-${prop}`} trailing={dot(prop)} onCommit={(v) => set({ [prop]: v === '' ? null : normalizeValue(prop, v) })} />
   );
   const computed = computedStyleOf(editor, first.id);
   const display = common('display');
@@ -161,6 +166,7 @@ export function Inspector() {
       <fieldset disabled={!!lock} className="at-inspector__body">
         {!editState && <AlignBar editor={editor} ids={ids} />}
         {statesOpen && <StateSwitcher editor={editor} nodes={nodes} />}
+        {!editState && nodes.length === 1 && <ComponentSection key={first.id} editor={editor} node={first} />}
         {!editState && allArtboards && nodes.length === 1 && <ArtboardSection node={first} />}
         {!editState && allArtboards && nodes.length === 1 && <SlideSection editor={editor} node={first} />}
         {!editState && nodes.length === 1 && first.type === 'code' && <CodeSection node={first} />}
@@ -227,6 +233,7 @@ export function Inspector() {
               value={opacityText}
               placeholder="100%"
               testId="field-opacity"
+              trailing={dot('opacity')}
               onCommit={(v) => {
                 const n = parseFloat(v);
                 if (!Number.isFinite(n)) return;
@@ -248,7 +255,7 @@ export function Inspector() {
               {field('letter-spacing', { label: 'Track', title: 'Letter spacing', placeholder: '0' })}
             </Grid>
             <Segmented label="Text align" value={common('text-align')} options={TEXT_ALIGN} clearable onChange={(v) => set({ 'text-align': v || null })} testId="field-text-align" />
-            <ColorRow label="Text color" value={common('color')} computed={computed?.color} testId="field-color" onCommit={(v, live) => set({ color: v || null }, { gesture: live })} />
+            <ColorRow label="Text color" value={common('color')} computed={computed?.color} testId="field-color" actions={dot('color')} onCommit={(v, live) => set({ color: v || null }, { gesture: live })} />
           </Section>
         )}
 

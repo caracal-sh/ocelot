@@ -74,14 +74,17 @@ function diff(a, b, name) {
 async function buildReact(code, dir, saved) {
   await rm(dir, { recursive: true, force: true });
   await mkdir(dir, { recursive: true });
-  const css = saved ? (await readdir(saved)).filter((f) => f.endsWith('.css')) : [];
-  if (saved) await cp(join(saved, 'public'), join(dir, 'public'), { recursive: true });
+  const savedNames = saved ? await readdir(saved) : [];
+  const css = savedNames.filter((f) => f.endsWith('.css'));
+  if (savedNames.includes('public')) await cp(join(saved, 'public'), join(dir, 'public'), { recursive: true });
+  if (savedNames.includes('components')) await cp(join(saved, 'components'), join(dir, 'components'), { recursive: true });
   for (const f of css) await cp(join(saved, f), join(dir, f));
   await writeFile(join(dir, 'Design.tsx'), code);
   await writeFile(join(dir, 'main.tsx'), `import { createRoot } from 'react-dom/client';\nimport Design from './Design';\nimport './style.css';\ncreateRoot(document.getElementById('root')!).render(<Design />);\n`);
   await writeFile(join(dir, 'style.css'), `@import "tailwindcss";\n${css.map((f) => `@import "./${f}";\n`).join('')}@source "./";\nhtml, body, #root { height: 100%; }\nbody { overflow: hidden; }\n`);
   await writeFile(join(dir, 'index.html'), `<!doctype html><html><head><meta charset="utf-8"></head><body><div id="root"></div><script type="module" src="./main.tsx"></script></body></html>`);
-  await build({ root: dir, logLevel: 'error', configFile: false, plugins: [react(), tailwind()], build: { outDir: join(dir, 'dist'), emptyOutDir: true } });
+  // `@/components/<Name>` is where the exported screens import document components from (and the design system's `ui/`).
+  await build({ root: dir, logLevel: 'error', configFile: false, resolve: { alias: { '@': dir } }, plugins: [react(), tailwind()], build: { outDir: join(dir, 'dist'), emptyOutDir: true } });
   return join(dir, 'dist');
 }
 
@@ -209,6 +212,73 @@ async function themedFixtures() {
   return out;
 }
 
+// Document components: a Button (text, boolean and variant props), a Toolbar that nests two Buttons, and a page with instances of both:
+// one that sets props, one with its own placement and size, one with an override no prop covers (exported inline) and the Toolbar.
+// The exported screen imports components/Button.tsx and components/Toolbar.tsx (written by save_export next to it) and must render
+// like the canvas, which holds the instances as plain layers.
+const BUTTON_MAIN =
+  '<div data-name="Button" style="display:inline-flex;align-items:center;gap:8px;padding:10px 18px;border-radius:9999px;background:#0f172a;color:#ffffff;font-size:14px;font-weight:600;font-family:sans-serif"><span data-name="Label">Save</span><svg data-name="Icon" width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M5 12h14M13 6l6 6-6 6" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg></div>';
+const TOOLBAR_MAIN =
+  '<div data-name="Toolbar" style="display:flex;gap:12px;padding:12px;background:#e2e8f0;border-radius:12px"><oc-instance of="Button" label="Cancel" variant="secondary" data-name="Cancel"></oc-instance><oc-instance of="Button" label="Confirm" data-name="Confirm"></oc-instance></div>';
+const COMPONENTS_PAGE =
+  '<div data-name="Row" style="display:flex;gap:16px;align-items:center"><oc-instance of="Button" label="Save draft" data-name="Save draft"></oc-instance><oc-instance of="Button" label="Pricing" variant="secondary" show-icon="false" data-name="Pricing" style="margin-left:8px;width:180px;justify-content:center"></oc-instance><oc-instance of="Button" data-name="Delete"><oc-override target="Label" text="Delete" color="#dc2626"></oc-override></oc-instance></div><oc-instance of="Toolbar" data-name="Actions"></oc-instance>';
+async function componentsFixture() {
+  const out = [];
+  await tool('create_artboard', { name: 'Components library', width: 480, height: 240 });
+  await tool('create_artboard', { name: 'Components fixture', width: 640, height: 280 });
+  const artboards = JSON.parse((await tool('get_document_info', {}))[0].text).artboards;
+  const lib = artboards.find((a) => a.name === 'Components library');
+  const ab = artboards.find((a) => a.name === 'Components fixture');
+  const child = (parent, index) => host.page.evaluate(([p, i]) => window.__ocelotDebugEditor.doc.get(p).children[i], [parent, index]);
+  await tool('write_html', { node_id: lib.id, mode: 'append', html: BUTTON_MAIN });
+  await tool('make_component', {
+    node_ids: [await child(lib.id, 0)],
+    name: 'Button',
+    props: [
+      { name: 'label', type: 'text', node_id: 'Label' },
+      { name: 'showIcon', type: 'boolean', node_ids: ['Icon'] },
+      { name: 'variant', type: 'variant', default: 'primary', options: { primary: {}, secondary: { Button: { background: '#ffffff', color: '#0f172a' } } } },
+    ],
+  });
+  await tool('write_html', { node_id: lib.id, mode: 'append', html: TOOLBAR_MAIN });
+  await tool('make_component', { node_ids: [await child(lib.id, 1)], name: 'Toolbar' });
+  await tool('update_styles', { updates: [{ node_ids: [ab.id], styles: { display: 'flex', 'flex-direction': 'column', gap: '20px', padding: '32px', background: '#f8fafc', 'align-items': 'flex-start' } }] });
+  await tool('write_html', { node_id: ab.id, mode: 'append', html: COMPONENTS_PAGE });
+
+  const canvasShot = Buffer.from((await tool('get_screenshot', { node_id: ab.id, scale: 1 })).find((c) => c.type === 'image').data, 'base64');
+  const dir = join(OUT, 'components');
+  await rm(dir, { recursive: true, force: true });
+  await mkdir(dir, { recursive: true });
+  await writeFile(join(dir, 'canvas.png'), canvasShot);
+  const saved = JSON.parse((await tool('save_export', { node_id: ab.id, format: 'react' }))[0].text);
+  if (!saved.saved) throw new Error(`save_export react did not save: ${JSON.stringify(saved)}`);
+  const screen = saved.files.find((f) => f.endsWith('.tsx') && !f.startsWith('components/'));
+  const componentFiles = saved.files.filter((f) => f.startsWith('components/')).sort();
+  const reactCode = await readFile(join(saved.folder, screen), 'utf8');
+  const structureOk =
+    componentFiles.join() === 'components/Button.tsx,components/Toolbar.tsx' &&
+    reactCode.includes('import { Button } from "@/components/Button";') &&
+    reactCode.includes('import { Toolbar } from "@/components/Toolbar";') &&
+    reactCode.includes('<Button label="Save draft" />') &&
+    reactCode.includes('<Button label="Pricing" showIcon={false} variant="secondary"') &&
+    reactCode.includes('<Toolbar />') &&
+    // the instance with an override no prop covers is the canvas markup, not a usage
+    reactCode.includes('text-[#dc2626]') &&
+    !reactCode.includes('label="Delete"');
+  out.push({ artboard: 'Components fixture', export: 'react (component files + usages)', mismatch: structureOk ? '0%' : JSON.stringify({ componentFiles, reactCode }), ok: structureOk });
+  const reactDist = await buildReact(reactCode, join(dir, 'react-app'), saved.folder);
+  const reactShot = await shoot(reactDist, ab.width, ab.height);
+  await writeFile(join(dir, 'react.png'), reactShot);
+  const html = (await tool('export_html', { node_id: ab.id }))[0].text;
+  await writeFile(join(dir, 'export.html'), html);
+  const htmlShot = await shoot(dir, ab.width, ab.height, 'export.html');
+  for (const d of [diff(canvasShot, reactShot, 'react'), diff(canvasShot, htmlShot, 'html')]) {
+    if (d.png) await writeFile(join(dir, `diff-${d.name}.png`), d.png);
+    out.push({ artboard: 'Components fixture', export: d.name, mismatch: `${(d.ratio * 100).toFixed(3)}%`, pixels: d.pixels, note: d.note, ok: d.ratio <= MAX_DIFF });
+  }
+  return out;
+}
+
 await mkdir(OUT, { recursive: true });
 const host = await startHeadlessHost({ port: 0, log: () => {}, doc: arg('--doc') });
 browser = await launch();
@@ -246,6 +316,7 @@ for (const ab of artboards.filter((a) => a.child_count > 0)) {
 }
 if (!arg('--doc')) results.push(...(await motionFixture()));
 if (!arg('--doc')) results.push(...(await themedFixtures()));
+if (!arg('--doc')) results.push(...(await componentsFixture()));
 await browser.close();
 await host.close();
 console.log(JSON.stringify(results, null, 2));

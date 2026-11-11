@@ -172,6 +172,23 @@ export function replaceColorIn(
     for (const id of ids) {
       const n = doc.get(id);
       if (!n) continue;
+      // Layers inside a document component's instance mirror the main, which is rewritten itself; an instance rewrites only its own overrides.
+      if (n.of) continue;
+      if (n.instance) {
+        let overridden = 0;
+        const info = doc.instanceInfo(id);
+        for (const [key, ov] of Object.entries(info?.overrides ?? {})) {
+          const own = recolor(ov.styles ?? {});
+          if (info?.orphaned.includes(key) || Object.keys(own).length === 0) continue;
+          ops.setOverride(id, key, { styles: own });
+          overridden += Object.keys(own).length;
+        }
+        if (overridden) {
+          result.declarations += overridden;
+          result.nodeIds.push(id);
+        }
+        continue;
+      }
       let changed = 0;
       const patch = recolor(n.styles);
       if (Object.keys(patch).length) {

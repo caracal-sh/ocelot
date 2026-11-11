@@ -10,8 +10,10 @@ import { routeGhosts } from './ghostRouter';
 import { WritingIndicator } from './WritingIndicator';
 import { CameraFollow } from './cameraFollow';
 import { SelectionOverlay } from './SelectionOverlay';
+import { AskAboutLayer } from './AskAboutLayer';
 import { useCanvasInteractions } from './useCanvasInteractions';
 import { useAssetDrop } from './assetDrop';
+import { useComponentDrop } from './componentDrop';
 import { CanvasContextMenu } from './CanvasContextMenu';
 import { TextFormatBar } from './TextFormatBar';
 import { presentLayout } from './presentLayout';
@@ -43,6 +45,7 @@ export function Canvas() {
   const isPanning = useCallback(() => panningRef.current !== 'idle', []);
   useCanvasInteractions(editor, surfaceRef, isPanning);
   useAssetDrop(editor, surfaceRef);
+  useComponentDrop(editor, surfaceRef);
   const tool = useSyncExternalStore((cb) => editor.ui.subscribe(cb), () => editor.ui.tool);
   const interact = useSyncExternalStore((cb) => editor.ui.subscribe(cb), () => editor.ui.interact);
   // Preview: one screen, laid out on its own (see the layout effect below); every other screen is hidden.
@@ -274,6 +277,7 @@ export function Canvas() {
       {!presenting && <BackToContent />}
       {!presenting && <CanvasContextMenu surfaceRef={surfaceRef} />}
       {!presenting && <TextFormatBar />}
+      {!presenting && <AskAboutLayer surfaceRef={surfaceRef} />}
     </div>
   );
 }

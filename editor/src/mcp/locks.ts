@@ -14,6 +14,8 @@ export interface EditLock {
   id: string;
   label: string;
   agentName: string;
+  /** Tells agents with the same name apart (an MCP session id, a subagent id); the activity store keys the agent by it, else by `agentName`. */
+  agentKey?: string;
   nodeIds: string[];
   createdAt: number;
   expiresAt: number;
@@ -29,6 +31,8 @@ export const MAX_LOCK_TIMEOUT_MS = 600_000;
  */
 export interface PlanningPresence {
   agentName: string;
+  /** See `EditLock.agentKey`. */
+  agentKey?: string;
   nodeIds: string[];
 }
 
@@ -63,7 +67,7 @@ export class LockManager {
     this.#emit();
   }
 
-  begin(nodeIds: string[], label: string, agentName: string, timeoutMs = DEFAULT_LOCK_TIMEOUT_MS): EditLock {
+  begin(nodeIds: string[], label: string, agentName: string, timeoutMs = DEFAULT_LOCK_TIMEOUT_MS, agentKey?: string): EditLock {
     const doc = this.#docRef();
     const missing = nodeIds.filter((id) => !doc.has(id));
     if (missing.length) {
@@ -75,6 +79,7 @@ export class LockManager {
       id: `edit_${++this.#counter}`,
       label: label.trim() || 'Agent edit',
       agentName,
+      ...(agentKey ? { agentKey } : {}),
       nodeIds: [...new Set(nodeIds)],
       createdAt: now,
       expiresAt: now + timeout,
@@ -110,16 +115,54 @@ export class LockManager {
     }
   }
 
-  /** The lock covering `nodeId` (directly or through an ancestor), if any. */
+  /**
+   * The lock covering `nodeId` (directly or through an ancestor), if any. An instance of a document component also counts as
+   * locked while a lock touches its main (the main is inside the locked subtree, or the locked node is inside the main): editing
+   * the main rewrites every instance.
+   */
   lockFor(nodeId: string): EditLock | null {
     if (this.#locks.size === 0) return null;
-    const doc = this.#docRef();
+    return this.#lockFor(this.#docRef(), nodeId, new Set());
+  }
+
+  #lockFor(doc: OcelotDocument, nodeId: string, seen: Set<string>): EditLock | null {
     let cur: string | null = nodeId;
     while (cur) {
       for (const lock of this.#locks.values()) if (lock.nodeIds.includes(cur)) return lock;
+      const inst = doc.nodes.get(cur)?.get('instance');
+      const comp = typeof inst === 'object' && inst !== null && 'component' in inst && typeof inst.component === 'string' ? doc.component(inst.component) : null;
+      if (comp && !seen.has(comp.id)) {
+        seen.add(comp.id);
+        const viaMain = this.#lockFor(doc, comp.root, seen) ?? this.#lockInside(doc, comp.root);
+        if (viaMain) return viaMain;
+      }
       cur = doc.has(cur) ? doc.parentOf(cur) : null;
     }
     return null;
+  }
+
+  /** A lock on a layer inside the subtree of `root`. */
+  #lockInside(doc: OcelotDocument, root: string): EditLock | null {
+    for (const lock of this.#locks.values()) if (lock.nodeIds.some((n) => doc.has(n) && doc.isAncestor(root, n))) return lock;
+    return null;
+  }
+
+  /** The nodes a lock covers on the canvas: its own plus every instance of a component whose main the lock touches. */
+  coveredIds(lock: EditLock): string[] {
+    const doc = this.#docRef();
+    const out = new Set(lock.nodeIds);
+    if (doc.components.size === 0) return [...out];
+    const comps = new Set<string>();
+    for (const id of lock.nodeIds) {
+      if (!doc.has(id)) continue;
+      for (const m of doc.mainsContaining(id)) comps.add(m.id);
+      for (const sub of doc.subtreeIds(id)) {
+        const m = doc.componentOfMain(sub);
+        if (m) comps.add(m.id);
+      }
+    }
+    for (const c of comps) for (const inst of doc.instancesOf(c)) out.add(inst);
+    return [...out];
   }
 
   isLocked(nodeId: string): boolean {

@@ -15,6 +15,7 @@
 //                                 `format` {width,height}, `transition` {kind,ms}, `fps` (plain values, see deck.ts)
 //   pageOrder: Y.Array<string>    page ids, in the order the pages list shows them
 //   keyframes: Y.Map<name, KeyframeStop[]>   named @keyframes (plain JSON value per name)
+//   components: Y.Map<id, ComponentDef>   document components (model/components.ts); a main node carries `component`, an instance root `instance`, a part of an instance `of`
 //   meta:      Y.Map              name, format version, projectId, optional `theme` {id, overrides}, optional `designSystem` (designsystem/model.ts; a document has a theme or a design system, never both)
 //
 // Every mutation goes through DocumentOps (see ops()), bound to an origin so the
@@ -60,6 +61,45 @@ import {
   normalizeStylePatch,
   referencedKeyframes,
 } from './motion';
+import {
+  assertMoveNoCycle,
+  assertSpecsNoCycle,
+  componentByRef,
+  componentList,
+  componentOfMain,
+  componentRole,
+  createInstanceNode,
+  detachInstances,
+  effectiveProps,
+  instanceOfNode,
+  instanceRootOf,
+  instancesOf,
+  mainSubtree,
+  mainsContaining,
+  makeComponent,
+  partInfo,
+  placeInstance,
+  readComponent,
+  readInstance,
+  refuseInstanceLayer,
+  releaseDeletedMains,
+  removeComponent,
+  requireComponent,
+  resetInstance,
+  resolveTarget,
+  routeToOverride,
+  setInstanceProps,
+  setOverride,
+  syncAfterTransaction,
+  syncAllInstances,
+  updateComponent,
+  instanceLayerKind,
+  type MakeComponentOptions,
+  type OverridePatch,
+  type PlaceInstanceOptions,
+  type ResetOptions,
+} from './components';
+import type { ComponentDef, ComponentProp, InstanceInfo, Overrides, PropValue } from './types';
 import {
   ARTBOARD_PRESETS,
   DEFAULT_SLIDE_FORMAT,
@@ -149,6 +189,12 @@ export class OcelotDocument {
   readonly pageOrder: Y.Array<string>;
   readonly meta: Y.Map<unknown>;
   readonly keyframes: Y.Map<KeyframeStop[]>;
+  /** Document components, by id (model/components.ts). */
+  readonly components: Y.Map<ComponentDef>;
+  /** Instances written or changed in the running transaction: synced at its end (see `DocumentOps.transact`). */
+  readonly pendingInstances = new Set<string>();
+  /** Nesting depth of running `DocumentOps.transact` calls; component sync runs when the outermost one ends. */
+  txDepth = 0;
   readonly newId: () => string;
   #dsRaw: unknown;
   #ds: DesignSystemRecord | null = null;
@@ -161,6 +207,7 @@ export class OcelotDocument {
     this.pageOrder = this.ydoc.getArray<string>('pageOrder');
     this.meta = this.ydoc.getMap('meta');
     this.keyframes = this.ydoc.getMap('keyframes');
+    this.components = this.ydoc.getMap<ComponentDef>('components');
     this.newId = opts.idGenerator ?? randomId;
     // A fresh document starts with one page. A supplied Yjs doc (load, tests) keeps what it has; `ensurePages` migrates it.
     if (!opts.ydoc) this.ensurePages();
@@ -333,6 +380,80 @@ export class OcelotDocument {
     return attr === 'dark' || attr === 'light' ? attr : (this.designSystem()?.defaultScheme ?? 'light');
   }
 
+  // ---------- document components (model/components.ts) ----------
+
+  /** Every component, sorted by name. */
+  componentList(): ComponentDef[] {
+    return componentList(this);
+  }
+
+  component(id: string): ComponentDef | null {
+    return readComponent(this.components.get(id));
+  }
+
+  /** A component by id, else by case-insensitive unique name. */
+  componentByRef(ref: string): ComponentDef | null {
+    return componentByRef(this, ref);
+  }
+
+  requireComponent(ref: string): ComponentDef {
+    return requireComponent(this, ref);
+  }
+
+  /** 'main' (the layer a component is made from), 'instance' (an instance root), 'part' (a layer inside an instance) or null. */
+  componentRole(id: string): 'main' | 'instance' | 'part' | null {
+    return componentRole(this, id);
+  }
+
+  componentOfMain(id: string): ComponentDef | null {
+    return componentOfMain(this, id);
+  }
+
+  /** Components whose main contains the node (itself included), nearest first. */
+  mainsContaining(id: string): ComponentDef[] {
+    return mainsContaining(this, id);
+  }
+
+  /** Instance root ids of a component, in document order. */
+  instancesOf(componentId: string): string[] {
+    return instancesOf(this, componentId);
+  }
+
+  instanceInfo(id: string): InstanceInfo | null {
+    const inst = instanceOfNode(this, id);
+    const def = inst ? readComponent(this.components.get(inst.component)) : null;
+    if (!inst || !def) return null;
+    const subtree = mainSubtree(this, def);
+    const overrides = inst.overrides ?? {};
+    return { id, component: def, mainRoot: def.root, props: effectiveProps(this, def, inst), overrides, orphaned: Object.keys(overrides).filter((k) => !subtree.has(k)) };
+  }
+
+  partInfo(id: string): { instanceId: string; of: string } | null {
+    return partInfo(this, id);
+  }
+
+  /** The node itself if it is an instance root, else its nearest instance-root ancestor, else null. */
+  instanceRootOf(id: string): string | null {
+    return instanceRootOf(this, id);
+  }
+
+  /** Prop values of an instance: explicit ones plus the defaults derived from the main. */
+  effectiveProps(instanceId: string): Record<string, PropValue> {
+    return this.instanceInfo(instanceId)?.props ?? {};
+  }
+
+  /** Explicit overrides of an instance (orphans included), keyed by main-subtree node id. */
+  overridesOf(instanceId: string): Overrides {
+    return this.instanceInfo(instanceId)?.overrides ?? {};
+  }
+
+  /** Main-subtree node id for `target` (an id of a main layer or part, or a unique layer name); `ref` is an instance id or a component ref. */
+  resolveOverrideTarget(ref: string, target: string): string {
+    const inst = instanceOfNode(this, ref);
+    if (inst) return resolveTarget(this, requireComponent(this, inst.component), target, ref);
+    return resolveTarget(this, requireComponent(this, ref), target);
+  }
+
   /** Like `page`, but throws a not_found error that says how to get valid ids. */
   requirePage(id: string): PageData {
     const p = this.page(id);
@@ -468,6 +589,7 @@ export class OcelotDocument {
       ...(Object.keys(n.states).length ? { states: cloneStates(n.states) } : {}),
       ...(n.hidden ? { hidden: true } : {}),
       ...(n.locked ? { locked: true } : {}),
+      ...(n.instance ? { instance: structuredClone(n.instance) } : {}),
       children: n.children.map((c) => this.toSpec(c)),
     };
   }
@@ -536,6 +658,9 @@ export class OcelotDocument {
 export function readNode(n: YNode): NodeData {
   const frame = n.get('frame') as Y.Map<number> | undefined;
   const slide = readSlide(n.get('slide'));
+  const component = n.get('component');
+  const instance = readInstance(n.get('instance'));
+  const of = n.get('of');
   return {
     id: n.get('id') as string,
     type: n.get('type') as NodeType,
@@ -561,6 +686,9 @@ export function readNode(n: YNode): NodeData {
         }
       : null,
     ...(slide ? { slide } : {}),
+    ...(typeof component === 'string' ? { component } : {}),
+    ...(instance ? { instance } : {}),
+    ...(typeof of === 'string' ? { of } : {}),
   };
 }
 
@@ -592,8 +720,19 @@ export class DocumentOps {
   /** Runs `fn` in one Yjs transaction (one undo step for this origin). */
   transact<T>(fn: () => T): T {
     let result!: T;
-    this.doc.ydoc.transact(() => {
-      result = fn();
+    const doc = this.doc;
+    doc.ydoc.transact((txn) => {
+      doc.txDepth++;
+      let threw = true;
+      try {
+        result = fn();
+        threw = false;
+      } finally {
+        doc.txDepth--;
+        if (threw && doc.txDepth === 0) doc.pendingInstances.clear();
+      }
+      // Edits to a main (or placed / changed instances) re-materialize the instances in this same transaction: one undo step.
+      if (doc.txDepth === 0) syncAfterTransaction(this, txn);
     }, this.origin);
     return result;
   }
@@ -1015,6 +1154,8 @@ export class DocumentOps {
       );
     }
     for (const s of specs) this.validateSpec(s);
+    refuseInstanceLayer(this.doc, parentId, 'layers cannot be added inside it');
+    assertSpecsNoCycle(this.doc, specs, parentId);
     return this.transact(() => {
       const children = parent.get('children') as Y.Array<string>;
       let at = clampIndex(index, children.length);
@@ -1030,6 +1171,7 @@ export class DocumentOps {
 
   /** Deletes all children of `parentId`, then inserts `specs`. */
   replaceChildren(parentId: string, specs: NodeSpec[]): string[] {
+    refuseInstanceLayer(this.doc, parentId, 'its layers cannot be replaced');
     for (const s of specs) this.validateSpec(s);
     return this.transact(() => {
       this.deleteNodes(this.doc.childIds(parentId));
@@ -1043,11 +1185,13 @@ export class DocumentOps {
    */
   updateStyles(id: string, styles: Record<string, string | null>): void {
     const n = this.doc.ynode(id);
+    if (routeToOverride(this, id, { styles })) return;
     this.transact(() => this.writeStyles(n, styles));
   }
 
   setAttrs(id: string, attrs: Record<string, string | null>): void {
     const n = this.doc.ynode(id);
+    if (routeToOverride(this, id, { attrs })) return;
     for (const [k, v] of Object.entries(attrs)) {
       if (v === null) continue;
       const reason = rejectAttr(k, v);
@@ -1064,6 +1208,7 @@ export class DocumentOps {
 
   setText(id: string, text: string): void {
     const n = this.doc.ynode(id);
+    if (routeToOverride(this, id, { text })) return;
     const type = n.get('type') as NodeType;
     if (type !== 'text') {
       throw new ModelError(
@@ -1080,6 +1225,7 @@ export class DocumentOps {
   /** Sets sanitized markup (rich text for text nodes, inner SVG for svg nodes). */
   setHtml(id: string, html: string): void {
     const n = this.doc.ynode(id);
+    if (routeToOverride(this, id, { html })) return;
     const type = n.get('type') as NodeType;
     if (type !== 'text' && type !== 'svg') {
       throw new ModelError('invalid_argument', `Only text and svg nodes hold markup; "${id}" is a ${type} node.`);
@@ -1094,6 +1240,7 @@ export class DocumentOps {
   /** Replaces a code layer's source and/or libraries. Omitted fields keep their value. */
   setCode(id: string, patch: { source?: string; libraries?: CodeLibrary[] }): void {
     const n = this.doc.ynode(id);
+    refuseInstanceLayer(this.doc, id, 'its code is mirrored from the main');
     const type = n.get('type') as NodeType;
     if (type !== 'code') {
       throw new ModelError('invalid_argument', `Node "${id}" is a ${type} node; only code layers hold code. Create one with create_code_layer.`);
@@ -1110,6 +1257,7 @@ export class DocumentOps {
    */
   setLink(id: string, link: NodeLink | null): void {
     const n = this.doc.ynode(id);
+    refuseInstanceLayer(this.doc, id, 'its link is mirrored from the main', true);
     const type = n.get('type') as NodeType;
     if (type === 'artboard') {
       throw new ModelError('invalid_argument', `"${id}" is an artboard; screens cannot carry a link. Link a layer inside it (a button, nav item or card) with set_link.`);
@@ -1127,6 +1275,7 @@ export class DocumentOps {
 
   rename(id: string, name: string): void {
     const n = this.doc.ynode(id);
+    refuseInstanceLayer(this.doc, id, 'its name is mirrored from the main', true);
     this.transact(() => n.set('name', name.trim() || (n.get('name') as string)));
   }
 
@@ -1137,12 +1286,17 @@ export class DocumentOps {
 
   setTag(id: string, tag: string): void {
     const n = this.doc.ynode(id);
+    refuseInstanceLayer(this.doc, id, 'its HTML tag is mirrored from the main');
     this.assertTag(id, tag);
     this.transact(() => n.set('tag', tag.toLowerCase()));
   }
 
   setHidden(id: string, hidden: boolean): void {
     const n = this.doc.ynode(id);
+    if (instanceLayerKind(this.doc, id) === 'part') {
+      routeToOverride(this, id, { hidden });
+      return;
+    }
     this.transact(() => n.set('hidden', hidden));
   }
 
@@ -1158,6 +1312,7 @@ export class DocumentOps {
    */
   setStateStyles(id: string, state: StateName, styles: Record<string, string | null>, opts: { replace?: boolean } = {}): void {
     const n = this.doc.ynode(id);
+    refuseInstanceLayer(this.doc, id, 'its state styles (hover, pressed, focus) are mirrored from the main');
     const patch = normalizeStylePatch(styles, `State "${state}" of "${id}"`);
     this.transact(() => this.writeState(n, state, patch, opts.replace === true));
   }
@@ -1184,6 +1339,9 @@ export class DocumentOps {
     if (missing.length) {
       throw new ModelError('not_found', `Cannot delete unknown node(s): ${missing.join(', ')}. Call get_tree for current ids.`);
     }
+    for (const id of ids) {
+      if (instanceLayerKind(this.doc, id) === 'part' && !ids.some((a) => a !== id && this.doc.isAncestor(a, id))) refuseInstanceLayer(this.doc, id, 'it cannot be deleted on its own');
+    }
     // Slides / scenes that go leave a gap in their row: close it in the same step.
     const rows = new Set<string>();
     for (const id of ids) {
@@ -1191,6 +1349,7 @@ export class DocumentOps {
       if (page && isSlideKind(this.doc.pageKind(page))) rows.add(page);
     }
     this.transact(() => {
+      releaseDeletedMains(this, ids);
       for (const id of ids) {
         if (!this.doc.has(id)) continue; // already removed as a descendant
         const parent = this.doc.parentOf(id);
@@ -1220,6 +1379,9 @@ export class DocumentOps {
         throw new ModelError('cycle', `Cannot move "${id}" into itself or one of its descendants ("${newParentId}").`);
       }
     }
+    for (const id of ids) refuseInstanceLayer(this.doc, id, 'it cannot be moved out of its instance', true);
+    refuseInstanceLayer(this.doc, newParentId, 'layers cannot be moved into it');
+    assertMoveNoCycle(this.doc, ids, newParentId);
     this.transact(() => {
       const targetChildren = target.get('children') as Y.Array<string>;
       for (const id of ids) {
@@ -1239,6 +1401,7 @@ export class DocumentOps {
    * canvas space, or (`keepPosition`) exactly on top of the original (⌥-drag duplicate: the drag then moves it).
    */
   duplicateNodes(ids: string[], opts: { keepPosition?: boolean } = {}): string[] {
+    for (const id of ids) refuseInstanceLayer(this.doc, id, 'it cannot be duplicated on its own', true);
     return this.transact(() => {
       const out: string[] = [];
       for (const id of ids) {
@@ -1260,6 +1423,7 @@ export class DocumentOps {
   /** Wraps sibling nodes in a new frame placed where the first of them was. */
   wrapInFrame(ids: string[], styles: Record<string, string> = {}): string {
     if (ids.length === 0) throw new ModelError('invalid_argument', 'Select at least one node to wrap.');
+    for (const id of ids) refuseInstanceLayer(this.doc, id, 'it cannot be wrapped on its own', true);
     const parents = new Set(ids.map((id) => this.doc.parentOf(id)));
     if (parents.size !== 1 || parents.has(null)) {
       throw new ModelError('invalid_argument', 'Nodes to wrap must share the same parent (and cannot be artboards).');
@@ -1273,6 +1437,56 @@ export class DocumentOps {
       this.moveNodes(ordered, frame!, 0);
       return frame!;
     });
+  }
+
+  // ---------- document components (model/components.ts) ----------
+
+  /**
+   * Turns a layer into a component's main (several layers of one parent are wrapped in a frame first). Returns the component id,
+   * the main's id and whether a wrapper frame was made.
+   */
+  makeComponent(ids: string[], opts: MakeComponentOptions = {}): { componentId: string; root: string; wrapped: boolean } {
+    return makeComponent(this, ids, opts);
+  }
+
+  /** Places an instance of a component (id or name) into a container; returns the instance root id. */
+  placeInstance(component: string, parentId: string, opts: PlaceInstanceOptions = {}): string {
+    return placeInstance(this, component, parentId, opts);
+  }
+
+  /** Sets prop values of an instance (null = back to the default). */
+  setInstanceProps(instanceId: string, values: Record<string, PropValue | null>): void {
+    setInstanceProps(this, instanceId, values);
+  }
+
+  /** Overrides fields of one layer of an instance (`target`: a main-subtree id, a part id or a unique layer name; null resets a field). */
+  setOverride(instanceId: string, target: string, patch: OverridePatch): void {
+    setOverride(this, instanceId, target, patch);
+  }
+
+  /** Resets overrides and props of an instance (everything but its placement when no options are given). */
+  resetInstance(instanceId: string, opts: ResetOptions = {}): void {
+    resetInstance(this, instanceId, opts);
+  }
+
+  /** Turns instances into plain layers exactly as they look now. */
+  detachInstance(instanceIds: string[]): string[] {
+    return detachInstances(this, instanceIds);
+  }
+
+  /** Renames a component, sets its description or replaces its props. */
+  updateComponent(ref: string, patch: { name?: string; description?: string | null; props?: ComponentProp[] }): void {
+    updateComponent(this, ref, patch);
+  }
+
+  /** Unmakes a component: instances detach, the main stays a plain layer. Returns the detached instance ids. */
+  removeComponent(ref: string): string[] {
+    return removeComponent(this, ref);
+  }
+
+  /** Re-materializes every instance from its main (load, repair). Returns how many instances were checked. */
+  syncInstances(): number {
+    return this.transact(() => syncAllInstances(this));
   }
 
   // ---------- internals ----------
@@ -1303,7 +1517,7 @@ export class DocumentOps {
     return copy;
   }
 
-  private integrateNode(
+  integrateNode(
     id: string,
     base: { type: NodeType; tag: string; name: string; parent: string | null },
   ): YNode {
@@ -1325,6 +1539,7 @@ export class DocumentOps {
   }
 
   private createFromSpec(spec: NodeSpec, parentId: string): string {
+    if (spec.instance && this.doc.component(spec.instance.component)) return createInstanceNode(this, spec, parentId);
     const id = this.doc.newId();
     const n = this.integrateNode(id, {
       type: spec.type,
@@ -1357,7 +1572,7 @@ export class DocumentOps {
   }
 
   /** Writes a normalized style patch into one state map (created on demand, removed when it ends up empty). */
-  private writeState(n: YNode, state: StateName, patch: Record<string, string | null>, replace: boolean): void {
+  writeState(n: YNode, state: StateName, patch: Record<string, string | null>, replace: boolean): void {
     let states = n.get('states') as Y.Map<Y.Map<string>> | undefined;
     if (!states) {
       states = new Y.Map<Y.Map<string>>();

@@ -210,14 +210,20 @@
     "AgentHistoryEntries": {
       "entries": "AgentHistoryEntry[]"
     },
+    "AgentHistoryFile": {
+      "name": "string",
+      "dataBase64": "string"
+    },
     "AgentHistoryTranscript": {
-      "text": "string?"
+      "text": "string?",
+      "files": "AgentHistoryFile[]?"
     },
     "AgentHistoryWriteParams": {
       "projectId": "string",
       "id": "string",
       "meta": "string",
-      "transcript": "string?"
+      "transcript": "string?",
+      "files": "AgentHistoryFile[]?"
     },
     "AgentSendParams": {
       "processId": "string",

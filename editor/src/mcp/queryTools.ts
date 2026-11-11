@@ -8,7 +8,8 @@ import { toHex } from '../panels/colors';
 import { toKebab } from '../model/styles';
 import type { NodeData } from '../model/types';
 import { GUIDE_TOPICS, readGuide } from './guide';
-import { liveRect, nodeLine } from './format';
+import { componentTag, liveRect, nodeLine } from './format';
+import { componentNodeInfo } from './componentTools';
 import { describeLink, resolveLink } from '../model/links';
 import {
   NODE_ID,
@@ -38,7 +39,8 @@ function size(ctx: ToolContext, n: NodeData): string {
 
 function summaryLine(ctx: ToolContext, n: NodeData): string {
   const link = n.link ? ` [link → ${describeLink(resolveLink(ctx.editor.doc, n.link))}]` : '';
-  const flags = `${link}${n.hidden ? ' [hidden]' : ''}${n.locked ? ' [layer-locked]' : ''}`;
+  const tag = componentTag(n, ctx.editor.doc);
+  const flags = `${link}${n.hidden ? ' [hidden]' : ''}${n.locked ? ' [layer-locked]' : ''}${tag ? ` ${tag}` : ''}`;
   return `${n.type} "${n.name}" ${n.id} ${size(ctx, n)}${flags}`;
 }
 
@@ -254,7 +256,8 @@ export const QUERY_TOOLS: ToolDef[] = [
       'text matches text layers, case-insensitive, "*" wildcards, whole value ("Submit", "Get *", "*started*"). filters is a list of {style, value} that must ALL match: style is a CSS property ' +
       '(kebab or camelCase, "*" wildcard like "border-*", omit to match any property), value is a literal or a wildcard pattern; colors match by equivalence ("#ccc" = "rgb(204, 204, 204)") ' +
       'and are also found inside gradients, borders and shadows. A named style is checked against the rendered (computed) value when the canvas has it, and against the declared inline value; ' +
-      'wildcard or omitted style names search declared styles only. root_id limits the search to a subtree. Returns matches with what matched and the node id; next: get_node, update_styles, set_text, select_nodes.',
+      'wildcard or omitted style names search declared styles only. root_id limits the search to a subtree. component (a document component\'s id or name) limits the search to its main and its instances, alone it lists them. ' +
+      'Hits inside a component say so ("main", "instance", or "part" with the instance id): change a part with set_instance, or edit the main. Returns matches with what matched and the node id; next: get_node, update_styles, set_text, select_nodes.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -273,6 +276,7 @@ export const QUERY_TOOLS: ToolDef[] = [
             additionalProperties: false,
           },
         },
+        component: { type: 'string', description: 'A document component (id or name): only its main and its instances.' },
         limit: { type: 'integer', minimum: 1, maximum: 500, default: 50 },
       },
       additionalProperties: false,
@@ -281,13 +285,19 @@ export const QUERY_TOOLS: ToolDef[] = [
       const { doc } = ctx.editor;
       const textQuery = str(args, 'text', { optional: true });
       const filters = readFilters(args);
-      if (textQuery === undefined && filters.length === 0) {
-        throw new ToolError('find_nodes needs "text", "filters", or both. Example: {"filters": [{"style": "color", "value": "#111111"}]} or {"text": "Get *"}.');
+      const componentRef = str(args, 'component', { optional: true });
+      if (textQuery === undefined && filters.length === 0 && componentRef === undefined) {
+        throw new ToolError('find_nodes needs "text", "filters", or both (or a "component"). Example: {"filters": [{"style": "color", "value": "#111111"}]}, {"text": "Get *"} or {"component": "Button"}.');
       }
+      const component = componentRef !== undefined ? doc.requireComponent(componentRef) : null;
       const root = str(args, 'root_id', { optional: true });
       if (root) requireNode(ctx, root);
       const limit = Math.min(500, Math.max(1, Math.trunc(num(args, 'limit') ?? 50)));
-      const scope = root ? doc.subtreeIds(root) : doc.artboardIds().flatMap((a) => doc.subtreeIds(a));
+      let scope = root ? doc.subtreeIds(root) : doc.artboardIds().flatMap((a) => doc.subtreeIds(a));
+      if (component) {
+        const keep = new Set([component.root, ...doc.instancesOf(component.id)]);
+        scope = scope.filter((id) => keep.has(id));
+      }
       const textRe = textQuery !== undefined ? wildcard(textQuery.trim()) : null;
       const matches: Array<Record<string, unknown>> = [];
       let total = 0;
@@ -310,7 +320,9 @@ export const QUERY_TOOLS: ToolDef[] = [
         }
         if (!ok) continue;
         total++;
-        if (matches.length < limit) matches.push({ id: n.id, type: n.type, name: n.name, matched });
+        const part = componentNodeInfo(doc, n.id);
+        const where = part ? { component: part['role'] === 'in_main' ? undefined : { role: part['role'], name: part['name'], ...(part['instance_id'] ? { instance_id: part['instance_id'] } : {}) } } : {};
+        if (matches.length < limit) matches.push({ id: n.id, type: n.type, name: n.name, ...where, matched });
       }
       return json({
         count: total,

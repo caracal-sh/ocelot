@@ -13,11 +13,14 @@
 //      parent is gone are deleted with their subtree (their container was undone).
 //   5. Cycles are broken by moving the node to the first artboard.
 //   6. The artboard list matches the artboard nodes exactly.
+//   8. Components: definitions and markers agree, no instance of a missing (or enclosing) component, then every instance is
+//      re-materialized from its main (components.ts). Runs last, after the tree is sound.
 //   7. Pages: the page list matches the existing pages, there is at least one, and every artboard
 //      belongs to an existing page (strays join the first page; see OcelotDocument.ensurePages).
 
 import * as Y from 'yjs';
 import { ORIGIN, type OcelotDocument } from './document';
+import { repairComponents } from './components';
 
 export function repairStructure(doc: OcelotDocument): number {
   let fixes = 0;
@@ -154,6 +157,8 @@ export function repairStructure(doc: OcelotDocument): number {
 
     // 7. Pages.
     fixes += doc.ensurePages();
+    fixes += repairComponents(doc);
   }, ORIGIN.system);
+  if (doc.components.size > 0) doc.ops(ORIGIN.system).syncInstances();
   return fixes;
 }

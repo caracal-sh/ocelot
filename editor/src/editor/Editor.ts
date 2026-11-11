@@ -8,23 +8,29 @@ import { Viewport, unionRect } from '../canvas/viewport';
 import type { ArtboardReconciler, RevealTarget } from '../render/reconciler';
 import { LockManager } from '../mcp/locks';
 import { Selection } from './selection';
+import { LayerReferences } from './layerReferences';
 import { QuestionStore } from './questions';
 import { LiveWrites } from './liveWrites';
 import { GhostSignal } from '../render/ghost';
 import { McpClients } from './mcpClients';
 import { AgentActivity } from './agentActivity';
+import { Subagents } from './subagents';
 import { RevealStore, type RevealInput } from '../render/reveal';
 import { UiState } from './ui';
 import { PresentSession } from './present';
 import { HumanActions } from './humanActions';
 import { PageActions } from './pageActions';
 import { DesignSystemActions } from './designSystemActions';
+import { ComponentActions } from './componentActions';
 import { AssetService } from '../assets/service';
 import { removeStalePlaceholders } from '../assets/place';
 import { AssetHistoryRefs } from '../assets/historyRefs';
 
-/** `page`: the current page changed (switching, or its page was deleted). */
-export type EditorEvent = 'document' | 'change' | 'page';
+/**
+ * `page`: the current page changed (switching, or its page was deleted). `components`: document components or their instances may
+ * have changed (a definition changed, or layers were added or removed while components exist); prop and override edits fire `change`.
+ */
+export type EditorEvent = 'document' | 'change' | 'page' | 'components';
 
 export class Editor {
   #doc: OcelotDocument;
@@ -37,6 +43,8 @@ export class Editor {
   /** Live reconcilers by artboard id (registered by the canvas). */
   readonly renderers = new Map<string, ArtboardReconciler>();
   readonly selection = new Selection();
+  /** Layers the person pointed at with a note ("Ask the agent about this"), waiting for the sidebar agent's composer or `get_selection`. Not saved. */
+  readonly references = new LayerReferences();
   readonly ui = new UiState();
   /** All UI edits go through here (lock checks, toasts, undo steps). */
   readonly actions: HumanActions;
@@ -44,6 +52,8 @@ export class Editor {
   readonly pages: PageActions;
   /** Design system edits from the UI (create, update, apply a draft, tokens, remove, artboard scheme). */
   readonly designSystem: DesignSystemActions;
+  /** Document component edits from the UI (make, place, props, overrides, detach, remove). */
+  readonly components: ComponentActions;
   /** Preview: one screen full size in the canvas area, links click through (window view state, not saved). */
   readonly present: PresentSession;
   /** Agent edit locks (begin_edit/end_edit). */
@@ -56,6 +66,8 @@ export class Editor {
   readonly mcpClients = new McpClients();
   /** Where the agent is working and whether it is on the canvas (the writing indicator, the toolbar chip, the camera). Not saved. */
   readonly activity: AgentActivity;
+  /** The sidebar agent's subagents (`task` calls) and which of its MCP calls are theirs. */
+  readonly subagents: Subagents;
   /** The reveal beats (outlines) of what agents just wrote. Not saved. */
   readonly reveals = new RevealStore();
   /** Ticks when a ghost (the preview of a write still streaming) is drawn, grows or goes: the outline overlay re-measures. Not saved. */
@@ -79,10 +91,12 @@ export class Editor {
     this.#unsubscribeDoc = this.#watch(doc);
     this.locks = new LockManager({ doc: () => this.#doc, history: () => this.#history });
     this.activity = new AgentActivity({ doc: () => this.#doc, locks: () => this.locks.active, planning: () => this.locks.planning });
+    this.subagents = new Subagents({ doc: () => this.#doc, activity: this.activity });
     this.locks.subscribe(() => this.activity.onLocks());
     this.actions = new HumanActions(this, this.ui);
     this.pages = new PageActions(this);
     this.designSystem = new DesignSystemActions(this);
+    this.components = new ComponentActions(this);
     this.present = new PresentSession(this);
     // Selecting a layer on another page (an agent's select_nodes, a search hit) shows that page.
     this.selection.subscribe(() => this.#followSelection());
@@ -128,7 +142,9 @@ export class Editor {
     this.locks.reset();
     this.reveals.clear();
     this.activity.reset();
+    this.subagents.clear();
     this.selection.clear();
+    this.references.clear();
     this.ui.setEditingText(null);
     this.ui.setHover(null);
     this.ui.setCurrentPage(view.currentPageId && doc.hasPage(view.currentPageId) ? view.currentPageId : null);
@@ -141,6 +157,7 @@ export class Editor {
     this.#unsubscribeDoc = this.#watch(doc);
     this.#emit('document');
     this.#emit('page');
+    this.#emit('components');
     this.#emit('change');
     // The new document has its own asset folder.
     void this.assets.reset();
@@ -227,7 +244,7 @@ export class Editor {
   }
 
   #watch(doc: OcelotDocument): () => void {
-    return doc.onChange(() => {
+    return doc.onChange((txn) => {
       this.#revision++;
       // The page on screen was deleted (or its creation undone): fall back to the first page.
       if (this.ui.currentPageId && !doc.hasPage(this.ui.currentPageId)) {
@@ -238,6 +255,7 @@ export class Editor {
       // The selection lives on the current page (layers moved to another page drop out of it).
       const page = this.currentPageId;
       this.selection.prune((id) => doc.has(id) && (doc.pageOf(id) ?? page) === page);
+      if (txn.changed.has(doc.components as never) || (doc.components.size > 0 && txn.changed.has(doc.nodes as never))) this.#emit('components');
       this.#emit('change');
     });
   }

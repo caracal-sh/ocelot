@@ -1,6 +1,8 @@
-import { useEffect, useReducer } from 'react';
+import { Fragment, useEffect, useReducer } from 'react';
 import { useEditor } from '../editor/context';
 import type { Editor } from '../editor/Editor';
+import { componentLabel, componentLabelAnchor, isComponentLayer } from '../editor/componentUi';
+import '../panels/Components.css';
 import { computedStyleOf, isAbsolutelyPositioned, nodeWorldRect, type WorldRect } from './geometry';
 import { Icon } from '../app/Icon';
 import { resolveLink } from '../model/links';
@@ -52,10 +54,29 @@ export function SelectionOverlay() {
 
   return (
     <>
-      {hover && <div className="at-hover" style={box(hover)} />}
-      {selected.map((s) => (
-        <div key={s.id} className={`at-selection${ui.editingTextId === s.id ? ' at-selection--editing' : ''}`} style={box(s.rect)} data-testid="selection-box" />
-      ))}
+      {hover && <div className={`at-hover${isComponentLayer(editor, ui.hoverId) ? ' at-hover--component' : ''}`} style={box(hover)} />}
+      {selected.map((s) => {
+        const role = editor.doc.componentRole(s.id);
+        const label = selected.length <= 3 ? componentLabel(editor, s.id, role) : null;
+        const anchor = label ? (nodeWorldRect(editor, componentLabelAnchor(editor, s.id, role)) ?? s.rect) : s.rect;
+        return (
+          <Fragment key={s.id}>
+            <div
+              className={`at-selection${ui.editingTextId === s.id ? ' at-selection--editing' : ''}${role ? ` at-selection--${role}` : ''}`}
+              style={box(s.rect)}
+              data-testid="selection-box"
+              data-component-role={role ?? undefined}
+            />
+            {label && role === 'part' && <div className="at-selection at-selection--part-host" style={box(anchor)} />}
+            {label && (
+              <div className={`at-component-label at-component-label--${role}`} style={{ left: anchor.x, top: anchor.y }} data-testid="component-label">
+                <Icon name={role === 'main' ? 'component' : 'instance'} size={12} />
+                {label}
+              </div>
+            )}
+          </Fragment>
+        );
+      })}
       {glyphs.map((g) => (
         <div key={g.id} className={`at-linkglyph${g.missing ? ' is-missing' : ''}`} style={{ left: g.rect.x + g.rect.width, top: g.rect.y }} data-testid="link-glyph" data-link-for={g.id}>
           <Icon name="link" size={16} />

@@ -45,6 +45,8 @@ export class UiState {
    * editing tools are off. Not part of the document; resets when the window reloads.
    */
   interact = false;
+  /** The "Ask the agent about this" popover next to the selection is open (canvas/AskAboutLayer.tsx). Not part of the document. */
+  askOpen = false;
   /** Global animation pause (CSS animations via animation-play-state; code layers via window.__ocelotMotion). */
   animationsPaused = false;
   /** The state (hover/active/focus) the inspector is editing, or null for the base styles. */
@@ -66,6 +68,11 @@ export class UiState {
   sidebarOpen = readStored(SIDEBAR_OPEN_KEY, '1') === '1';
   /** Whether the camera follows the agent's work when it is off screen (Zoom menu > Follow agent); remembered across launches. */
   followAgent = readStored(FOLLOW_AGENT_KEY, '1') === '1';
+  /**
+   * With several agents at work, the one the camera follows (its `AgentPresenceEntry.key`); null follows whichever focuses last. Not
+   * remembered: agent keys last as long as the agents do (the camera resets it when the agent leaves).
+   */
+  followAgentKey: string | null = null;
   sidebarTab: SidebarTab = parseTab(readStored(SIDEBAR_TAB_KEY, 'agent'));
   /**
    * The native window around the editor (Mac app): room to leave for the traffic lights, the file's
@@ -97,9 +104,16 @@ export class UiState {
       this.tool = 'select';
       this.hoverId = null;
       this.editingTextId = null;
+      this.askOpen = false;
       this.dropLine = null;
       this.creationRect = null;
     }
+    this.#emit();
+  }
+
+  setAskOpen(open: boolean): void {
+    if (this.askOpen === open) return;
+    this.askOpen = open;
     this.#emit();
   }
 
@@ -158,6 +172,12 @@ export class UiState {
     if (this.followAgent === on) return;
     this.followAgent = on;
     writeStored(FOLLOW_AGENT_KEY, on ? '1' : '0');
+    this.#emit();
+  }
+
+  setFollowAgentKey(key: string | null): void {
+    if (this.followAgentKey === key) return;
+    this.followAgentKey = key;
     this.#emit();
   }
 

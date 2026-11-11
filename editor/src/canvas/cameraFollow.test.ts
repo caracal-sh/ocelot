@@ -1,9 +1,12 @@
 // @vitest-environment jsdom
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Editor } from '../editor/Editor';
 import { ORIGIN } from '../model/document';
 import { Viewport } from './viewport';
-import { CameraFollow, FOLLOW, cubicBezier, followTarget } from './cameraFollow';
+import { IDLE_MS } from '../editor/agentActivity';
+import { CameraFollow, FOLLOW, cubicBezier, followTarget, followsAgent } from './cameraFollow';
+
+afterEach(() => vi.useRealTimers());
 
 /** An editor with a 1000×800 canvas and one artboard 1440×900 at the origin, zoomed to 0.5 (so it fits with room to spare). */
 function setup(opts: { reduced?: boolean } = {}) {
@@ -216,5 +219,72 @@ describe('following a growing ghost', () => {
     const to = followTarget(editor, { kind: 'ghost', artboardId: ab, rect: { x: 0, y: 2000, width: 300, height: 100 } });
     expect(to).not.toBeNull();
     expect(followTarget(editor, { kind: 'ghost', artboardId: 'n_elsewhere', rect: { x: 0, y: 0, width: 1, height: 1 } })).toBeNull();
+  });
+});
+
+describe('following one agent', () => {
+  it('follows every agent when none is picked, and only the picked agent when one is', () => {
+    const { editor, ab, advance, frames } = setup();
+    editor.viewport.set({ x: -1500, y: 100, zoom: 1 }, 'agent');
+    advance(FOLLOW.quiet);
+    editor.activity.begin('Welcome', 'a');
+    editor.activity.begin('Goals', 'b');
+    // Nobody picked: whichever agent focuses last is followed.
+    editor.activity.createdArtboard(ab, 'a');
+    expect(frames).toHaveLength(1);
+    frames.splice(0);
+    // Picking Goals: Welcome's focus is ignored, Goals' is followed.
+    editor.ui.setFollowAgentKey('b');
+    editor.activity.createdArtboard(ab, 'a');
+    expect(frames).toHaveLength(0);
+    editor.activity.createdArtboard(ab, 'b');
+    expect(frames).toHaveLength(1);
+    frames.splice(0);
+    // Back to all agents.
+    editor.ui.setFollowAgentKey(null);
+    editor.activity.createdArtboard(ab, 'a');
+    expect(frames).toHaveLength(1);
+  });
+
+  it('keeps the other rules with a picked agent: the Follow switch, and the person moving the camera', () => {
+    const { editor, ab, advance, frames } = setup();
+    editor.viewport.set({ x: -1500, y: 100, zoom: 1 }, 'agent');
+    advance(FOLLOW.quiet);
+    editor.activity.begin('Goals', 'b');
+    editor.ui.setFollowAgentKey('b');
+    editor.ui.setFollowAgent(false);
+    editor.activity.createdArtboard(ab, 'b');
+    expect(frames).toHaveLength(0);
+    editor.ui.setFollowAgent(true);
+    editor.viewport.panBy(5, 0);
+    editor.activity.createdArtboard(ab, 'b');
+    expect(frames).toHaveLength(0);
+    advance(FOLLOW.quiet);
+    editor.activity.createdArtboard(ab, 'b');
+    expect(frames).toHaveLength(1);
+  });
+
+  it('goes back to all agents when the picked agent leaves', () => {
+    vi.useFakeTimers();
+    const { editor } = setup();
+    editor.activity.begin('Welcome', 'a');
+    editor.activity.begin('Goals', 'b');
+    editor.ui.setFollowAgentKey('b');
+    vi.advanceTimersByTime(1000);
+    editor.activity.begin('Welcome', 'a');
+    expect(editor.ui.followAgentKey).toBe('b');
+    vi.advanceTimersByTime(IDLE_MS - 500);
+    // Goals went quiet and left; Welcome is still there.
+    expect(editor.activity.presences.map((p) => p.key)).toEqual(['a']);
+    expect(editor.ui.followAgentKey).toBeNull();
+  });
+
+  it('filters by key: an event without one is only heard when no agent is picked', () => {
+    const e = { kind: 'artboard', artboardId: 'x' } as const;
+    expect(followsAgent(null, e)).toBe(true);
+    expect(followsAgent('a', e)).toBe(false);
+    expect(followsAgent('a', { ...e, agentKey: 'a' })).toBe(true);
+    expect(followsAgent('a', { ...e, agentKey: 'b' })).toBe(false);
+    expect(followsAgent(null, { ...e, agentKey: 'b' })).toBe(true);
   });
 });

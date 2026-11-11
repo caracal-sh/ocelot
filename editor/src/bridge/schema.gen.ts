@@ -245,8 +245,14 @@ export interface AgentHistoryEntries {
   entries: AgentHistoryEntry[];
 }
 
+export interface AgentHistoryFile {
+  name: string;
+  dataBase64: string;
+}
+
 export interface AgentHistoryTranscript {
   text?: string;
+  files?: AgentHistoryFile[];
 }
 
 export interface AgentHistoryWriteParams {
@@ -254,6 +260,7 @@ export interface AgentHistoryWriteParams {
   id: string;
   meta: string;
   transcript?: string;
+  files?: AgentHistoryFile[];
 }
 
 export interface AgentSendParams {

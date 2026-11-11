@@ -4,7 +4,9 @@ import XPC
 
 /// One app connection's agent processes. Runs inside the App Sandbox, so omp (a child) inherits it:
 /// it can read its own container, the omp install directory the entitlements allow, and system
-/// libraries; nothing of the user's home. Keeps an XPC transaction open while omp runs (otherwise
+/// libraries; nothing of the user's home, in particular none of the app's saved conversations: omp works on a private copy
+/// of its own conversation's session files in this process's scratch (`sessions/<sessionId>/conversation`), which the app
+/// fills before the start and collects (`snapshot`) after every turn and at exit. Keeps an XPC transaction open while omp runs (otherwise
 /// launchd may reap an "idle" service mid-conversation) and kills omp when the connection ends.
 final class AgentProcessService: NSObject, OcelotAgentServiceProtocol, @unchecked Sendable {
     private struct Session {
@@ -27,10 +29,10 @@ final class AgentProcessService: NSObject, OcelotAgentServiceProtocol, @unchecke
 
     // MARK: - OcelotAgentServiceProtocol
 
-    func start(_ request: Data, reply: @escaping @Sendable (String?) -> Void) {
+    func start(_ request: Data, sessionFiles: Data, reply: @escaping @Sendable (String?) -> Void) {
         do {
             let start = try JSONDecoder().decode(AgentServiceStart.self, from: request)
-            try launch(start)
+            try launch(start, sessionFiles: sessionFiles)
             reply(nil)
         } catch {
             reply((error as? AgentLaunch.Failure)?.message ?? error.localizedDescription)
@@ -59,19 +61,52 @@ final class AgentProcessService: NSObject, OcelotAgentServiceProtocol, @unchecke
         for session in all { terminate(session) }
     }
 
-    func selfTest(userFolders: Bool, reply: @escaping @Sendable (Data) -> Void) {
+    func snapshot(sessionId: String, reply: @escaping @Sendable (Data?) -> Void) {
+        guard AgentScratch.isSessionId(sessionId) else { return reply(nil) }
+        let conversation = AgentScratch.root(home: NSHomeDirectory()).appendingPathComponent(sessionId, isDirectory: true).appendingPathComponent(AgentScratch.conversationFolder, isDirectory: true)
+        // Off the connection's queue: a big session must not hold up `send` of running agents.
+        DispatchQueue.global().async {
+            guard FileManager.default.fileExists(atPath: conversation.path) else { return reply(nil) }
+            reply(try? AgentSessionArchive.pack(directory: conversation))
+        }
+    }
+
+    func discard(sessionId: String) {
+        guard AgentScratch.isSessionId(sessionId) else { return }
+        lock.lock()
+        let running = sessions[sessionId] != nil
+        lock.unlock()
+        if running { return }
+        try? FileManager.default.removeItem(at: AgentScratch.root(home: NSHomeDirectory()).appendingPathComponent(sessionId, isDirectory: true))
+    }
+
+    func leftovers(reply: @escaping @Sendable (Data) -> Void) {
+        lock.lock()
+        let running = Set(sessions.keys)
+        lock.unlock()
+        DispatchQueue.global().async {
+            let infos = AgentScratch.leftovers(root: AgentScratch.root(home: NSHomeDirectory()), running: running)
+            reply((try? JSONEncoder().encode(infos)) ?? Data("[]".utf8))
+        }
+    }
+
+    func selfTest(userFolders: Bool, targets: Data, reply: @escaping @Sendable (Data) -> Void) {
+        let targets = (try? JSONDecoder().decode([AgentProbeTarget].self, from: targets)) ?? []
         // Off the connection's queue: a slow probe must not hold up `send`/`start` of running agents.
         DispatchQueue.global().async {
-            let results = AgentSelfTest.run(userFolders: userFolders)
+            let results = AgentSelfTest.run(userFolders: userFolders, targets: targets)
             reply((try? JSONEncoder().encode(results)) ?? Data("[]".utf8))
         }
     }
 
     // MARK: - Processes
 
-    private func launch(_ start: AgentServiceStart) throws {
-        guard start.sessionId.range(of: #"^[A-Za-z0-9-]{1,64}$"#, options: .regularExpression) != nil else {
+    private func launch(_ start: AgentServiceStart, sessionFiles: Data) throws {
+        guard AgentScratch.isSessionId(start.sessionId) else {
             throw AgentLaunch.Failure("Invalid agent session id.")
+        }
+        guard AgentConversationPaths.isValidProjectId(start.projectId), AgentConversationPaths.isValidConversationId(start.conversationId) else {
+            throw AgentLaunch.Failure("Invalid project or conversation id.")
         }
         let omp = start.ompPath
         guard omp.hasPrefix("/"), (omp as NSString).lastPathComponent == "omp" else {
@@ -86,9 +121,12 @@ final class AgentProcessService: NSObject, OcelotAgentServiceProtocol, @unchecke
         if running { throw AgentLaunch.Failure("This agent session is already running.") }
 
         let home = NSHomeDirectory() // the service's container: omp's private ~/.omp (extracted natives, caches) lives here
-        let sessionsRoot = URL(fileURLWithPath: home).appendingPathComponent("Library/Application Support/OcelotAgent/sessions", isDirectory: true)
+        let sessionsRoot = AgentScratch.root(home: NSHomeDirectory())
         let directory = sessionsRoot.appendingPathComponent(start.sessionId, isDirectory: true)
         let agentDir = directory.appendingPathComponent("agent", isDirectory: true)
+        let conversation = directory.appendingPathComponent(AgentScratch.conversationFolder, isDirectory: true)
+        // A scratch left under this id is no one's: ids are random per process.
+        try? FileManager.default.removeItem(at: directory)
         // Owner-only, like the run directory: nothing a session writes is world-readable. (The sandbox is shared by
         // every session, so secrets never go to disk here: the MCP token is in omp's environment, not `.mcp.json`.)
         try FileManager.default.createDirectory(at: agentDir, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
@@ -100,12 +138,15 @@ final class AgentProcessService: NSObject, OcelotAgentServiceProtocol, @unchecke
         try start.overlay.write(to: configFile, atomically: true, encoding: .utf8)
         try start.systemPrompt.write(to: promptFile, atomically: true, encoding: .utf8)
         try start.mcpConfig.write(to: directory.appendingPathComponent(".mcp.json"), atomically: true, encoding: .utf8)
+        // The conversation's session files: a private copy omp reads and writes, and where it ends up is the app's business.
+        try AgentScratch.fill(folder: directory, projectId: start.projectId, conversationId: start.conversationId, sessionFiles: sessionFiles)
+        try AgentLaunch.writeSubagentDefinition(in: directory)
 
         try linkNatives(home: home)
 
         let process = Process()
         process.executableURL = URL(fileURLWithPath: omp)
-        process.arguments = AgentLaunch.ompArguments(configFile: configFile.path, systemPromptFile: promptFile.path, model: start.model, thinking: start.thinking, sessionDirectory: try sessionDirectory(start.sessionDirectory), resume: start.resume)
+        process.arguments = AgentLaunch.ompArguments(configFile: configFile.path, systemPromptFile: promptFile.path, model: start.model, thinking: start.thinking, sessionDirectory: conversation.path, resume: start.resume)
         process.environment = AgentLaunch.confinedEnvironment(home: home, agentDir: agentDir.path, temporaryDirectory: try temporaryDirectory(start.temporaryDirectory), token: start.gatewayToken, mcpToken: start.mcpToken)
         process.currentDirectoryURL = directory
         let stdin = Pipe(), stdout = Pipe(), stderr = Pipe()
@@ -139,9 +180,10 @@ final class AgentProcessService: NSObject, OcelotAgentServiceProtocol, @unchecke
         }
         process.terminationHandler = { _ in drained.leave() }
         drained.notify(queue: .global()) { [weak self] in
-            // Whatever became of the service object, the transaction ends and the session's files go.
+            // Whatever became of the service object, the transaction ends. The process's configuration goes; its session
+            // files stay until the app has collected them (`snapshot`, then `discard`), or recovers them after a crash.
             defer { xpc_transaction_end() }
-            try? FileManager.default.removeItem(at: directory)
+            Self.removeConfiguration(in: directory)
             guard let self else { return }
             lock.lock()
             sessions.removeValue(forKey: sessionId)
@@ -154,7 +196,7 @@ final class AgentProcessService: NSObject, OcelotAgentServiceProtocol, @unchecke
             try process.run()
         } catch {
             xpc_transaction_end()
-            try? FileManager.default.removeItem(at: directory)
+            try? FileManager.default.removeItem(at: directory) // never ran: nothing of the conversation to keep
             throw AgentLaunch.Failure("The sandboxed agent could not start omp: \(error.localizedDescription)")
         }
         lock.lock()
@@ -180,14 +222,12 @@ final class AgentProcessService: NSObject, OcelotAgentServiceProtocol, @unchecke
         try FileManager.default.createSymbolicLink(atPath: link.path, withDestinationPath: real)
     }
 
-    /// The conversation directory the app made, only if it is one (`Agent/conversations/<project>/<conversation>`): the one place
-    /// outside the container the entitlements let omp write. A path anywhere else would fail inside the sandbox anyway; refuse it by name.
-    private func sessionDirectory(_ requested: String) throws -> String {
-        let agentFolder = AgentSelfTest.realHomeDirectory() + "/Library/Application Support/Ocelot/Agent"
-        guard AgentConversationPaths.isSessionDirectory(requested, agentFolder: agentFolder) else {
-            throw AgentLaunch.Failure("The agent's conversation directory must be a folder under \(agentFolder)/conversations.")
+    /// Everything of a finished process's folder except what the app still has to collect.
+    private static func removeConfiguration(in directory: URL) {
+        let fm = FileManager.default
+        for name in ["agent", "config.yml", "system-prompt.md", ".mcp.json"] {
+            try? fm.removeItem(at: directory.appendingPathComponent(name))
         }
-        return requested
     }
 
     /// The app's agent TMPDIR, only if it is where the entitlements allow writing.

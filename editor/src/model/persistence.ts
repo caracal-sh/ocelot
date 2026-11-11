@@ -10,12 +10,14 @@
 // keys: no version bump. A file without them loads as plain canvas pages (kind absent = 'canvas'); an older app opens a
 // deck as ordinary pages and keeps the unknown keys when it saves. The design system (`meta.designSystem`, designsystem/model.ts)
 // is the same kind of additive key: a document without one is unchanged, an older app ignores it and keeps it.
+// Document components (`components` Y.Map, node keys `component` / `instance` / `of`, model/components.ts) are additive too: an older
+// app shows instances as the plain layers they materialize and keeps the keys.
 
 import * as Y from 'yjs';
 import { OcelotDocument } from './document';
 import { repairStructure } from './repair';
 import { sanitizeMotion } from './sanitize';
-import type { KeyframesMap, NodeData, ThemeRef } from './types';
+import type { ComponentDef, KeyframesMap, NodeData, ThemeRef } from './types';
 import type { DesignSystemRecord } from '../designsystem/model';
 
 export const FORMAT = 'ocelot';
@@ -46,6 +48,8 @@ export interface ReadableTree {
   theme?: ThemeRef;
   /** The document's design system (the Yjs state is authoritative; this is a readable copy). */
   designSystem?: DesignSystemRecord;
+  /** Document components (the Yjs state is authoritative; this is a readable copy). */
+  components?: ComponentDef[];
   nodes: Record<string, Omit<NodeData, 'id'>>;
 }
 
@@ -75,6 +79,7 @@ export function encodeDocument(doc: OcelotDocument, now: Date = new Date(), view
       ...(doc.keyframes.size ? { keyframes: doc.keyframesMap() } : {}),
       ...(doc.theme() ? { theme: doc.theme()! } : {}),
       ...(doc.designSystem() ? { designSystem: doc.designSystem()! } : {}),
+      ...(doc.components.size ? { components: doc.componentList() } : {}),
       nodes,
     },
   };

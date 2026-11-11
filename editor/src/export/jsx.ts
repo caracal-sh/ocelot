@@ -37,13 +37,20 @@ export function jsxText(text: string): string {
   return text;
 }
 
+/** The JS property name of a CSS property: `background-color` -> `backgroundColor`, custom properties quoted. */
+export function jsxStyleKey(prop: string): string {
+  const key = prop.startsWith('--') ? JSON.stringify(prop) : prop.replace(/^-webkit-/, 'Webkit-').replace(/-([a-z])/g, (_, c: string) => c.toUpperCase());
+  return /^[A-Za-z_$][\w$]*$/.test(key) ? key : JSON.stringify(key);
+}
+
+/** CSS declarations -> `key: "value"` entries of a JSX style object. */
+export function jsxStyleEntries(styles: Record<string, string>): string[] {
+  return Object.entries(styles).map(([k, v]) => `${jsxStyleKey(k)}: ${JSON.stringify(v)}`);
+}
+
 /** CSS declarations -> JSX style object literal. */
 export function jsxStyle(styles: Record<string, string>): string {
-  const entries = Object.entries(styles).map(([k, v]) => {
-    const key = k.startsWith('--') ? JSON.stringify(k) : k.replace(/^-webkit-/, 'Webkit-').replace(/-([a-z])/g, (_, c: string) => c.toUpperCase());
-    return `${/^[A-Za-z_$][\w$]*$/.test(key) ? key : JSON.stringify(key)}: ${JSON.stringify(v)}`;
-  });
-  return `{{ ${entries.join(', ')} }}`;
+  return `{{ ${jsxStyleEntries(styles).join(', ')} }}`;
 }
 
 export function componentName(name: string): string {

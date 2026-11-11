@@ -37,6 +37,14 @@
   --at-accent: #007aff;          /* macOS systemBlue (light) */
   --at-agent: #b25000;           /* deep systemOrange: 5.2:1 vs #fff */
   --at-on-agent: #ffffff;
+  /* More than one agent at work: each draws in its own colour (--at-agent-0 is --at-agent). Every pair is at least 4.5:1. */
+  --at-agent-1: #0b5cc7; --at-on-agent-1: #ffffff;
+  --at-agent-2: #8a3fb8; --at-on-agent-2: #ffffff;
+  --at-agent-3: #1a7f37; --at-on-agent-3: #ffffff;
+  --at-agent-4: #c2185b; --at-on-agent-4: #ffffff;
+  --at-agent-5: #0f766e; --at-on-agent-5: #ffffff;
+  --at-component: #6a3fd0;       /* document components: mains and instances; 6.1:1 under white labels */
+  --at-on-component: #ffffff;
   --at-guide: #e5173f;           /* smart guides: 4.7:1 under white labels */
   --at-on-guide: #ffffff;
   --at-hover: rgba(0, 0, 0, 0.06);
@@ -71,6 +79,13 @@
     --at-accent: #0a84ff;        /* macOS systemBlue (dark) */
     --at-agent: #ff9f0a;         /* macOS systemOrange (dark): 7.4:1 vs #262626 */
     --at-on-agent: #1d1d1f;      /* 8.2:1 on #ff9f0a */
+    --at-agent-1: #0a84ff; --at-on-agent-1: #1d1d1f;
+    --at-agent-2: #bf5af2; --at-on-agent-2: #1d1d1f;
+    --at-agent-3: #30d158; --at-on-agent-3: #1d1d1f;
+    --at-agent-4: #ff375f; --at-on-agent-4: #1d1d1f;
+    --at-agent-5: #40c8e0; --at-on-agent-5: #1d1d1f;
+    --at-component: #a58bff;     /* document components: mains and instances (dark): 6.4:1 vs #1d1d1f */
+    --at-on-component: #1d1d1f;
     --at-guide: #ff4d6d;         /* smart guides (dark) */
     --at-on-guide: #1d1d1f;      /* 6.3:1 on #ff4d6d */
     --at-danger: #ff6961;
@@ -236,7 +251,7 @@ body {
 }
 @keyframes at-shimmer { from { transform: translateX(-100%); } to { transform: translateX(100%); } }
 @media (prefers-reduced-motion: reduce) {
-  .at-lock__dot, .at-step--running .at-step__mark { animation: none; }
+  .at-lock__dot, .at-step--running .at-step__mark, .at-subagent--running .at-subagent__mark { animation: none; }
 }
 
 /* ---------- Agent focus: the reveal outline of a written chunk, the writing indicator, the presence chip ----------
@@ -310,7 +325,11 @@ body {
   font-size: calc(11px / var(--at-zoom, 1)); font-weight: 500; white-space: nowrap;
   color: var(--at-on-agent); background: var(--at-agent);
 }
+.at-writing__who { font-weight: 600; }
+.at-writing__who::after { content: ' ·'; font-weight: 400; opacity: 0.7; }
 .at-writing--inside .at-writing__ticker { bottom: auto; top: 0; margin: calc(4px / var(--at-zoom, 1)); }
+/* Above the artboard's label row (1.2em line + 6px padding, at 11px) plus the usual 4px gap. */
+.at-writing--above-label .at-writing__ticker { margin-bottom: calc(24px / var(--at-zoom, 1)); }
 /* Three bars, our own mark: level-meter breathing, 900 ms, phase-offset 120 ms. */
 .at-writing__bars, .at-presence__bars { display: flex; align-items: center; gap: calc(2px / var(--at-zoom, 1)); height: calc(10px / var(--at-zoom, 1)); }
 .at-presence__bars { gap: 2px; height: 10px; }
@@ -328,12 +347,25 @@ body {
 /* Presence indicator in the toolbar: the agent's colour and name while it works (status, not a control: no border or fill).
    Enters with width 0 → auto (grid fr), opacity and scale .6 → 1 over 400 ms; leaves the same way. Reduced motion: opacity only.
    Its own class names: `.at-chip` belongs to the attachment and token chips. */
-.at-presence { display: grid; grid-template-columns: 1fr; opacity: 0; transition: opacity 400ms ease; flex: none; }
+.at-presence { display: grid; grid-template-columns: 1fr; opacity: 0; transition: opacity 400ms ease; flex: none; min-width: 0; }
 .at-presence[data-state="open"] { opacity: 1; }
 @starting-style { .at-presence[data-state="open"] { opacity: 0; } }
-.at-presence__inner { min-width: 0; overflow: hidden; display: flex; align-items: center; gap: 6px; padding: 2px; transform-origin: left center; }
-.at-presence__disc { flex: none; width: 18px; height: 18px; display: grid; place-items: center; border-radius: 50%; background: var(--at-agent); color: var(--at-on-agent); }
-.at-presence__name { font: var(--at-type-small); font-weight: 500; color: var(--at-text); white-space: nowrap; padding-right: 4px; }
+.at-presence__inner { min-width: 0; overflow: hidden; display: flex; align-items: center; gap: 2px; padding: 2px; transform-origin: left center; }
+/* The summary opens the list of agents. Quiet like the rest of the chip: no border or fill until hovered. */
+.at-presence__summary { min-width: 0; display: flex; align-items: center; gap: 6px; padding: 0 4px 0 0; border: 0; border-radius: 11px; background: none; color: inherit; font: inherit; cursor: default; }
+.at-presence__summary:hover, .at-presence__summary[aria-expanded="true"] { background: var(--at-hover); }
+.at-presence__discs { flex: none; display: flex; align-items: center; }
+.at-presence__disc { flex: none; width: 18px; height: 18px; display: grid; place-items: center; border-radius: 50%; background: var(--at-agent); color: var(--at-on-agent); transition: opacity 200ms var(--at-ease-out), scale 200ms var(--at-ease-out); }
+@starting-style { .at-presence__disc { opacity: 0; scale: 0.6; } }
+/* Several agents sit side by side, the first on top, each ringed in the toolbar's colour so the edges read. They only just overlap: the
+   ring of one disc would cover the animated bars of the next (bars span the middle 10 of 18px; the ring ends 2px past the disc). */
+.at-presence__disc + .at-presence__disc { margin-left: -2px; }
+.at-presence__discs[data-many] .at-presence__disc { box-shadow: 0 0 0 2px var(--at-panel); }
+.at-presence__name { min-width: 0; max-width: 160px; overflow: hidden; text-overflow: ellipsis; font: var(--at-type-small); font-weight: 500; color: var(--at-text); white-space: nowrap; }
+/* The follow toggle (the eye): the camera follows the agent's work while it is on. */
+.at-presence__follow { flex: none; width: 22px; height: 22px; display: grid; place-items: center; padding: 0; border: 0; border-radius: var(--at-radius-m); background: none; color: var(--at-text-2); cursor: default; transition: color 120ms ease-out, background-color 120ms ease-out; }
+.at-presence__follow:hover { background: var(--at-hover); color: var(--at-text); }
+.at-presence__follow[aria-pressed="true"] { color: var(--at-text); }
 @media (prefers-reduced-motion: no-preference) {
   .at-presence { grid-template-columns: 0fr; transition: opacity 400ms ease, grid-template-columns 400ms ease; }
   .at-presence[data-state="open"] { grid-template-columns: 1fr; }
@@ -342,6 +374,30 @@ body {
   .at-presence[data-state="open"] .at-presence__inner { transform: scale(1); }
   @starting-style { .at-presence[data-state="open"] .at-presence__inner { transform: scale(0.6); } }
 }
+@media (prefers-reduced-motion: reduce) {
+  .at-presence__disc { transition: opacity 200ms ease-out; }
+  @starting-style { .at-presence__disc { opacity: 0; scale: 1; } }
+}
+
+/* The list of agents at work (click the indicator): the export popover's shell. Subagents sit indented under their parent; with several
+   agents each row has an eye to pick the one the camera follows. */
+.at-presence__pop { position: fixed; z-index: 40; width: 300px; padding: 9px; display: flex; flex-direction: column; gap: 6px; border: 1px solid transparent; border-radius: var(--at-radius-l); background: var(--at-panel); box-shadow: var(--at-shadow-float); outline: none; transform-origin: top left; }
+.at-presence__title { font: var(--at-type-title); }
+.at-presence__list { display: flex; flex-direction: column; gap: 2px; margin: 0; padding: 0; list-style: none; }
+.at-presence__row { display: flex; align-items: center; gap: 8px; min-height: 32px; padding: 3px 4px 3px calc(4px + var(--at-depth, 0) * 16px); border-radius: var(--at-radius-m); }
+.at-presence__row .at-presence__disc { width: 14px; height: 14px; margin: 0; box-shadow: none; }
+.at-presence__row .at-presence__bars { height: 8px; }
+.at-presence__who { min-width: 0; flex: 1; display: flex; flex-direction: column; }
+.at-presence__who b { font: var(--at-type-small); font-weight: 500; color: var(--at-text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.at-presence__what { font: var(--at-type-small); color: var(--at-text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* "All agents" explains itself in a sentence: it wraps to two lines instead of being cut off. */
+.at-presence__row--all .at-presence__what { white-space: normal; text-overflow: clip; }
+.at-presence__row--all .at-presence__disc { background: var(--at-text-2); color: var(--at-panel); }
+.at-presence__pick { flex: none; width: 22px; height: 22px; display: grid; place-items: center; padding: 0; border: 0; border-radius: var(--at-radius-m); background: none; color: var(--at-text-2); cursor: default; transition: color 120ms ease-out, background-color 120ms ease-out; }
+.at-presence__pick:hover { background: var(--at-hover); color: var(--at-text); }
+.at-presence__pick[aria-pressed="true"] { background: var(--at-agent); color: var(--at-on-agent); }
+.at-presence__pick--all[aria-pressed="true"] { background: var(--at-text); color: var(--at-panel); }
+.at-presence__note { margin: 0; font: var(--at-type-small); color: var(--at-text-2); }
 
 /* ---------- Phase 3: editing UI ---------- */
 .at-canvas--create:not(.at-canvas--pan-ready, .at-canvas--pan-active) { cursor: crosshair; }
@@ -632,7 +688,9 @@ body {
 .at-tab.is-active { color: var(--at-text); background: var(--at-hover); }
 @media (hover: hover) { .at-tab:not(.is-active):hover { color: var(--at-text); } }
 .at-tab { display: inline-flex; align-items: center; gap: 5px; }
-.at-tab__dot { position: relative; width: 6px; height: 6px; transition: opacity 150ms var(--at-ease-out); }
+/* A badge on the tab's top-right corner, out of the layout: it appearing never moves the tabs next to it. */
+.at-tab:has(> .at-tab__dot) { position: relative; }
+.at-tab__dot { position: absolute; top: 3px; right: -1px; width: 6px; height: 6px; transition: opacity 150ms var(--at-ease-out); }
 @starting-style { .at-tab__dot { opacity: 0; } }
 .at-tab__dot[data-state="closed"] { opacity: 0; }
 /* The breathing is on the inner disc so it does not fight the fade of the dot itself. */
@@ -753,6 +811,18 @@ body {
 .at-step--edit { color: var(--at-text); font-weight: 500; }
 .at-step__label { min-width: 0; overflow-wrap: anywhere; }
 .at-step__error { display: block; color: var(--at-danger); font-weight: 400; }
+.at-subagents { grid-column: 2; margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 4px; }
+.at-subagent { display: grid; grid-template-columns: 8px minmax(0, 1fr) auto; column-gap: 6px; align-items: baseline; }
+.at-subagent__mark { width: 5px; height: 5px; border-radius: 50%; background: var(--at-text-3); justify-self: center; transform: translateY(-1px); }
+.at-subagent--running .at-subagent__mark { background: var(--at-agent); animation: var(--at-pulse); }
+.at-subagent--failed .at-subagent__mark { background: var(--at-danger); }
+.at-subagent { color: var(--at-text); }
+/* Name, state and note all use the primary text colour (14:1 light, 12:1 dark; nothing here is dimmed by colour or opacity). The hierarchy is weight: the name is 500, the state and the note 400. */
+.at-subagent__name { min-width: 0; overflow-wrap: anywhere; color: var(--at-text); font-weight: 500; }
+.at-subagent__state { color: var(--at-text); font-weight: 400; }
+.at-subagent--failed .at-subagent__state { color: var(--at-danger); }
+/* The note wraps to two lines, then ends in an ellipsis. */
+.at-subagent__note { grid-column: 2 / -1; min-width: 0; overflow: hidden; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow-wrap: anywhere; color: var(--at-text); font-weight: 400; }
 .at-step__time { margin-left: 6px; color: var(--at-text-3); font-variant-numeric: tabular-nums; font-weight: 400; }
 .at-step__shot {
   grid-column: 2; display: block; max-width: 100%; max-height: 160px; width: auto;
@@ -765,7 +835,10 @@ body {
 .at-notice--error { color: var(--at-text); background: color-mix(in srgb, var(--at-danger) 12%, transparent); }
 
 .at-working { display: flex; align-items: center; gap: 6px; color: var(--at-agent); font: var(--at-type-small); font-weight: 500; }
-.at-working__time { color: var(--at-text-2); font-variant-numeric: tabular-nums; font-weight: 400; }
+.at-working > .at-lock__dot { flex: none; }
+/* The label wraps; its ellipsis is part of its text, so it never ends up alone on a line. The seconds stay put on the right. */
+.at-working__text { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.at-working__time { flex: none; color: var(--at-text-2); font-variant-numeric: tabular-nums; font-weight: 400; }
 
 .at-composer {
   flex: none; margin: 0 8px 8px; padding: 6px;
@@ -839,6 +912,39 @@ body {
 @media (prefers-reduced-motion: reduce) {
   .at-chip--enter { transition: opacity 120ms ease-out; }
   @starting-style { .at-chip--enter { opacity: 0; } }
+}
+/* Layer references ("Ask the agent about this"): chips above the attachments in the composer, above the bubble when sent. Their own classes: .at-chip belongs to attachments. */
+.at-lref-list { display: flex; flex-wrap: wrap; gap: 4px; padding: 2px 2px 6px; min-width: 0; }
+.at-lref-list--sent { justify-content: flex-end; align-items: flex-start; max-width: 90%; padding: 0; }
+.at-lref {
+  position: relative; display: inline-flex; align-items: center; max-width: 100%; min-width: 0;
+  border: 1px solid var(--at-border); border-radius: var(--at-radius-m); background: var(--at-bg); font: var(--at-type-small); color: var(--at-text);
+}
+.at-lref__main {
+  display: inline-flex; align-items: center; gap: 6px; min-width: 0; height: 26px; padding: 0 6px 0 3px;
+  border: 0; border-radius: calc(var(--at-radius-m) - 1px); background: transparent; color: inherit; font: inherit; text-align: left; cursor: default;
+}
+.at-lref-list--sent .at-lref__main { padding-right: 8px; }
+@media (hover: hover) { .at-lref__main:hover { background: var(--at-hover); } }
+.at-lref__main:focus-visible, .at-lref__x:focus-visible { outline: 2px solid var(--at-accent); outline-offset: -2px; }
+.at-lref__icon { flex: none; display: inline-grid; place-items: center; width: 20px; height: 20px; color: var(--at-accent); }
+.at-lref__name { flex: none; max-width: 110px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.at-lref__note { min-width: 0; max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--at-text-2); }
+.at-lref.is-gone .at-lref__name { text-decoration: line-through; color: var(--at-text-2); }
+.at-lref__x {
+  flex: none; width: 20px; height: 20px; margin-right: 3px; display: inline-grid; place-items: center; border: 0; border-radius: var(--at-radius-s);
+  background: transparent; color: var(--at-text-2); cursor: default;
+}
+@media (hover: hover) { .at-lref__x:hover { background: var(--at-active); color: var(--at-text); } }
+@media (prefers-reduced-motion: no-preference) {
+  .at-lref--enter { transition-property: opacity, scale; transition-duration: 160ms; transition-timing-function: var(--at-ease-out); }
+  @starting-style { .at-lref--enter { opacity: 0; scale: 0.96; } }
+  .at-lref__main, .at-lref__x { transition-property: scale, background-color; transition-duration: 150ms; transition-timing-function: ease-out; }
+  .at-lref__main:active, .at-lref__x:active { scale: 0.97; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .at-lref--enter { transition: opacity 120ms ease-out; }
+  @starting-style { .at-lref--enter { opacity: 0; } }
 }
 .at-modal--lightbox { background: rgba(0, 0, 0, 0.62); }
 .at-lightbox { display: flex; flex-direction: column; align-items: center; gap: 8px; max-width: 100%; max-height: 100%; outline: none; }
@@ -1170,6 +1276,10 @@ body {
   border: 1px solid transparent; border-radius: var(--at-radius-l); background: var(--at-panel); box-shadow: var(--at-shadow-float);
   transform-origin: top right;
 }
+/* Dark: --at-panel is the sidebar's own grey, so a popover over it needs one step lighter to read as raised. */
+@media (prefers-color-scheme: dark) {
+  .at-convo__pop { background: color-mix(in srgb, var(--at-panel), #fff 7%); }
+}
 .at-convo__list { max-height: 360px; overflow-y: auto; overscroll-behavior: contain; display: flex; flex-direction: column; gap: 1px; }
 .at-convo__row { position: relative; display: flex; align-items: stretch; border-radius: var(--at-radius-m); }
 .at-convo__main {
@@ -1221,13 +1331,15 @@ body {
 .at-picker__popover { transform-origin: bottom left; }
 .at-tfbar { transform-origin: bottom center; }
 .at-tfbar[data-below] { transform-origin: top center; }
+.at-annot { transform-origin: bottom left; }
+.at-annot[data-below] { transform-origin: top left; }
 @media (prefers-reduced-motion: no-preference) {
-  .at-contextmenu, .at-export, .at-picker__popover, .at-convo__pop, .at-cpick, .at-tfbar, .at-tl-chip__pop { transition-property: opacity, scale; transition-duration: 160ms; transition-timing-function: var(--at-ease-out); }
-  @starting-style { .at-contextmenu, .at-export, .at-picker__popover, .at-convo__pop, .at-cpick, .at-tfbar, .at-tl-chip__pop { opacity: 0; scale: 0.96; } }
+  .at-contextmenu, .at-export, .at-presence__pop, .at-picker__popover, .at-convo__pop, .at-cpick, .at-tfbar, .at-annot, .at-tl-chip__pop { transition-property: opacity, scale; transition-duration: 160ms; transition-timing-function: var(--at-ease-out); }
+  @starting-style { .at-contextmenu, .at-export, .at-presence__pop, .at-picker__popover, .at-convo__pop, .at-cpick, .at-tfbar, .at-annot, .at-tl-chip__pop { opacity: 0; scale: 0.96; } }
 }
 @media (prefers-reduced-motion: reduce) {
-  .at-contextmenu, .at-export, .at-picker__popover, .at-convo__pop, .at-cpick, .at-tfbar, .at-tl-chip__pop { transition: opacity 120ms ease-out; }
-  @starting-style { .at-contextmenu, .at-export, .at-picker__popover, .at-convo__pop, .at-cpick, .at-tfbar, .at-tl-chip__pop { opacity: 0; } }
+  .at-contextmenu, .at-export, .at-presence__pop, .at-picker__popover, .at-convo__pop, .at-cpick, .at-tfbar, .at-annot, .at-tl-chip__pop { transition: opacity 120ms ease-out; }
+  @starting-style { .at-contextmenu, .at-export, .at-presence__pop, .at-picker__popover, .at-convo__pop, .at-cpick, .at-tfbar, .at-annot, .at-tl-chip__pop { opacity: 0; } }
 }
 .at-ghost { pointer-events: none; }
 

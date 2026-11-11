@@ -1,5 +1,5 @@
 // The handoff folder: HANDOFF.md, README.md, flows.json, screens/<slug>@2x.png, code/ (React + Tailwind, with the design system's
-// components when the document has one, plus public/assets and public/fonts), prototype/ (the screens as linked static HTML) and
+// components when the document has one, the document's own components in code/components/, plus public/assets and public/fonts), prototype/ (the screens as linked static HTML) and
 // design-system/ (the shadcn registry).
 // The popover saves it through `host.exportSave`; `get_handoff { files: true }` returns it for `ocelot handoff --out`.
 
@@ -60,11 +60,13 @@ async function screenshots(editor: Editor, host: Host, h: Handoff, onProgress: (
 }
 
 /** The React export of every screen, as files below `code/`. Two screens with the same component name get numbered files. */
-async function codeFiles(editor: Editor, h: Handoff): Promise<{ files: ExportFile[]; code: FolderLayout['code']; warnings: string[] }> {
+async function codeFiles(editor: Editor, h: Handoff): Promise<{ files: ExportFile[]; code: FolderLayout['code']; components: NonNullable<FolderLayout['components']>; warnings: string[] }> {
   const { doc } = editor;
   const options = await reactOptions(doc, 'ui');
   const files = new Map<string, ExportFile>();
   const code: FolderLayout['code'] = [];
+  // The document components every screen's export wrote (`code/components/<Name>.tsx`, once each however many screens use them).
+  const components = new Map<string, NonNullable<FolderLayout['components']>[number]>();
   const warnings: string[] = [];
   const names = new Set<string>();
   for (const s of h.screens) {
@@ -82,11 +84,13 @@ async function codeFiles(editor: Editor, h: Handoff): Promise<{ files: ExportFil
       const path = `code/${rename(f.path)}`;
       files.set(path, { ...f, path });
     }
+    for (const c of result.components ?? []) components.set(c.id, { componentId: c.id, name: c.name, file: c.path });
+    for (const note of result.componentNotes ?? []) if (!warnings.includes(note)) warnings.push(note);
     for (const w of result.ui?.warnings ?? []) warnings.push(`${s.name}: ${w}`);
     for (const fb of result.ui?.fallbacks ?? []) warnings.push(`${s.name}: ${fb.name} stayed inline (${fb.reason}).`);
     if (result.assets.missing.length) warnings.push(`${result.assets.missing.length} image${result.assets.missing.length === 1 ? '' : 's'} in “${s.name}” ${result.assets.missing.length === 1 ? 'is' : 'are'} missing from the asset store and keep their asset:// reference.`);
   }
-  return { files: [...files.values()], code, warnings };
+  return { files: [...files.values()], code, components: [...components.values()].sort((a, b) => a.name.localeCompare(b.name)), warnings };
 }
 
 /** `design-system/`: the shadcn registry (tokens, fonts and the source of every prebuilt component). */
@@ -137,7 +141,7 @@ export async function buildHandoffFolder(editor: Editor, host: Host, h: Handoff,
   const registry = await registryFiles(editor, h, opts.compact ? 'used' : 'all');
   if (registry) warnings.push(...registry.warnings);
   const prototype = opts.compact ? [] : screensFiles(exportScreensHtml(editor.doc, h.screens.map((s) => s.id), editor.assets)).map((f) => ({ ...f, path: `prototype/${f.path}` }));
-  const layout: FolderLayout = { code: code.code, hasRegistry: registry !== null, hasPrototype: prototype.length > 0, hasScreenshots: withShots };
+  const layout: FolderLayout = { code: code.code, hasRegistry: registry !== null, hasPrototype: prototype.length > 0, hasScreenshots: withShots, ...(code.components.length ? { components: code.components } : {}) };
   let files: ExportFile[] = [
     { path: 'HANDOFF.md', text: folderMarkdown(h, layout) },
     { path: 'README.md', text: folderReadme(h) },

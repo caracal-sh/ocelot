@@ -139,6 +139,74 @@ export interface NodeData {
   frame: ArtboardFrame | null;
   /** Slide / scene data; artboards on deck and video pages only. Absent when unset. */
   slide?: SlideData;
+  /** Main root of a document component: the component id (see components.ts). Absent otherwise. */
+  component?: ComponentId;
+  /** Instance root of a document component. Absent otherwise. */
+  instance?: InstanceData;
+  /** A part of an instance: the id of the main-subtree node it mirrors. Absent otherwise. */
+  of?: string;
+}
+
+// ---------- document components (model/components.ts) ----------
+
+export type ComponentId = string;
+
+/** What an override or a prop binding writes: `text`, `html`, `hidden`, `attr:<name>` or `style:<property>`. */
+export type OverrideField = 'text' | 'html' | 'hidden' | `attr:${string}` | `style:${string}`;
+
+export interface PropBinding {
+  /** Main-subtree node id. */
+  node: string;
+  field: OverrideField;
+}
+
+/** A named parameter of a component, mapped onto overrides. Defaults are derived from the main (variant: `default`). */
+export type ComponentProp =
+  | { name: string; type: 'text'; bind: PropBinding[] }
+  | { name: string; type: 'boolean'; nodes: string[]; invert?: boolean }
+  | { name: string; type: 'variant'; options: Record<string, Overrides>; default: string };
+
+export type PropValue = string | boolean;
+
+export interface ComponentDef {
+  id: ComponentId;
+  name: string;
+  /** Node id of the main. */
+  root: string;
+  description?: string;
+  props: ComponentProp[];
+}
+
+/** Per-layer overrides of one instance; every key is optional and absent means "follows the main". */
+export interface NodeOverride {
+  text?: string;
+  html?: string;
+  hidden?: boolean;
+  attrs?: Record<string, string>;
+  styles?: Record<string, string>;
+}
+
+/** Overrides keyed by main-subtree node id (the main root's id keys the instance's own root). */
+export type Overrides = Record<string, NodeOverride>;
+
+export interface InstanceData {
+  component: ComponentId;
+  props?: Record<string, PropValue>;
+  overrides?: Overrides;
+}
+
+/** An instance with its component resolved (`OcelotDocument.instanceInfo`). */
+export interface InstanceInfo {
+  id: string;
+  component: ComponentDef;
+  /** The main's root id: the override key of the instance's own root. */
+  mainRoot: string;
+  /** Explicit prop values plus the defaults derived from the main. */
+  props: Record<string, PropValue>;
+  /** Explicit overrides (orphans included). */
+  overrides: Overrides;
+  /** Override keys whose layer no longer exists in the main (ignored; they come back on undo). */
+  orphaned: string[];
 }
 
 /** Input shape for creating nodes (possibly nested). */
@@ -158,6 +226,11 @@ export interface NodeSpec {
   /** Hidden / locked layers keep that state when duplicated. */
   hidden?: boolean;
   locked?: boolean;
+  /**
+   * An instance of a document component: the layer's other content is rebuilt from the main (so only `name`, `hidden`, `locked` and
+   * `link` count). A component missing from the document makes it an ordinary layer with its `children`.
+   */
+  instance?: InstanceData;
   children?: NodeSpec[];
 }
 

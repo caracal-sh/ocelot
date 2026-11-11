@@ -2,6 +2,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { OcelotDocument } from '../model/document';
 import { createAgentTestHost, type AgentTestHost } from './agentTestHost';
+import type { Attachment, ImageCodec } from './attachments';
 import { parseMeta, parseTranscript } from './conversations';
 
 const hosts: AgentTestHost[] = [];
@@ -156,8 +157,11 @@ describe('keeping conversations', () => {
     expect(t.chat.snapshot.items.some((i) => i.kind === 'tool' && i.status === 'running')).toBe(false);
   });
 
-  it('leaves tool screenshots out of what is stored', async () => {
-    const t = await setup();
+  it('keeps tool screenshots as thumbnail files next to the transcript, and shows them again', async () => {
+    const codec: ImageCodec = async () => ({ width: 1600, height: 1000, hasAlpha: () => false, render: async () => new Uint8Array([9, 8, 7]), close: () => {} });
+    const t = createAgentTestHost({ codec });
+    hosts.push(t);
+    await t.chat.refreshStatus();
     void t.chat.send('Show me');
     await t.working();
     const id = String(t.commandsOf('prompt')[0]!['id']);
@@ -168,9 +172,39 @@ describe('keeping conversations', () => {
     ]);
     await vi.waitFor(() => expect(t.chat.snapshot.turn).toBeNull());
     expect(t.chat.snapshot.items.some((i) => i.kind === 'tool' && i.image)).toBe(true);
-    const stored = t.stored.get(t.chat.snapshot.conversationId)!.transcript!;
-    expect(stored).not.toContain('AAAA');
-    expect(stored).not.toContain('"image"');
+    const first = t.chat.snapshot.conversationId;
+    await vi.waitFor(() => expect(t.stored.get(first)?.transcript).toContain('imageFile'));
+    const stored = t.stored.get(first)!;
+    expect(stored.transcript).not.toContain('AAAA');
+    expect(stored.transcript).not.toContain('"image"');
+    expect([...stored.files!.values()]).toEqual(['CQgH']); // the thumbnail, once
+    // Back from the history the row has its picture again.
+    t.chat.newChat();
+    await t.chat.openConversation(first);
+    expect(t.chat.snapshot.items.find((i) => i.kind === 'tool')).toMatchObject({ image: 'data:image/jpeg;base64,CQgH' });
+  });
+
+  it('stores attachment images as files, once, and gives them back with the conversation', async () => {
+    const t = await setup();
+    const image: Attachment = { id: 'att-1', kind: 'image', name: 'moodboard.png', size: 9, mimeType: 'image/png', image: { width: 800, height: 600, dataBase64: 'AQIDBA==' } };
+    await t.chat.send('Use this', [image]).then(() => undefined, () => undefined);
+    await vi.waitFor(() => expect(t.commandsOf('prompt')).toHaveLength(1));
+    const first = t.chat.snapshot.conversationId;
+    await vi.waitFor(() => expect(t.stored.get(first)?.files?.size).toBe(1));
+    expect(t.stored.get(first)!.transcript).not.toContain('AQIDBA==');
+    const writes: Array<{ files?: unknown[] }> = [];
+    const original = t.host.call.bind(t.host);
+    (t.host as unknown as { call: typeof original }).call = (async (method: string, params: unknown, opts?: unknown) => {
+      if (method === 'host.agentHistoryWrite') writes.push(params as { files?: unknown[] });
+      return original(method as never, params as never, opts as never);
+    }) as typeof original;
+    await t.emit([{ type: 'prompt_result', id: String(t.commandsOf('prompt')[0]!['id']), status: 'completed' }]);
+    await vi.waitFor(() => expect(t.chat.snapshot.turn).toBeNull());
+    await vi.waitFor(() => expect(writes.length).toBeGreaterThan(0));
+    expect(writes.every((w) => w.files === undefined)).toBe(true); // already stored: never sent again
+    t.chat.newChat();
+    await t.chat.openConversation(first);
+    expect(t.chat.snapshot.items[0]).toMatchObject({ kind: 'user', attachments: [{ image: { dataBase64: 'AQIDBA==' } }] });
   });
 
   it('lists what the host kept, ignoring summaries it cannot read', async () => {

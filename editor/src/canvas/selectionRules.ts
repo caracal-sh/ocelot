@@ -14,11 +14,23 @@ export function pickTarget(
   selected: readonly string[],
   mode: 'click' | 'deep' | 'drill',
 ): string | null {
-  const usable = chain.filter((id, i) => i === 0 || !isLayerLocked(doc, id));
+  let usable = chain.filter((id, i) => i === 0 || !isLayerLocked(doc, id));
   if (usable.length === 0) return null;
   if (usable.length === 1) return usable[0]!; // the artboard itself
 
   if (mode === 'deep') return usable[usable.length - 1]!;
+
+  // An instance is one thing on the canvas: its parts are the main's layers drawn again, so a click on a part selects the instance
+  // (⌘-click or a double-click picks the part). Once something inside the instance is selected, clicks work at that level.
+  const instanceAt = usable.findIndex((id, i) => i > 0 && doc.componentRole(id) === 'instance');
+  if (instanceAt > 0) {
+    const root = usable[instanceAt]!;
+    if (mode === 'drill') {
+      if (selected.includes(root)) return usable[usable.length - 1]!;
+    } else if (!selected.some((id) => id !== root && doc.has(id) && doc.isAncestor(root, id))) {
+      usable = usable.slice(0, instanceAt + 1);
+    }
+  }
 
   if (mode === 'drill') {
     const deepestSelected = [...usable].reverse().find((id) => selected.includes(id));

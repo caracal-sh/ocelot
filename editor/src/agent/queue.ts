@@ -5,6 +5,7 @@
 // chips show the typed words and an attachment count, and a withdrawn message goes back into the composer as typed.
 
 import type { Attachment } from './attachments';
+import type { LayerReference } from '../editor/layerReferences';
 
 export type QueueName = 'steering' | 'followUp';
 /** How a message sent while the agent works is delivered: `queue` after the turn, `steer` at the next step. */
@@ -19,6 +20,7 @@ export interface QueuedMeta {
   from?: string;
   context?: string;
   attachments: Attachment[];
+  references?: LayerReference[];
 }
 
 export interface QueuedItem {
@@ -40,6 +42,7 @@ export const EMPTY_QUEUE: QueueSnapshot = { steering: [], followUp: [] };
 export interface RestoredDraft {
   text: string;
   attachments: Attachment[];
+  references?: LayerReference[];
 }
 
 export class QueueTracker {
@@ -81,12 +84,14 @@ export class QueueTracker {
   draft(keys: readonly string[]): RestoredDraft {
     const texts: string[] = [];
     const attachments: Attachment[] = [];
+    const references: LayerReference[] = [];
     for (const key of keys) {
       const meta = this.take(key);
       texts.push((meta?.text ?? key).trim());
       if (meta) attachments.push(...meta.attachments);
+      if (meta?.references) references.push(...meta.references);
     }
-    return { text: texts.filter(Boolean).join('\n\n'), attachments };
+    return { text: texts.filter(Boolean).join('\n\n'), attachments, ...(references.length ? { references } : {}) };
   }
 }
 

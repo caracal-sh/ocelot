@@ -178,6 +178,8 @@ export function refreshInstances(doc: OcelotDocument, ops: DocumentOps, env: Ref
 
   for (const id of ids) {
     const n = doc.require(id);
+    // An instance of a document component (and its layers) mirrors its main, which is refreshed itself.
+    if (n.of || n.instance) continue;
     const part = n.attrs[DS_ATTR]!;
     const entry: InstanceRefresh = { id, component: part, refreshed: [], kept_overrides: [], unmatched: [], status: 'unchanged' };
     instances.push(entry);

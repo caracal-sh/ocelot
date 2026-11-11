@@ -127,6 +127,8 @@ function bakeSubtree(doc: OcelotDocument, ops: DocumentOps, artboardId: string, 
   let count = 0;
   for (const id of doc.subtreeIds(artboardId)) {
     const n = doc.require(id);
+    // Layers of a document component's instance mirror their main, which is baked itself.
+    if (n.of || n.instance) continue;
     const own = id === artboardId ? new Set(Object.keys(tokens)) : null;
     const patch: Record<string, string> = {};
     for (const [k, v] of Object.entries(n.styles)) {

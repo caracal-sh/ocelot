@@ -297,6 +297,7 @@ export const SIDEBAR_AGENT_TOOLS: ToolDef[] = [
         ...(model ? { model_name: model.name } : {}),
         effort: snap.effort || null,
         ...(questions.length ? { waiting_for_person: questions.map((q) => q.questions.map((x) => x.question).join(' / ')) } : {}),
+        ...(ctx.editor.subagents.active.length ? { subagents: ctx.editor.subagents.active.map((a) => a.name) } : {}),
         queue: { steering: queueView(snap.queue.steering), follow_up: queueView(snap.queue.followUp) },
         total_messages: live.items.length,
         messages: live.items.slice(-last).map((it) => describeMessage(it, ctx)),

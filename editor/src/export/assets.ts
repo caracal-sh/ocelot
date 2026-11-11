@@ -11,10 +11,11 @@ import type { AssetService } from '../assets/service';
 import { ORIGIN, type OcelotDocument } from '../model/document';
 import { referencedAssetIds, replaceAssetRefs } from '../assets/refs';
 import { decodeDocument, encodeDocument } from '../model/persistence';
-import type { StateName } from '../model/types';
+import type * as Y from 'yjs';
 import { exportHtml } from './html';
 import { artboardSlugs, htmlLinkTargets } from './links';
-import { exportReact, REACT_EXPORT_NOTES, type ReactExportOptions } from './react';
+import { exportReact, REACT_EXPORT_NOTES, type DocComponentFile, type ReactExportOptions } from './react';
+import { exportRoots } from './docComponents';
 import { loadUiComponents, type UiReport } from '../designsystem/export/reactComponents';
 import { HTML_FONTS, REACT_FONTS, fontExportFiles, fontsForExport } from './themeCss';
 import type { BundledFont } from '../themes/fonts';
@@ -38,13 +39,17 @@ export interface ExportResult {
   fileName: string;
   code: string;
   assets: ExportAssetPlan;
-  /** Files that belong next to the main file: the React export's stylesheet (theme variables, `@theme`, `@font-face`). */
+  /** Files that belong next to the main file: the React export's stylesheet (theme variables, `@theme`, `@font-face`) and its document components (`components/<Name>.tsx`). */
   extraFiles?: Array<{ path: string; text: string }>;
   /** React only. */
   componentName?: string;
   notes?: string;
   /** React with a design system: the components the page imports and what stayed inline. */
   ui?: UiReport;
+  /** React: the document components the export uses (also in `extraFiles`). */
+  components?: DocComponentFile[];
+  /** React: instances that stayed inline, and why. */
+  componentNotes?: string[];
 }
 
 /** How a React export treats design-system instances (see `ReactExportOptions`). */
@@ -79,22 +84,44 @@ export function planExportAssets(doc: OcelotDocument, rootId: string | readonly 
   return { files, missing, fonts: fontsForExport(doc, roots), urlOf: (id) => (fileOf.has(id) ? `${prefix}${fileOf.get(id)}` : `asset://${id}`) };
 }
 
-/** A copy of the document with every `asset://<id>` replaced (React export reads many corners of the model; a copy keeps that code untouched). */
-function withAssetUrls(doc: OcelotDocument, rootId: string, urlOf: (id: string) => string): OcelotDocument {
+/**
+ * A copy of the document with every `asset://<id>` replaced (React export reads many corners of the model; a copy keeps that code untouched).
+ * The values are rewritten in place, below every root: the layers of instances included (their parts hold the same references as their
+ * mains), and the component definitions and instance props and overrides, which carry plain values of their own.
+ */
+function withAssetUrls(doc: OcelotDocument, rootIds: readonly string[], urlOf: (id: string) => string): OcelotDocument {
   const copy = decodeDocument(encodeDocument(doc));
-  const ops = copy.ops(ORIGIN.system);
   const sub = (v: string) => replaceAssetRefs(v, urlOf);
-  for (const id of copy.subtreeIds(rootId)) {
-    const n = copy.require(id);
-    const attrs = Object.fromEntries(Object.entries(n.attrs).filter(([, v]) => v.includes('asset://')).map(([k, v]) => [k, sub(v)]));
-    if (Object.keys(attrs).length) ops.setAttrs(id, attrs);
-    const styles = Object.fromEntries(Object.entries(n.styles).filter(([, v]) => v.includes('asset://')).map(([k, v]) => [k, sub(v)]));
-    if (Object.keys(styles).length) ops.updateStyles(id, styles);
-    for (const [state, map] of Object.entries(n.states)) {
-      const patch = Object.fromEntries(Object.entries(map ?? {}).filter(([, v]) => v.includes('asset://')).map(([k, v]) => [k, sub(v)]));
-      if (Object.keys(patch).length) ops.setStateStyles(id, state as StateName, patch);
+  const rewrite = (m: Y.Map<string> | undefined): void => {
+    if (!m) return;
+    for (const [k, v] of [...m.entries()]) if (v.includes('asset://')) m.set(k, sub(v));
+  };
+  const rewriteJson = <T>(value: T): T => {
+    const text = JSON.stringify(value);
+    return text.includes('asset://') ? (JSON.parse(sub(text)) as T) : value;
+  };
+  copy.ydoc.transact(() => {
+    const seen = new Set<string>();
+    for (const root of rootIds) {
+      for (const id of copy.subtreeIds(root)) {
+        if (seen.has(id)) continue;
+        seen.add(id);
+        const n = copy.nodes.get(id);
+        if (!n) continue;
+        rewrite(n.get('attrs') as Y.Map<string> | undefined);
+        rewrite(n.get('styles') as Y.Map<string> | undefined);
+        const states = n.get('states') as Y.Map<Y.Map<string>> | undefined;
+        if (states) for (const m of states.values()) rewrite(m);
+        const instance = n.get('instance');
+        if (instance) n.set('instance', rewriteJson(instance));
+      }
     }
-  }
+    for (const [id, def] of [...copy.components.entries()]) {
+      const next = rewriteJson(def);
+      if (next !== def) copy.components.set(id, next);
+    }
+  });
+  const ops = copy.ops(ORIGIN.system);
   for (const [name, stops] of Object.entries(copy.keyframesMap())) {
     if (stops.some((s) => Object.values(s.styles).some((v) => v.includes('asset://')))) {
       ops.setKeyframes(name, stops.map((s) => ({ offset: s.offset, styles: Object.fromEntries(Object.entries(s.styles).map(([k, v]) => [k, sub(v)])) })));
@@ -104,14 +131,28 @@ function withAssetUrls(doc: OcelotDocument, rootId: string, urlOf: (id: string) 
 }
 
 export function exportNode(doc: OcelotDocument, id: string, kind: ExportKind, assets: AssetService, react: ReactExportOptions = {}): ExportResult {
-  const plan = planExportAssets(doc, id, assets, kind);
+  // The React export also reads the mains of the document components the layer uses (their files carry their images and fonts).
+  const roots = kind === 'react' ? exportRoots(doc, id) : [id];
+  const plan = planExportAssets(doc, roots, assets, kind);
   const name = doc.require(id).name || 'Design';
   if (kind === 'html') {
     return { kind, fileName: `${fileSafe(name)}.html`, code: exportHtml(doc, id, { assetUrl: plan.urlOf }), assets: plan };
   }
-  const source = plan.files.length || plan.missing.length ? withAssetUrls(doc, id, plan.urlOf) : doc;
+  const source = plan.files.length || plan.missing.length ? withAssetUrls(doc, roots, plan.urlOf) : doc;
   const r = exportReact(source, id, react);
-  return { kind, fileName: `${r.componentName}.tsx`, code: r.code, assets: plan, componentName: r.componentName, notes: REACT_EXPORT_NOTES, ...(r.css ? { extraFiles: [r.css] } : {}), ...(r.ui ? { ui: r.ui } : {}) };
+  const extraFiles = [...(r.css ? [r.css] : []), ...(r.components ?? []).map((c) => ({ path: c.path, text: c.code }))];
+  return {
+    kind,
+    fileName: `${r.componentName}.tsx`,
+    code: r.code,
+    assets: plan,
+    componentName: r.componentName,
+    notes: REACT_EXPORT_NOTES,
+    ...(extraFiles.length ? { extraFiles } : {}),
+    ...(r.ui ? { ui: r.ui } : {}),
+    ...(r.components ? { components: r.components } : {}),
+    ...(r.componentNotes ? { componentNotes: r.componentNotes } : {}),
+  };
 }
 
 /** Several screens as one linked HTML site: one `<slug>.html` per artboard (links between them are relative), plus the stored images. */
@@ -177,6 +218,9 @@ export function assetNote(result: ExportResult): string {
     if (ui.fallbacks.length) parts.push(`${ui.fallbacks.length} instance${ui.fallbacks.length === 1 ? '' : 's'} stayed inline (${ui.fallbacks.map((f) => `${f.name}: ${f.reason}`).join('; ')}).`);
     if (ui.warnings.length) parts.push(`Not exported: ${[...new Set(ui.warnings)].join(' ')}`);
   }
-  if (result.extraFiles?.length) parts.push(`Also exported: ${result.extraFiles.map((f) => f.path).join(', ')} (theme variables, Tailwind @theme, @font-face): @import it after "tailwindcss" in your stylesheet.`);
+  const styleFiles = (result.extraFiles ?? []).filter((f) => !result.components?.some((c) => c.path === f.path));
+  if (styleFiles.length) parts.push(`Also exported: ${styleFiles.map((f) => f.path).join(', ')} (theme variables, Tailwind @theme, @font-face): @import it after "tailwindcss" in your stylesheet.`);
+  if (result.components?.length) parts.push(`Document components: ${result.components.map((c) => c.name).join(', ')} are separate files (${result.components.map((c) => c.path).join(', ')}), imported as "@/components/<Name>"; save_export writes them next to the screen.`);
+  if (result.componentNotes?.length) parts.push(...result.componentNotes);
   return parts.join(' ');
 }

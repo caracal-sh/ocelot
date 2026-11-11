@@ -7,6 +7,7 @@ import { usePresence } from '../app/usePresence';
 import { AssetsPanel } from './AssetsPanel';
 import { LayersPanel } from './LayersPanel';
 import { PatternGallery } from './PatternGallery';
+import { ComponentsPanel } from './ComponentsPanel';
 import { TokensPanel } from './TokensPanel';
 
 const TAB_LABELS: Record<SidebarTab, string> = { agent: 'Agent', layers: 'Layers', assets: 'Assets' };
@@ -43,7 +44,7 @@ export function LeftPanel({ composerRef }: { composerRef: React.RefObject<HTMLTe
   const working = useAgentWorking();
   const asking = useOpenQuestions() > 0;
   const [opened, setOpened] = useState<ReadonlySet<SidebarTab>>(() => new Set([tab]));
-  const [library, setLibrary] = useState<'images' | 'styles' | 'patterns'>('images');
+  const [library, setLibrary] = useState<'images' | 'styles' | 'patterns' | 'components'>('images');
   if (!opened.has(tab)) setOpened(new Set([...opened, tab]));
 
   return (
@@ -81,9 +82,9 @@ export function LeftPanel({ composerRef }: { composerRef: React.RefObject<HTMLTe
       {opened.has('assets') && (
         <div className="at-tabpanel" hidden={tab !== 'assets'} role="tabpanel">
           <div className="at-subtabs" role="tablist" aria-label="Assets">
-            {(['images', 'styles', 'patterns'] as const).map((s) => (
-              <button key={s} type="button" role="tab" aria-selected={library === s} className={`at-subtab${library === s ? ' is-active' : ''}`} onClick={() => setLibrary(s)} data-tab={s === 'images' ? 'assets-images' : s === 'styles' ? 'tokens' : 'patterns'}>
-                {s === 'images' ? 'Images' : s === 'styles' ? 'Styles' : 'Patterns'}
+            {(['images', 'styles', 'patterns', 'components'] as const).map((s) => (
+              <button key={s} type="button" role="tab" aria-selected={library === s} className={`at-subtab${library === s ? ' is-active' : ''}`} onClick={() => setLibrary(s)} data-tab={s === 'images' ? 'assets-images' : s === 'styles' ? 'tokens' : s}>
+                {s === 'images' ? 'Images' : s === 'styles' ? 'Styles' : s === 'patterns' ? 'Patterns' : 'Components'}
               </button>
             ))}
           </div>
@@ -93,6 +94,9 @@ export function LeftPanel({ composerRef }: { composerRef: React.RefObject<HTMLTe
           {library === 'styles' && <TokensPanel />}
           <div className="at-tabpanel" hidden={library !== 'patterns'}>
             <PatternGallery />
+          </div>
+          <div className="at-tabpanel" hidden={library !== 'components'}>
+            <ComponentsPanel active={tab === 'assets' && library === 'components'} />
           </div>
         </div>
       )}
