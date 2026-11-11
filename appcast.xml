@@ -6,6 +6,19 @@
     <description>Ocelot updates</description>
     <language>en</language>
     <item>
+      <title>Ocelot 0.3.5</title>
+      <pubDate>Wed, 11 Nov 2026 09:05:47 +0000</pubDate>
+      <sparkle:version>1011</sparkle:version>
+      <sparkle:shortVersionString>0.3.5</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <description><![CDATA[<ul>
+<li>Pasted and attached images and files show up in the agent sidebar again, with their remove button. They were added but invisible.</li>
+<li>The agent's name in the toolbar while it works is a quiet indicator again, not a box that looked like a tab.</li>
+<li>Token chips in the Tokens and Assets panels are visible again.</li>
+</ul>]]></description>
+      <enclosure url="https://github.com/caracal-sh/ocelot/releases/download/v0.3.5/Ocelot-0.3.5.dmg" length="17062304" type="application/octet-stream" sparkle:edSignature="9UF/ByvbdiNB2mOnfFs78+CTZg8zA3rpUMxEC6OhaVrLniABDWQAApGE21OQZ1AOObMy/Ju70M5KasP7paesCA=="/>
+    </item>
+    <item>
       <title>Ocelot 0.3.4</title>
       <pubDate>Wed, 11 Nov 2026 08:59:53 +0000</pubDate>
       <sparkle:version>1010</sparkle:version>
