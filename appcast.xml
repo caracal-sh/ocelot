@@ -6,6 +6,19 @@
     <description>Ocelot updates</description>
     <language>en</language>
     <item>
+      <title>Ocelot 0.3.2</title>
+      <pubDate>Wed, 11 Nov 2026 08:16:13 +0000</pubDate>
+      <sparkle:version>1008</sparkle:version>
+      <sparkle:shortVersionString>0.3.2</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <description><![CDATA[<ul>
+<li>New: Patterns, under Assets › Patterns. 13 written specs for common product screens (sign in, onboarding, settings, dashboards, tables, detail pages, search, empty states, notifications, pricing, upgrade, checkout, permission prompts). Each lists the states to draw, copy rules, sizes and the mistakes to avoid. &quot;Build with agent&quot; hands one to the agent, optionally with a line about your product.</li>
+<li>Agents can look up the same patterns (<code>list_patterns</code>, <code>get_pattern</code>, which also matches a plain description such as &quot;billing page&quot;) and read a new guide on product screens: one artboard per state (first use, no results, error, no access, loading) and one label per action.</li>
+<li>Inspection can now compare artboards on a page: the same action labelled differently, too many corner radii, and data screens missing their loading, empty or error state.</li>
+</ul>]]></description>
+      <enclosure url="https://github.com/caracal-sh/ocelot/releases/download/v0.3.2/Ocelot-0.3.2.dmg" length="17048662" type="application/octet-stream" sparkle:edSignature="8VqU61hnpgO6F+psiXooACk1AJHGM+D4yyi6ZiFh/lvNtsbSIVMYoCtdiwC15uu0P1y2gnsufkqvAd1OKV5gCg=="/>
+    </item>
+    <item>
       <title>Ocelot 0.3.1</title>
       <pubDate>Wed, 11 Nov 2026 07:38:12 +0000</pubDate>
       <sparkle:version>1005</sparkle:version>
