@@ -815,7 +815,7 @@ body {
 .at-chip__icon { flex: none; display: inline-grid; place-items: center; width: 20px; height: 20px; color: var(--at-text-2); }
 .at-chip__name { min-width: 0; max-width: 130px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .at-chip__meta { flex: none; color: var(--at-text-2); font-variant-numeric: tabular-nums; }
-.at-chip__act { height: 26px; padding: 0 6px; border: 0; background: transparent; color: var(--at-text-2); font: inherit; cursor: default; }
+.at-chip__act { flex: none; height: 26px; padding: 0 6px; border: 0; background: transparent; color: var(--at-text-2); font: inherit; white-space: nowrap; cursor: default; } /* the name truncates first; the action never wraps */
 @media (hover: hover) { .at-chip__act:hover { color: var(--at-text); text-decoration: underline; } }
 .at-chip__x {
   flex: none; width: 20px; height: 20px; margin-right: 3px; display: inline-grid; place-items: center; border: 0; border-radius: var(--at-radius-s);
