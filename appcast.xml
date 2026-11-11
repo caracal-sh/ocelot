@@ -6,6 +6,18 @@
     <description>Ocelot updates</description>
     <language>en</language>
     <item>
+      <title>Ocelot 0.3.3</title>
+      <pubDate>Wed, 11 Nov 2026 08:34:49 +0000</pubDate>
+      <sparkle:version>1009</sparkle:version>
+      <sparkle:shortVersionString>0.3.3</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <description><![CDATA[<ul>
+<li>Install Command-Line Tool now also puts <code>ocelot</code> on your PATH, so it works in the next terminal window you open, without editing your shell profile.</li>
+<li>Settings › Updates no longer shows a paragraph of fine print.</li>
+</ul>]]></description>
+      <enclosure url="https://github.com/caracal-sh/ocelot/releases/download/v0.3.3/Ocelot-0.3.3.dmg" length="17054246" type="application/octet-stream" sparkle:edSignature="hicxhHTxXhr/XOEYsVXQbgOR1ZRlqSxTa634BagreVFr8RGr9DC+fKyomrhPcYPumq7haelf3OrWoCu6b2DfCA=="/>
+    </item>
+    <item>
       <title>Ocelot 0.3.2</title>
       <pubDate>Wed, 11 Nov 2026 08:16:13 +0000</pubDate>
       <sparkle:version>1008</sparkle:version>
