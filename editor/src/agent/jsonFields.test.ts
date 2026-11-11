@@ -125,6 +125,7 @@ describe('JsonFieldStream', () => {
           for (let k = 0; k < seen.length; k += Math.ceil(seen.length / 150)) expect(w.args.html.startsWith(seen[k]!['html'] ?? '')).toBe(true);
         }
       }
-    });
+      // Exhaustive by design (every split point, many seeds): a few seconds on a busy shared CI runner, past Vitest's 5 s default.
+    }, 30_000);
   });
 });

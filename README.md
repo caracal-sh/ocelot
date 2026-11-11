@@ -1,6 +1,6 @@
 # Ocelot
 
-A macOS design tool where every layer is real HTML and CSS. A local MCP server lets AI agents read and edit the canvas while you work on the same document.
+An AI-native design tool for macOS. Describe what you want and the built-in agent designs it on the canvas while you watch, with helpers building several screens at once, and you keep editing alongside it. Every layer is real HTML and CSS, and your own agents get the same tools through a local MCP server.
 
 <p align="center">
   <a href="https://github.com/caracal-sh/ocelot/releases/latest/download/Ocelot.dmg"><strong>Download Ocelot for Mac</strong></a>
@@ -8,11 +8,11 @@ A macOS design tool where every layer is real HTML and CSS. A local MCP server l
   <a href="https://github.com/caracal-sh/ocelot/releases">All releases</a>
 </p>
 
-![Ocelot: a design on the canvas, with layers and artboards](.github/ocelot.png)
+![Ocelot: the agent and a helper building a two-page site, their steps in the sidebar and their work marked on the canvas](.github/ocelot.png)
 
+- **Agents first**: a built-in agent sidebar that designs whole sites and apps, starts helpers for screens in parallel, checks its own work in screenshots and hands it over for click-through in Preview. A local MCP server gives any agent tools that reach every property a person can edit. Every edit shows up live on the canvas, and one undo reverts an agent's whole batch.
 - **Canvas**: artboards are real web pages (same-origin iframes rendered by WebKit) on an infinite zoom and pan canvas.
-- **Editing**: select, drag, resize, edit text inline, layers, inspector, design tokens, keyboard shortcuts.
-- **Agents**: a built-in agent sidebar and a local MCP server with tools that reach every property a person can edit. Every edit shows up live on the canvas, and one undo reverts an agent's whole batch.
+- **Editing**: select, drag, resize, edit text inline, layers, inspector, design tokens, components, keyboard shortcuts.
 - **Export**: PNG, JPG, PDF, decks and video, standalone HTML, and React + Tailwind that renders like the canvas.
 - **Local first**: documents are folders on your disk. Nothing is sent anywhere except what you ask for (the agent's model provider, image generation, update checks).
 
