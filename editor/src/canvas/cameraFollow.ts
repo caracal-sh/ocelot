@@ -4,13 +4,15 @@
 //
 // It never fights the person: nothing moves while they have moved the camera (a pan, a zoom, a fit, a resize) in the last
 // `QUIET_MS`, a glide in progress stops the moment they touch the camera, and the follow toggle (the eye next to the agent
-// indicator, Zoom menu > Follow agent) turns the whole thing off. With several agents at work the camera follows whichever
-// focuses last, or only the one the person picked (`editor.ui.followAgentKey`). Under `prefers-reduced-motion` the camera jumps (no glide). In-place edits only move the camera when what changed is
+// indicator, Zoom menu > Follow agent) turns the whole thing off. With several agents at work (parallel subagents) the camera
+// does not hop from one to the next: it frames the artboards they are all working on together (zooming out once, then
+// staying put while they work inside that view), or follows only the one the person picked (`editor.ui.followAgentKey`).
+// Under `prefers-reduced-motion` the camera jumps (no glide). In-place edits only move the camera when what changed is
 // entirely off screen. Presentation only: it changes the viewport, never the document.
 
 import type { Editor } from '../editor/Editor';
 import type { FocusEvent } from '../editor/agentActivity';
-import type { Rect, ViewportState } from './viewport';
+import { unionRect, type Rect, type ViewportState } from './viewport';
 import { regionOf } from './worldBox';
 
 export const FOLLOW = {
@@ -21,6 +23,8 @@ export const FOLLOW = {
   quiet: 2000,
   /** Screen pixels kept around what the camera shows. */
   margin: 48,
+  /** How long (ms) an agent's last artboard still counts as where it works when the camera frames several agents together. */
+  together: 30_000,
 } as const;
 
 /** CSS `cubic-bezier(x1, y1, x2, y2)` as a function of time (0..1) to progress (0..1). */
@@ -73,6 +77,8 @@ export function followTarget(editor: Editor, e: FocusEvent): ViewportState | nul
 }
 
 export class CameraFollow {
+  /** Per agent key: the artboard it last focused and when. With two or more recent ones the camera frames them together. */
+  readonly #spots = new Map<string, { artboardId: string; at: number }>();
   readonly #editor: Editor;
   readonly #raf: (cb: (now: number) => void) => number;
   readonly #cancelRaf: (id: number) => void;
@@ -90,7 +96,7 @@ export class CameraFollow {
   /** Starts listening to the agent's work; returns the stop function. */
   start(): () => void {
     const off = this.#editor.activity.onFocus((e) => this.#follow(e));
-    // A picked agent that has left is not followed any more: back to whichever agent focuses last (its key will not come back).
+    // A picked agent that has left is not followed any more: back to following all agents (its key will not come back).
     const offPick = this.#editor.activity.subscribe(() => {
       const { ui, activity } = this.#editor;
       if (ui.followAgentKey !== null && !activity.presences.some((p) => p.key === ui.followAgentKey)) ui.setFollowAgentKey(null);
@@ -100,6 +106,7 @@ export class CameraFollow {
       offPick();
       this.#cancelRaf(this.#frame);
       this.#frame = 0;
+      this.#spots.clear();
     };
   }
 
@@ -108,11 +115,41 @@ export class CameraFollow {
     const view = editor.viewport;
     if (!editor.ui.followAgent || editor.present.active || view.size.width <= 0) return;
     if (!followsAgent(editor.ui.followAgentKey, e)) return;
+    const now = view.clock();
+    const all = editor.ui.followAgentKey === null;
+    if (all && e.agentKey) this.#spots.set(e.agentKey, { artboardId: e.artboardId, at: now });
     // The person is moving the camera, or just did: leave it alone.
-    if (view.clock() - view.lastMoveAt < FOLLOW.quiet) return;
-    const to = followTarget(editor, e);
+    if (now - view.lastMoveAt < FOLLOW.quiet) return;
+    const group = all ? this.#together(e, now) : null;
+    const to = group ? view.framing(group, FOLLOW.margin) : followTarget(editor, e);
     if (!to) return;
     this.#glide(to);
+  }
+
+  /**
+   * With two or more agents working at once on the page in view: the union of their artboards (and the one `e` is in), so
+   * the camera shows them all instead of hopping between them. Null with a single agent (it is followed as before).
+   */
+  #together(e: FocusEvent, now: number): Rect | null {
+    const { doc, activity, currentPageId } = this.#editor;
+    const present = new Set(activity.presences.map((p) => p.key));
+    const artboards = new Set<string>([e.artboardId]);
+    let agents = 0;
+    for (const [key, spot] of this.#spots) {
+      if (!present.has(key) || now - spot.at > FOLLOW.together || !doc.get(spot.artboardId)) {
+        this.#spots.delete(key);
+        continue;
+      }
+      if (doc.pageOfArtboard(spot.artboardId) !== currentPageId) continue;
+      agents++;
+      artboards.add(spot.artboardId);
+    }
+    if (agents < 2) return null;
+    const frames = [...artboards].flatMap((id) => {
+      const frame = doc.get(id)?.frame;
+      return frame && doc.pageOfArtboard(id) === currentPageId ? [{ ...frame }] : [];
+    });
+    return unionRect(frames);
   }
 
   #glide(to: ViewportState): void {

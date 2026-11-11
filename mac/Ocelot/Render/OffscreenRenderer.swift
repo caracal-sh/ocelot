@@ -64,7 +64,7 @@ final class OffscreenRenderer: NSObject {
         }
         let settleJS = """
         await document.fonts.ready;
-        await Promise.all([...document.images].map(i => i.complete ? null : new Promise(r => { i.onload = i.onerror = r; })));
+        \(Self.imagesPaintedJS)
         return true;
         """
         _ = try await EditorClient.withTimeout(.seconds(10), method: "pdf settle") { @MainActor @Sendable () -> Bool in
@@ -76,6 +76,14 @@ final class OffscreenRenderer: NSObject {
             return try await webView.pdf(configuration: config)
         }
     }
+
+    /// Waits until every image has loaded *and decoded*, then for two frames. `complete` only means loaded: WebKit decodes
+    /// large images (the inlined asset data URLs) asynchronously, and a snapshot taken before that shows them blank.
+    private static let imagesPaintedJS = """
+        await Promise.all([...document.images].map(i => i.complete ? null : new Promise(r => { i.onload = i.onerror = r; })));
+        await Promise.all([...document.images].map(i => i.decode().catch(() => null)));
+        await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+        """
 
     /// Lets snapshots keep alpha: no page background is painted. (KVC on the private `drawsBackground`, the long-standing WKWebView switch.)
     private static func setTransparent(_ on: Bool, on webView: WKWebView) {
@@ -98,7 +106,7 @@ final class OffscreenRenderer: NSObject {
         await document.fonts.ready;
         // Code layers (sandboxed frames) post `ocelot:ready` after their first frame.
         if (window.__ocelotCodeReady) await window.__ocelotCodeReady(8000);
-        await Promise.all([...document.images].map(i => i.complete ? null : new Promise(r => { i.onload = i.onerror = r; })));
+        \(Self.imagesPaintedJS)
         const root = document.querySelector('[data-ocelot-root]') || document.body;
         const el = nodeId ? document.querySelector('[data-node-id="' + CSS.escape(nodeId) + '"]') : root;
         if (!el) return null;

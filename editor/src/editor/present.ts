@@ -16,6 +16,7 @@ import { currentTransitionEnv, nextPaint, playableTransition, swapSlide, transit
 import type { Editor } from './Editor';
 import { canBack, canForward, currentOf, goBack, goForward, navigateTo, pruneNav, startNav, stepOrder, type PresentNav } from './presentNav';
 import { deckReduce, type Blank, type DeckAction } from './deckKeys';
+import { DEVICE_ORDER, deviceClassOfWidth, parseArtboardName, type DeviceClass } from '../model/arrange';
 
 /** Link navigation crossfade (ms); `.at-present .at-artboard` in theme.css has the same. */
 export const PRESENT_LINK_MS = 150;
@@ -49,6 +50,14 @@ export interface DeckMove {
 export interface AudienceLinkHandle {
   close(): void;
 }
+
+/** The screen on show in one device class: its own artboard, a sibling of another size, or null when that size has no version of it. */
+export interface DeviceVariant {
+  device: DeviceClass;
+  artboardId: string | null;
+}
+
+const screenKey = (flow: string | null, step: string) => `${flow ?? ''}|${step}`.toLowerCase().replace(/[^\p{L}\p{N}|]+/gu, ' ').trim();
 
 export class PresentSession {
   readonly #editor: Editor;
@@ -202,6 +211,37 @@ export class PresentSession {
 
   #order(): string[] {
     return this.isDeck ? this.slideIds() : this.#editor.doc.artboardIds();
+  }
+
+  /**
+   * The same screen in every device class the prototype is designed for, desktop first: siblings share the name up to the
+   * device ("Website / 1 Start — Desktop" and "… — Mobile", on any canvas page; the device is the one named, else it comes
+   * from the width). Empty for decks and when all screens are one device class.
+   */
+  devices(): DeviceVariant[] {
+    const id = this.artboardId;
+    if (!id || this.isDeck) return [];
+    const { doc } = this.#editor;
+    const screens = doc.artboardIds().flatMap((a) => {
+      const page = doc.pageOfArtboard(a);
+      const node = doc.get(a);
+      if (!page || doc.pageKind(page) !== 'canvas' || !node?.frame) return [];
+      const parsed = parseArtboardName(node.name);
+      return [{ id: a, device: parsed.device ?? deviceClassOfWidth(node.frame.width), key: parsed.step ? screenKey(parsed.flow, parsed.step) : null }];
+    });
+    const classes = new Set(screens.map((s) => s.device));
+    const own = screens.find((s) => s.id === id);
+    if (!own || classes.size < 2) return [];
+    return DEVICE_ORDER.filter((d) => classes.has(d)).map((device) => ({
+      device,
+      artboardId: device === own.device ? id : (own.key && screens.find((s) => s.device === device && s.key === own.key)?.id) || null,
+    }));
+  }
+
+  /** Shows the screen on show in another device class (the bar's Desktop / Tablet / Mobile). False when it has no such version. */
+  showDevice(device: DeviceClass): boolean {
+    const target = this.devices().find((v) => v.device === device)?.artboardId;
+    return !!target && target !== this.artboardId && this.goTo(target);
   }
 
   // ---------- host ----------

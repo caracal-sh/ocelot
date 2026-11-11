@@ -11,7 +11,7 @@ import { lintMotion } from '../inspect/motionLint';
 import { lintPage, type PageBoard } from '../inspect/pageChecks';
 import { probeSlop, type PageFacts, type ProbeKind } from '../inspect/probe';
 import { HELD_OUT_RULES, RULES, classify, formatFinding, type InspectFinding, type SkippedRule } from '../inspect/rules';
-import { contrastIssues } from './contrast';
+import { STATE_WORD, contrastIssues } from './contrast';
 import { dsRawValueFinding } from './dsSlop';
 
 export interface ArtboardInspection {
@@ -67,7 +67,7 @@ export function inspectArtboard(editor: Editor, artboardId: string, opts: { kind
   for (const f of findings) f.name = (f.node_id && doc.get(f.node_id)?.name) || f.name;
   for (const c of contrastIssues(editor, artboardId)) {
     if (opts.hidden?.includes('contrast')) break;
-    findings.push({ rule_id: 'contrast', level: 'fix', node_id: c.id, name: c.name, measured: `${c.ratio}:1 on “${c.text}”`, threshold: `${c.required}:1`, message: RULES['contrast']!.say });
+    findings.push({ rule_id: 'contrast', level: 'fix', node_id: c.id, name: c.name, measured: `${c.ratio}:1 on “${c.text}”${c.state ? ` on ${STATE_WORD[c.state]} (set_state_styles)` : ''}`, threshold: `${c.required}:1`, message: RULES['contrast']!.say });
   }
   const raw = dsRawValueFinding(editor, artboardId);
   if (raw && !(opts.hidden ?? hiddenRules()).includes(raw.rule_id)) findings.push(raw);

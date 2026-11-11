@@ -175,7 +175,7 @@ Pure white (#ffffff) is the everyday ground; an off-white or tinted one only whe
 
 ## 4. Text contrast and small type
 
-Contrast is not negotiable: body and label text needs 4.5:1 against what is behind it (3:1 only at 24px+, or 19px+ bold). Small uppercase captions, meta lines, avatar initials and anything over a photo are where it fails: use the ink color (opacity 0.7 at most), or add a neutral near-black scrim behind text on images. Check by number, not by eye: get_screenshot and get_computed_styles list every text layer below the threshold by name with its measured ratio; fix each one and look again. Avoid 12px and below except for dense productivity UI, table heads, captions and form labels (tracked caps belong there, not above a heading).
+Contrast is not negotiable, in every state: body and label text needs 4.5:1 against what is behind it (3:1 only at 24px+, or 19px+ bold). Captions, text on photos and hover states that change the fill but not the label fail first: use the ink color, a near-black scrim on photos, and change a state's text color with its fill. get_screenshot and inspect_design list each failing text layer ("on hover" when only that state fails); fix each (set_state_styles, on the main for instances). Avoid 12px and below except for dense productivity UI, table heads, captions and form labels (tracked caps belong there, not above a heading).
 
 ## 5. Vague prompts
 
@@ -298,7 +298,7 @@ Everything a person can change in the editor can be changed with a tool. Always 
 | Undo / redo | undo, redo (steps): the same global history as ⌘Z; one begin_edit … end_edit is a single step. Needs end_edit first; a step of the user is flagged. |
 | Open, create, save, close a project; Home; recents; windows; Settings; updates; quit | App tools (served beside the document tools): open_project, new_project (blank, prompt + attachments, kind deck/video, theme, design_system), duplicate_project, save_project, save_project_as, close_project, list_projects, open_home, remove_recent_projects, list_windows, focus_window, arrange_windows, open_settings, get_app_settings, set_app_settings (never security keys), check_for_updates, quit_app |
 | Preferences: follow agent, sidebar, the in-app agent's model and effort | get_preferences, set_preferences |
-| The person's sidebar chat (send, queue, steer, Stop, new chat) | sidebar_agent, get_sidebar_agent |
+| The sidebar chat (send, queue, steer, Stop, compact, new chat) | sidebar_agent, get_sidebar_agent |
 | Walk the user's Preview / Present (next, prev, goto, back, follow a link, fit, scroll, pause, notes, black/white, full screen) | present_control (after start_presentation, only while they watch) |
 | Video playhead: seek, play, loop | seek_timeline (get_screenshot video_time_ms looks without moving their view) |
 | Exact camera: pan, zoom, centre a point | set_viewport, get_viewport |

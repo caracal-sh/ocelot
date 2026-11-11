@@ -118,7 +118,7 @@ try {
   check('list_assets reports it used by 1 layer', listed.assets.find((a) => a.asset_id === assetId)?.used_by === 1);
 
   // 4. canvas screenshot (assets inlined) and live canvas rendering
-  const canvasShot = Buffer.from((await tool('get_screenshot', { node_id: ab, scale: 1 })).find((c) => c.type === 'image').data, 'base64');
+  const canvasShot = Buffer.from((await tool('get_screenshot', { node_id: ab, scale: 1, exact: true })).find((c) => c.type === 'image').data, 'base64');
   await writeFile(join(OUT, 'canvas.png'), canvasShot);
   const liveImg = await host.page.evaluate(async (id) => {
     await window.__ocelotDebugEditor.assets.load(id);

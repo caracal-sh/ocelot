@@ -16,7 +16,7 @@ import { toolLabel, type ChatItem } from '../agent/transcript';
 import { isOmpClient } from '../editor/questions';
 import { ToolError, agentLabel, enumArg, json, num, str, type Args, type ToolContext, type ToolDef } from './toolkit';
 
-const ACTIONS = ['send', 'queue', 'steer', 'stop', 'new_chat', 'promote_queued', 'remove_queued'] as const;
+const ACTIONS = ['send', 'queue', 'steer', 'stop', 'new_chat', 'compact', 'promote_queued', 'remove_queued'] as const;
 type Action = (typeof ACTIONS)[number];
 const QUEUES = ['steering', 'follow_up'] as const;
 const MAX_ATTACHMENTS = 20;
@@ -171,6 +171,13 @@ async function perform(action: Action, args: Args, ctx: ToolContext) {
       chat.newChat();
       return json({ ok: true, note: `Started a new conversation: the previous one moved to the person's conversation history${hadTurn ? ' and its running turn was stopped' : ''} (you cannot read it; history is private to the person). The next message starts fresh.` });
     }
+    case 'compact': {
+      if (chat.snapshot.turn) throw new ToolError('The in-app agent is working on a turn; compact between turns. Call get_sidebar_agent until its status is "idle", then compact.');
+      if (chat.snapshot.compacting) throw new ToolError('A compaction is already running. Call get_sidebar_agent until "compacting" is false.');
+      const compacted = await chat.compact();
+      if (!compacted) throw new ToolError(`Nothing was compacted${chat.snapshot.items.some((i) => i.kind === 'user') ? ': the agent refused (the sidebar shows why). Start a new conversation with new_chat if the conversation is unusable.' : ': the conversation has no messages yet.'}`);
+      return json({ ok: true, note: 'Compacted: a summary replaced the older messages and screenshots; the in-app agent keeps the gist. The person sees a notice in the sidebar.' });
+    }
     case 'promote_queued': {
       const { queue, item } = queueIndex(args, chat, 'promote');
       if (queue !== 'followUp') throw new ToolError('Only a follow_up message can be promoted; a steering one is already delivered at the next step.');
@@ -228,6 +235,7 @@ export const SIDEBAR_AGENT_TOOLS: ToolDef[] = [
       'For agents OUTSIDE Ocelot (Claude Code, Codex…) that supervise or delegate to the in-app agent, the chat in the person\'s sidebar. Acts like its prompt box and buttons; the person sees it all. ' +
       'Actions: "send" (message [+ attachments]; starts a turn, refused while one runs), "queue" (delivered after the running turn; starts one if idle), "steer" (delivered at the in-app agent\'s next step; starts a turn if idle), ' +
       '"stop" (the Stop button: edits so far stay, queued messages go back to the person\'s prompt box), "new_chat" (starts a new conversation, the old one stays in the person\'s private history, and stops a running turn: only when the person asked or you must restart), ' +
+      '"compact" (the Compact button, between turns: a summary replaces the older messages and screenshots; use it when the conversation got too large instead of new_chat), ' +
       '"promote_queued" (queue "follow_up", index: deliver it at the next step instead of after the turn), "remove_queued" (queue "steering"|"follow_up", index; the queue may hold the person\'s own messages: remove yours, not theirs). ' +
       'Your message appears in the sidebar as "From <you>" and the in-app agent is told it comes from another agent, not the person; it does not get the person\'s canvas selection, so name layers explicitly. ' +
       'It does not wait for the turn: call get_sidebar_agent to follow progress. Attachments take the same limits as the person\'s: text files as {name, text}, images as {name, data_base64, mime_type} (max 10 images). ' +
@@ -298,6 +306,7 @@ export const SIDEBAR_AGENT_TOOLS: ToolDef[] = [
         effort: snap.effort || null,
         ...(questions.length ? { waiting_for_person: questions.map((q) => q.questions.map((x) => x.question).join(' / ')) } : {}),
         ...(ctx.editor.subagents.active.length ? { subagents: ctx.editor.subagents.active.map((a) => a.name) } : {}),
+        ...(snap.compacting ? { compacting: true } : {}),
         queue: { steering: queueView(snap.queue.steering), follow_up: queueView(snap.queue.followUp) },
         total_messages: live.items.length,
         messages: live.items.slice(-last).map((it) => describeMessage(it, ctx)),

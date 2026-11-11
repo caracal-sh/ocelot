@@ -94,7 +94,7 @@ describe('set_preferences', () => {
     expect(t.editor.ui.followAgent).toBe(true);
     expect((await t.call('set_preferences', { follow_agent_key: 7 })).text).toMatch(/must be an agent key/);
     const back = await t.call('set_preferences', { follow_agent_key: null });
-    expect(back.json).toMatchObject({ changed: ['following whichever agent focuses last'], preferences: { follow_agent_key: null } });
+    expect(back.json).toMatchObject({ changed: ['following all agents'], preferences: { follow_agent_key: null } });
   });
 
   it('a tab shows the sidebar (like clicking it) unless the call hides it', async () => {

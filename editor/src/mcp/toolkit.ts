@@ -115,7 +115,11 @@ export function updatesOf(args: Args, where: string, example: string, max = 500)
 
 export function requireNode(ctx: ToolContext, id: string): NodeData {
   const n = ctx.editor.doc.get(id);
-  if (!n) throw new ToolError(`Node "${id}" does not exist. Call get_tree (or get_document_info for artboards) to get current ids.`);
+  if (!n) {
+    const page = ctx.editor.doc.page(id);
+    if (page) throw new ToolError(`"${id}" is the page "${page.name}", not a layer. Rename or move a page with update_page {"page_id": "${id}", "name": …}; get_document_info lists its artboards.`);
+    throw new ToolError(`Node "${id}" does not exist. Call get_tree (or get_document_info for artboards) to get current ids.`);
+  }
   return n;
 }
 

@@ -160,6 +160,8 @@ const PATHS = {
   arrowUp: <path d="M8 13V3.5M4.5 7 8 3.5 11.5 7" />,
   arrowDown: <path d="M8 3v9.5M4.5 9 8 12.5 11.5 9" />,
   history: <path d="M2.5 8a5.5 5.5 0 1 0 1.6-3.9M2.5 2.8v2.6h2.6M8 5.2V8l1.9 1.2" />,
+  // Compact the conversation: two lines pressed together by arrows from above and below.
+  compact: <path d="M3 6.5h10M3 9.5h10M8 1.5v3M6.5 3.5 8 5l1.5-1.5M8 14.5v-3M6.5 12.5 8 11l1.5 1.5" />,
   askAgent: <path d="M4 3h8a1.5 1.5 0 0 1 1.5 1.5v5A1.5 1.5 0 0 1 12 11H8.2L5.5 13.5V11H4A1.5 1.5 0 0 1 2.5 9.5v-5A1.5 1.5 0 0 1 4 3zM8 5.2v3.1M6.45 6.75h3.1" />,
   trash: <path d="M3 4.5h10M6.5 4.5V3h3v1.5M4.5 4.5l.6 8.2a1 1 0 0 0 1 .8h3.8a1 1 0 0 0 1-.8l.6-8.2M7 7v4M9 7v4" />,
   // Document components: the main is four diamonds, an instance one diamond around a smaller one.

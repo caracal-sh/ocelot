@@ -80,8 +80,16 @@ export const CONFINED_MODEL_PROVIDERS_OFF = ['apple'];
 export const SUBAGENT_CONCURRENCY = 4;
 export const BUNDLED_AGENTS_OFF = ['scout', 'designer', 'reviewer', 'security-reviewer', 'librarian', 'sonic'];
 
+/**
+ * Auto-compaction for the sidebar agent, explicit so a person's own omp settings cannot turn it off: at 70% of the model's
+ * window, first drop recoverable heavy content (old tool results, images: no model call), then summarize. omp's default
+ * order also tries snapcompact (history as bitmap images: more image bytes, the thing that already makes requests too large).
+ * Mirrored in AgentLaunch.swift.
+ */
+export const COMPACTION_YML = 'compaction:\n  enabled: true\n  thresholdPercent: 70\n  methodOrder:\n    - shake\n    - soft\n';
+
 export function agentConfigYml({ disabledProviders, defaultModel, thinkingLevel }) {
-  let text = `tools:\n  xdev: false\nasync:\n  enabled: false\ntask:\n  maxConcurrency: ${SUBAGENT_CONCURRENCY}\n  maxRecursionDepth: 1\n  disabledAgents:\n${BUNDLED_AGENTS_OFF.map((a) => `    - ${a}\n`).join('')}disabledProviders:\n${disabledProviders.map((p) => `  - ${p}\n`).join('')}`;
+  let text = `tools:\n  xdev: false\nasync:\n  enabled: false\ntask:\n  maxConcurrency: ${SUBAGENT_CONCURRENCY}\n  maxRecursionDepth: 1\n  disabledAgents:\n${BUNDLED_AGENTS_OFF.map((a) => `    - ${a}\n`).join('')}disabledProviders:\n${disabledProviders.map((p) => `  - ${p}\n`).join('')}${COMPACTION_YML}`;
   if (defaultModel) text += `modelRoles:\n  default: ${JSON.stringify(defaultModel)}\n`;
   if (thinkingLevel) text += `defaultThinkingLevel: ${JSON.stringify(thinkingLevel)}\n`;
   return text;

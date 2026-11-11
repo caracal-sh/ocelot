@@ -293,7 +293,7 @@ describe('guards and registration', () => {
   it('validates the action', async () => {
     const t = setup();
     expect((await t.call('sidebar_agent', {})).text).toMatch(/needs "action"/);
-    expect((await t.call('sidebar_agent', { action: 'sign_in' })).text).toMatch(/"action" must be one of send, queue, steer, stop, new_chat, promote_queued, remove_queued/);
+    expect((await t.call('sidebar_agent', { action: 'sign_in' })).text).toMatch(/"action" must be one of send, queue, steer, stop, new_chat, compact, promote_queued, remove_queued/);
     expect((await t.call('sidebar_agent', { action: 'install' })).isError).toBe(true);
   });
 

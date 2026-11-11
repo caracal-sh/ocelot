@@ -7,10 +7,11 @@ import type { Editor } from '../editor/Editor';
 import type { DeckAction } from '../editor/deckKeys';
 import type { LinkOutcome } from '../editor/present';
 import { toggleFullScreen } from '../editor/presentShortcuts';
+import { DEVICE_ORDER } from '../model/arrange';
 import { ToolError, bool, enumArg, json, num, str, type Args, type ToolContext, type ToolDef } from './toolkit';
 
 const ACTIONS = [
-  'next', 'prev', 'first', 'last', 'goto', 'back', 'forward', 'follow_link', 'fit_width', 'fit_100', 'scroll',
+  'next', 'prev', 'first', 'last', 'goto', 'device', 'back', 'forward', 'follow_link', 'fit_width', 'fit_100', 'scroll',
   'pause_animations', 'resume_animations', 'full_screen', 'notes', 'black', 'white', 'unblank', 'stop',
 ] as const;
 type Action = (typeof ACTIONS)[number];
@@ -29,6 +30,7 @@ function stateOf(editor: Editor) {
   const node = id ? doc.get(id) : null;
   const position = present.position();
   const snap = present.snapshot();
+  const devices = present.devices();
   return {
     presenting: present.active,
     ...(id ? { artboard_id: id, screen: node?.name ?? id } : {}),
@@ -40,6 +42,7 @@ function stateOf(editor: Editor) {
     can_back: present.canBack,
     can_forward: present.canForward,
     ...(present.isDeck ? { blank: snap?.blank ?? 'none', notes_open: present.notesOpen, pending_digits: present.pendingDigits } : {}),
+    ...(devices.length ? { devices: Object.fromEntries(devices.map((v) => [v.device, v.artboardId])) } : {}),
   };
 }
 
@@ -121,6 +124,16 @@ async function perform(action: Action, args: Args, ctx: ToolContext): Promise<{ 
       if (deck && present.slideIds().includes(target)) return deckKey({ type: 'goto', index: present.slideIds().indexOf(target) });
       return { changed: present.goTo(target) };
     }
+    case 'device': {
+      const device = enumArg(args, 'device', DEVICE_ORDER);
+      const devices = present.devices();
+      if (!devices.length) throw new ToolError('This prototype has screens of one size only, so there is no other device to switch to. Create the other size as "<same name> — Mobile" (or — Desktop / — Tablet) to make it switchable.');
+      const listed = devices.map((v) => `${v.device}${v.artboardId ? '' : ' (no version of this screen)'}`).join(', ');
+      if (device === undefined) throw new ToolError(`device needs "device": one of ${listed}.`);
+      const variant = devices.find((v) => v.device === device);
+      if (!variant?.artboardId) throw new ToolError(`The screen on show has no ${device} version. Devices here: ${listed}. Siblings are matched by name: "<same name> — ${device[0]!.toUpperCase()}${device.slice(1)}".`);
+      return { changed: present.showDevice(device) };
+    }
     case 'back':
       return { changed: present.back() };
     case 'forward':
@@ -186,6 +199,7 @@ export const PRESENT_TOOLS: ToolDef[] = [
       'Drives the Preview or Present session the USER sees (the one start_presentation opened), exactly as their keys and the floating bar do, so you can demo a flow or a deck you built: it needs one running (otherwise an error says to call start_presentation, which you do only when they asked to try or present). ' +
       'It moves what they see: use it while they are watching (they asked for a walkthrough), not as a way to look at screens (get_screenshot does that without touching their view). Not an undo step; nothing in the document changes. ' +
       'action: next | prev (the next / previous slide in a deck, else the screen in reading order; on a blanked slide the first one only brings the slide back) | first | last | goto {artboard_id, or slide: 1-based number} | ' +
+      'device {device: desktop | tablet | mobile} (the bar\'s Desktop / Tablet / Mobile: the same screen in another size, matched by name "Flow / Step — Device"; the state lists devices with each one\'s artboard, null when this screen has none) | ' +
       'back | forward (the link history, ⌘[ ⌘]) | follow_link {node_id: a layer on the screen on show that has a link; like clicking it, an external URL opens in their browser} | ' +
       'fit_width | fit_100 (Fit / 100%) | scroll {direction: up | down | left | right | page_up | page_down | top | bottom, or dx / dy in screen pixels} | ' +
       'pause_animations | resume_animations | full_screen (toggles the editor window; app only) | ' +
@@ -196,6 +210,7 @@ export const PRESENT_TOOLS: ToolDef[] = [
       type: 'object',
       properties: {
         action: { type: 'string', enum: [...ACTIONS], description: 'What to do. See the tool description.' },
+        device: { type: 'string', enum: [...DEVICE_ORDER], description: 'device: which size of the screen on show to switch to.' },
         artboard_id: { type: 'string', description: 'goto: the screen to show (a slide of any deck, a prototype screen; may be on another page).' },
         slide: { type: 'integer', minimum: 1, description: 'goto: 1-based number of the slide (deck on show) or of the screen in reading order.' },
         node_id: { type: 'string', description: 'follow_link: the layer to click (get_links lists layers with a link).' },

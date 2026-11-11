@@ -28,6 +28,7 @@ function mirrorRenderer(editor: Editor, artboardId: string) {
   const build = (id: string, parent: HTMLElement) => {
     const n = editor.doc.require(id);
     const el = document.createElement('div');
+    el.setAttribute('data-node-id', id);
     for (const [k, v] of Object.entries(n.styles)) el.style.setProperty(k, v);
     if (n.type === 'text') el.textContent = n.text;
     parent.append(el);
@@ -78,6 +79,31 @@ describe('contrast reporting', () => {
     expect(r[id('Big')].contrast).toMatchObject({ required: 3, pass: true });
     expect(r[id('On gradient')].contrast).toBeUndefined();
     expect(r[id('Card')].contrast).toBeUndefined();
+  });
+
+  it('measures hover / pressed / focus too: a label that disappears when pointed at is named with its state, tokens resolved', async () => {
+    const t = setupMcp();
+    const ab = t.editor.doc.artboardIds()[0]!;
+    await t.call('write_html', {
+      node_id: ab,
+      mode: 'append',
+      html: '<section data-name="Band" style="background-color:#ffffff;--accent:#7a2e26;padding:20px"><p data-name="Outline button" style="color:#261b15;font-size:16px">Zum Newsletter</p><p data-name="Solid button" style="color:#ffffff;background-color:#7a2e26;font-size:16px">Anmelden</p></section>',
+    });
+    mirrorRenderer(t.editor, ab);
+    const id = (name: string) => [...t.editor.doc.nodes.keys()].find((k) => t.editor.doc.get(k)!.name === name)!;
+    expect(t.textOf(await t.call('get_screenshot', { node_id: ab }))).not.toMatch(/Low contrast/);
+    // Hover fills the outline button with the accent but keeps the dark label; pressing the solid one turns its label accent.
+    await t.call('set_state_styles', {
+      updates: [
+        { node_ids: [id('Outline button')], state: 'hover', styles: { 'background-color': 'var(--accent, #7a2e26)' } },
+        { node_ids: [id('Solid button')], state: 'pressed', styles: { color: 'var(--accent, #7a2e26)' } },
+      ],
+    });
+    const text = t.textOf(await t.call('get_screenshot', { node_id: ab }));
+    expect(text).toMatch(/Low contrast on 2 text layers/);
+    expect(text).toMatch(/"Outline button" \(“Zum Newsletter”\) on hover 1\.\d+:1 \(needs 4\.5:1\)/);
+    expect(text).toMatch(/"Solid button" \(“Anmelden”\) on pressed 1:1/);
+    expect(text).toMatch(/set_state_styles/);
   });
 });
 

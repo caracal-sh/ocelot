@@ -2,16 +2,18 @@ import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from '
 import type { Host } from '../host/host';
 import { useEditor } from '../editor/context';
 import { toggleFullScreen } from '../editor/presentShortcuts';
+import { DEVICE_LABEL } from '../model/arrange';
 import { Icon } from './Icon';
 
 /** The floating bar hides after this long without pointer movement. */
 export const PRESENT_BAR_HIDE_MS = 1500;
 
 /**
- * Preview's floating bar: previous / next screen in reading order, the screen's name and size, Back / Forward through
- * the link history, Fit / 100%, pause / resume animations, hide / show sidebar, full screen and Exit. It fades out after 1.5 s
- * without pointer movement (not while the pointer or keyboard focus is on it) and wakes on any movement over the stage,
- * including over the artboard frame (which reports it through `present.pulse()`), and on every navigation.
+ * Preview's floating bar: previous / next screen in reading order, the screen's name and size, Desktop / Tablet / Mobile
+ * (the same screen in another size, when the prototype has several), Back / Forward through the link history, Fit / 100%,
+ * pause / resume animations, hide / show sidebar, full screen and Exit. It fades out after 1.5 s without pointer movement
+ * (not while the pointer or keyboard focus is on it) and wakes on any movement over the stage, including over the artboard
+ * frame (which reports it through `present.pulse()`), and on every navigation.
  */
 export function PresentBar({ host }: { host: Host }) {
   const editor = useEditor();
@@ -48,6 +50,7 @@ export function PresentBar({ host }: { host: Host }) {
   const node = id ? editor.doc.get(id) : null;
   const position = present.position();
   const deck = present.isDeck;
+  const devices = present.devices();
   if (!id || !node?.frame) return null;
   const hold = (on: boolean) => {
     held.current = on;
@@ -101,6 +104,27 @@ export function PresentBar({ host }: { host: Host }) {
       ) : (
         <>
         <span className="at-presentbar__sep" />
+        {devices.length > 1 && (
+          <>
+            <div className="at-presentbar__seg" role="group" aria-label="Device" data-testid="present-devices">
+              {devices.map((v) => (
+                <button
+                  key={v.device}
+                  type="button"
+                  className="at-btn"
+                  aria-pressed={v.artboardId === id}
+                  disabled={!v.artboardId}
+                  onClick={() => present.showDevice(v.device)}
+                  data-tip={v.artboardId ? `${DEVICE_LABEL[v.device]} version of this screen` : `This screen has no ${DEVICE_LABEL[v.device].toLowerCase()} version`}
+                  data-testid={`present-device-${v.device}`}
+                >
+                  {DEVICE_LABEL[v.device]}
+                </button>
+              ))}
+            </div>
+            <span className="at-presentbar__sep" />
+          </>
+        )}
         <button type="button" className="at-btn at-btn--icon" onClick={() => present.back()} disabled={!present.canBack} data-tip="Back (⌘[)" aria-label="Back" data-testid="present-back">
           <Icon name="historyBack" />
         </button>

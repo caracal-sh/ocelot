@@ -44,6 +44,8 @@ final class AgentRunner {
         "set_model", "set_thinking_level", "get_available_thinking_levels",
         // Messages queued or steering while the agent works: take one back, steer with it now, stop and take them all back.
         "remove_queued_message", "promote_queued_message", "abort_and_restore_queue",
+        // Summarize the conversation in place (the Agent tab's Compact button; also after a request too large to send).
+        "compact",
     ]
 
     private var isolation: AgentIsolationModel { .shared }

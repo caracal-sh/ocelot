@@ -69,7 +69,7 @@ export class UiState {
   /** Whether the camera follows the agent's work when it is off screen (Zoom menu > Follow agent); remembered across launches. */
   followAgent = readStored(FOLLOW_AGENT_KEY, '1') === '1';
   /**
-   * With several agents at work, the one the camera follows (its `AgentPresenceEntry.key`); null follows whichever focuses last. Not
+   * With several agents at work, the one the camera follows (its `AgentPresenceEntry.key`); null follows all of them (framed together). Not
    * remembered: agent keys last as long as the agents do (the camera resets it when the agent leaves).
    */
   followAgentKey: string | null = null;

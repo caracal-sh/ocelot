@@ -1,4 +1,5 @@
-// The Agent tab's header controls: "+" starts a new conversation, the history button lists this document's earlier ones.
+// The Agent tab's header controls: Compact summarizes the conversation in place, "+" starts a new conversation, the
+// history button lists this document's earlier ones.
 // Anything that would stop a working agent (a new conversation, opening another, deleting the one on screen) asks first;
 // an idle agent never asks.
 
@@ -48,6 +49,18 @@ export function ConversationControls({ chat }: { chat: AgentChat }) {
 
   return (
     <>
+      <button
+        type="button"
+        className="at-btn at-btn--icon"
+        onClick={() => void chat.compact()}
+        disabled={working || snap.compacting || !snap.items.some((i) => i.kind === 'user')}
+        aria-busy={snap.compacting || undefined}
+        data-tip={snap.compacting ? 'Compacting…' : 'Compact the conversation: a summary replaces older messages and screenshots'}
+        aria-label="Compact the conversation"
+        data-testid="agent-compact"
+      >
+        <Icon name="compact" />
+      </button>
       <button
         ref={historyRef}
         type="button"

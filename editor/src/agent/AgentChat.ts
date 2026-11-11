@@ -69,6 +69,8 @@ export interface AgentSnapshot {
   conversationId: string;
   /** This document's kept conversations, newest activity first (the current one among them once it has a message). */
   conversations: ConversationMeta[];
+  /** A compaction of the conversation runs (the header's Compact button, sidebar_agent compact). */
+  compacting: boolean;
 }
 
 /** The conversation on screen: what the host needs to find its session, and what the history keeps of it. */
@@ -99,6 +101,15 @@ const SAVE_DEBOUNCE_MS = 1500;
 /** A process that is leaving mid-turn gets this long to record its aborted turn before it is stopped. */
 const RETIRE_GRACE_MS = 4000;
 const REQUEST_TIMEOUT_MS = 15_000;
+/** A compaction is a model call that summarizes the conversation. */
+const COMPACT_TIMEOUT_MS = 180_000;
+/**
+ * Image data (base64 characters) the agent's context may carry before it drops its images after a turn: about a dozen
+ * full-page screenshots. Every request resends the whole conversation, and image-heavy ones outgrow the gateway (HTTP 413).
+ */
+export const SHAKE_AT_IMAGE_CHARS = 8_000_000;
+/** omp's local "drop every image block from the context" command: no model call, the text of the conversation stays. */
+const SHAKE_IMAGES = '/shake images';
 const OCELOT_TOOL_PREFIX = 'mcp__ocelot_';
 /** omp's subagent tool: the only built-in tool the sidebar agent has. */
 const SPAWN_TOOL = 'task';
@@ -110,6 +121,8 @@ const SYSTEM_PROMPT = [
   'A message may start with a [Selection: …] line listing what the person has selected on the canvas; "this", "it" or "the selection" usually refers to it.',
   'Start building early. Settle the brief in your reasoning, never in chat: no brief, palette or plan before your first write, and your first write comes within your first few tool calls. While you work, every message you write is one short sentence, and most steps need none. Write one visual group per call in reading order, and look with get_screenshot every 2-3 groups and at the end, not after every group.',
   'Screens that belong together (the pages of one website, the steps of a flow, an app\'s tabs) are always linked so the person can click through them in Preview: set_link on nav items, buttons and back arrows, then get_links until nothing is broken, before your final reply.',
+  'Contrast is checked by number, in every state, before your final reply: inspect_design (or get_screenshot) on every artboard you changed lists each text layer below WCAG, including "on hover", "on pressed" and "on focus"; fix every one. A state that changes a fill or a text color changes both together (a button filled dark on hover gets light text), text on a photo gets a near-black scrim, and after changing a component main or a theme token you check again, because every instance changed with it.',
+  'Older images leave the conversation between turns to keep it small: take a fresh get_screenshot when you need to see the canvas, and get_asset for an image the person attached (its asset id is in their message).',
   'Your final reply is at most 60 words in plain sentences, no headings, no lists: what you changed, by layer name, and at most one next step. Do not re-describe colors, fonts or sections; the person can see the canvas. Never show raw node IDs.',
 ].join('\n\n');
 
@@ -148,6 +161,10 @@ export class AgentChat {
   #switchSeq = 0;
   /** Processes of conversations that were left mid-turn: aborted, then stopped. A new process waits for them (one omp per window, and the session file must be complete). */
   #retiring = new Map<string, { abortSettled: () => void; exited: () => void; closed: Promise<void> }>();
+  /** Base64 characters of images that entered the agent's context (screenshots, attachments) since it last dropped them. */
+  #imageChars = 0;
+  /** A shake or a compaction in flight: the next prompt waits for it (omp handles one thing at a time). */
+  #upkeep: Promise<void> = Promise.resolve();
 
   constructor(
     private readonly editor: Editor,
@@ -165,6 +182,7 @@ export class AgentChat {
       queue: EMPTY_QUEUE,
       conversationId: this.#current.id,
       conversations: [],
+      compacting: false,
     };
     this.#live = new LiveWriteTracker({
       agent: () => this.#agentName() || 'The agent',
@@ -357,6 +375,9 @@ export class AgentChat {
       const stored = await this.#storeImages(attachments);
       const { message, images } = buildMessage(prompt, stored);
       if (attachments.length) this.#patchUser(turnId, stored);
+      // A shake or compaction that is still running finishes first.
+      await this.#upkeep;
+      this.#imageChars += images.reduce((n, i) => n + i.data.length, 0);
       await this.#sendCommand({ id: turnId, type: 'prompt', message: withLead(message, from, context, this.#referencesLead(references)), ...(images.length ? { images } : {}) });
       // omp has a session file for the conversation from here on: a later process continues it.
       this.#current.resume = true;
@@ -424,6 +445,55 @@ export class AgentChat {
         this.#finishTurn(turn.id, undefined, 'stopped');
       }
     }, STOP_GRACE_MS);
+  }
+
+  /**
+   * Compacts the conversation (omp `compact`, a model call): a summary replaces the older messages, screenshots included,
+   * so the agent keeps the gist at a fraction of the size. Between turns only; the Agent tab's Compact button and
+   * sidebar_agent call it, and a turn that failed because the conversation was too large to send (HTTP 413) runs it itself.
+   * False when there is nothing to compact, it is busy, or omp refused.
+   */
+  async compact(reason: 'asked' | 'too-large' = 'asked'): Promise<boolean> {
+    if (this.#snapshot.turn || this.#snapshot.compacting || !this.#current.resume) return false;
+    this.#update({ compacting: true });
+    const run = this.#upkeep.then(async () => {
+      await this.#ensureProcess();
+      return this.#request({ type: 'compact' }, COMPACT_TIMEOUT_MS);
+    });
+    this.#upkeep = run.then(
+      () => {},
+      () => {},
+    );
+    try {
+      const data = await run;
+      this.#imageChars = 0;
+      const before = isObj(data) && typeof data['tokensBefore'] === 'number' ? ` (it was ${Math.round(data['tokensBefore'] / 1000)}k tokens)` : '';
+      const text = reason === 'too-large' ? 'Compacted. Send your message again: the agent keeps a summary of what came before.' : `Compacted the conversation${before}: the agent keeps a summary of what came before.`;
+      this.#push({ kind: 'notice', id: `n-compact-${Date.now()}`, tone: 'info', text });
+      return true;
+    } catch (err) {
+      const text =
+        reason === 'too-large'
+          ? `The conversation could not be compacted either (${errorMessage(err)}). Start a new conversation with +: everything on the canvas stays, and the agent picks up from there.`
+          : `The conversation could not be compacted: ${errorMessage(err).replace(/\.?$/, '.')} Start a new conversation with + if it keeps failing.`;
+      this.#push({ kind: 'notice', id: `n-compact-${Date.now()}`, tone: 'error', text });
+      return false;
+    } finally {
+      this.#update({ compacting: false });
+      void this.#save();
+    }
+  }
+
+  /** Drops every image from the agent's context after a turn that took many (omp's local `/shake images`: no model call, the text stays). */
+  #shakeImages(): void {
+    const shake = this.#upkeep.then(async () => {
+      if (!this.#process) return;
+      await this.#request({ type: 'prompt', message: SHAKE_IMAGES });
+      this.#imageChars = 0;
+      this.#push({ kind: 'notice', id: `n-shake-${Date.now()}`, tone: 'info', text: "Older screenshots left the agent's memory to keep the conversation small; it takes a fresh look when it needs one." });
+    });
+    // A shake that fails changes nothing: the next turn still runs, and a conversation that grows too large compacts itself.
+    this.#upkeep = shake.catch(() => {});
   }
 
   /** Normalizes files an external agent attached (sidebar_agent) with the composer's own code and limits; a file that cannot be used comes back with an `error`. */
@@ -667,6 +737,8 @@ export class AgentChat {
       rejectReady = reject;
     });
     this.#process = { id, ready, resolveReady, rejectReady };
+    // A new process reads its session from disk; what it holds is unknown here, so the count starts over.
+    this.#imageChars = 0;
     this.#decoder = new FrameDecoder();
     const { model, effort } = this.#snapshot;
     const { id: conversationId, resume } = this.#current;
@@ -745,13 +817,13 @@ export class AgentChat {
   }
 
   /** Sends a command and resolves with its `response.data`. */
-  #request(command: RpcCommand): Promise<unknown> {
+  #request(command: RpcCommand, timeoutMs = REQUEST_TIMEOUT_MS): Promise<unknown> {
     const id = `q-${++this.#requestSeq}`;
     return new Promise<unknown>((resolve, reject) => {
       const timer = window.setTimeout(() => {
         this.#requests.delete(id);
         reject(new Error(`The agent did not answer "${command.type}" in time.`));
-      }, REQUEST_TIMEOUT_MS);
+      }, timeoutMs);
       this.#requests.set(id, { resolve, reject, timer });
       this.#sendCommand({ ...command, id }).catch((err: unknown) => {
         window.clearTimeout(timer);
@@ -798,6 +870,7 @@ export class AgentChat {
 
   #onFrame(frame: Record<string, unknown>): void {
     this.#live.handle(frame);
+    if (frame['type'] === 'tool_execution_end') this.#imageChars += imageChars(frame['result']);
     // `task` frames name the subagents and say when each runs: they are presences on the canvas, and their MCP calls carry their names.
     this.editor.subagents.handleFrame(frame, this.#agentName() || 'The agent');
     switch (frame['type']) {
@@ -883,9 +956,16 @@ export class AgentChat {
     this.#live.abortAll('turn');
     this.#transcript = settle(this.#transcript, outcome === 'completed' ? 'ok' : 'error');
     if (outcome === 'stopped') this.#transcript = { ...this.#transcript, items: [...this.#transcript.items, { kind: 'notice', id: `n-${turnId}`, tone: 'info', text: 'Stopped. Edits made so far stay on the canvas.' }] };
+    let tooLarge = false;
     if (failure) {
       const auth = isAuthError(failure);
-      const text = auth ? 'The agent is not signed in to a model provider. Sign in, then send your message again.' : failure;
+      // HTTP 413: every request carries the whole conversation, screenshots included, and this one outgrew the limit.
+      tooLarge = /\b413\b|request_too_large|payload too large|request exceeds the maximum size/i.test(failure);
+      const text = auth
+        ? 'The agent is not signed in to a model provider. Sign in, then send your message again.'
+        : tooLarge
+          ? 'This conversation got too large to send to the model (it carries every screenshot the agent took). Compacting it now: the agent keeps a summary of what came before.'
+          : failure;
       this.#transcript = { ...this.#transcript, items: [...this.#transcript.items, { kind: 'notice', id: `n-${turnId}`, tone: 'error', text, ...(auth ? { action: 'signIn' as const } : {}) }] };
     }
     cancelAnimationFrame(this.#frame);
@@ -894,6 +974,8 @@ export class AgentChat {
     this.#current.updatedAt = Date.now();
     this.#update({ items: this.#transcript.items, thinking: false, turn: null, queue: EMPTY_QUEUE });
     void this.#save();
+    if (tooLarge) void this.compact('too-large');
+    else if (outcome !== 'stopped' && this.#imageChars >= SHAKE_AT_IMAGE_CHARS) this.#shakeImages();
   }
 
   /**
@@ -1069,6 +1151,12 @@ export class AgentChat {
 function scopedToProcess(frame: Record<string, unknown>, processId: string): Record<string, unknown> {
   const id = frame['messageId'];
   return typeof id === 'string' ? { ...frame, messageId: `${processId}/${id}` } : frame;
+}
+
+/** Base64 characters of the image blocks in a tool result's `content` (what the model sees again with every later request). */
+function imageChars(result: unknown): number {
+  const content = isObj(result) && Array.isArray(result['content']) ? result['content'] : [];
+  return content.reduce<number>((n, block) => n + (isObj(block) && block['type'] === 'image' && typeof block['data'] === 'string' ? block['data'].length : 0), 0);
 }
 
 function blankConversation(): Conversation {

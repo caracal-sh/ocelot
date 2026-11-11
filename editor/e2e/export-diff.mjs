@@ -144,7 +144,7 @@ async function motionFixture() {
     { node_ids: [id], state: 'hover', styles: { background: '#0f766e' } },
     { node_ids: [id], state: 'pressed', styles: { transform: 'scale(0.9)' } },
   ] });
-  const canvasShot = Buffer.from((await tool('get_screenshot', { node_id: ab.id, scale: 1 })).find((c) => c.type === 'image').data, 'base64');
+  const canvasShot = Buffer.from((await tool('get_screenshot', { node_id: ab.id, scale: 1, exact: true })).find((c) => c.type === 'image').data, 'base64');
   const reactCode = (await tool('export_react', { node_id: ab.id }))[0].text;
   const html = (await tool('export_html', { node_id: ab.id }))[0].text;
   const dir = join(OUT, 'motion');
@@ -178,7 +178,7 @@ async function themedFixture(themeId) {
   const out = [];
   await tool('apply_theme', { theme_id: themeId });
   const ab = JSON.parse((await tool('get_document_info', {}))[0].text).artboards.find((a) => a.name === 'Themed landing');
-  const canvasShot = Buffer.from((await tool('get_screenshot', { node_id: ab.id, scale: 1 })).find((c) => c.type === 'image').data, 'base64');
+  const canvasShot = Buffer.from((await tool('get_screenshot', { node_id: ab.id, scale: 1, exact: true })).find((c) => c.type === 'image').data, 'base64');
   const dir = join(OUT, `theme-${themeId}`);
   await rm(dir, { recursive: true, force: true });
   await mkdir(dir, { recursive: true });
@@ -245,7 +245,7 @@ async function componentsFixture() {
   await tool('update_styles', { updates: [{ node_ids: [ab.id], styles: { display: 'flex', 'flex-direction': 'column', gap: '20px', padding: '32px', background: '#f8fafc', 'align-items': 'flex-start' } }] });
   await tool('write_html', { node_id: ab.id, mode: 'append', html: COMPONENTS_PAGE });
 
-  const canvasShot = Buffer.from((await tool('get_screenshot', { node_id: ab.id, scale: 1 })).find((c) => c.type === 'image').data, 'base64');
+  const canvasShot = Buffer.from((await tool('get_screenshot', { node_id: ab.id, scale: 1, exact: true })).find((c) => c.type === 'image').data, 'base64');
   const dir = join(OUT, 'components');
   await rm(dir, { recursive: true, force: true });
   await mkdir(dir, { recursive: true });
@@ -299,7 +299,7 @@ if (!arg('--doc')) {
 
 const results = [];
 for (const ab of artboards.filter((a) => a.child_count > 0)) {
-  const canvasShot = Buffer.from((await tool('get_screenshot', { node_id: ab.id, scale: 1 })).find((c) => c.type === 'image').data, 'base64');
+  const canvasShot = Buffer.from((await tool('get_screenshot', { node_id: ab.id, scale: 1, exact: true })).find((c) => c.type === 'image').data, 'base64');
   const reactCode = (await tool('export_react', { node_id: ab.id }))[0].text;
   const html = (await tool('export_html', { node_id: ab.id }))[0].text;
   const dir = join(OUT, ab.id);

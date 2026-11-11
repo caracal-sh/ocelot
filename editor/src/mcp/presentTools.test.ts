@@ -90,6 +90,23 @@ describe('present_control', () => {
     expect(await callJson('present_control', { action: 'prev' })).toMatchObject({ artboard_id: home, screen_number: 1, screen_count: 2 });
   });
 
+  it('device switches to the same screen in another size, matched by name across pages; a screen without that size says so', async () => {
+    const { callJson, call, editor, textOf } = setupMcp();
+    const first = editor.doc.artboardIds()[0]!;
+    await call('update_artboard', { artboard_id: first, name: 'Website / 1 Start — Desktop' });
+    const shop = (await callJson('create_artboard', { name: 'Website / 2 Shop — Desktop', preset: 'desktop' })).artboard_id as string;
+    const mobilePage = (await callJson('create_page', { name: 'Mobile' })).page_id as string;
+    const startMobile = (await callJson('create_artboard', { name: 'Website / 1 Start — Mobile', preset: 'mobile', page_id: mobilePage })).artboard_id as string;
+    await callJson('start_presentation', { artboard_id: first });
+    expect(await callJson('present_control', { action: 'device', device: 'mobile' })).toMatchObject({ changed: true, artboard_id: startMobile, devices: { desktop: first, mobile: startMobile } });
+    expect(await callJson('present_control', { action: 'device', device: 'desktop' })).toMatchObject({ artboard_id: first });
+    await callJson('present_control', { action: 'goto', artboard_id: shop });
+    expect(editor.present.devices()).toEqual([{ device: 'desktop', artboardId: shop }, { device: 'mobile', artboardId: null }]);
+    const r = await call('present_control', { action: 'device', device: 'mobile' });
+    expect(r.isError).toBe(true);
+    expect(textOf(r)).toMatch(/no mobile version.*— Mobile/);
+  });
+
   it('fit, scroll and animation pause change the shared view state', async () => {
     const { callJson, call, editor, home, textOf } = await flow();
     await callJson('start_presentation', { artboard_id: home });

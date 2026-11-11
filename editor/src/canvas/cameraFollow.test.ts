@@ -2,7 +2,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Editor } from '../editor/Editor';
 import { ORIGIN } from '../model/document';
-import { Viewport } from './viewport';
+import { Viewport, unionRect } from './viewport';
 import { IDLE_MS } from '../editor/agentActivity';
 import { CameraFollow, FOLLOW, cubicBezier, followTarget, followsAgent } from './cameraFollow';
 
@@ -229,7 +229,7 @@ describe('following one agent', () => {
     advance(FOLLOW.quiet);
     editor.activity.begin('Welcome', 'a');
     editor.activity.begin('Goals', 'b');
-    // Nobody picked: whichever agent focuses last is followed.
+    // Nobody picked: every agent's focus is followed.
     editor.activity.createdArtboard(ab, 'a');
     expect(frames).toHaveLength(1);
     frames.splice(0);
@@ -286,5 +286,38 @@ describe('following one agent', () => {
     expect(followsAgent('a', { ...e, agentKey: 'a' })).toBe(true);
     expect(followsAgent('a', { ...e, agentKey: 'b' })).toBe(false);
     expect(followsAgent(null, { ...e, agentKey: 'b' })).toBe(true);
+  });
+});
+
+describe('following several agents at once', () => {
+  it('frames the artboards of every agent at work together instead of hopping between them, and forgets an agent gone quiet', () => {
+    const { editor, ab, frame, advance, frames, run } = setup();
+    const other = editor.human.createArtboard({ name: 'B', width: 1440, height: 900, x: 1560, y: 0 });
+    const far = editor.human.createArtboard({ name: 'C', width: 1440, height: 900, x: 12_000, y: 0 });
+    advance(FOLLOW.quiet);
+    editor.activity.begin('Welcome', 'a');
+    editor.activity.begin('Goals', 'b');
+    // One agent, in view: nothing moves.
+    editor.activity.createdArtboard(ab, 'a');
+    expect(frames).toHaveLength(0);
+    // A second agent: the camera zooms out to show both artboards.
+    editor.activity.createdArtboard(other, 'b');
+    run(FOLLOW.glide);
+    const both = unionRect([{ ...frame }, { ...editor.doc.get(other)!.frame! }])!;
+    expect(editor.viewport.framing(both, FOLLOW.margin)).toBeNull();
+    const settled = { ...editor.viewport.state };
+    // They keep working, each in its own artboard: the camera stays put.
+    for (let i = 0; i < 3; i++) {
+      editor.activity.createdArtboard(ab, 'a');
+      editor.activity.createdArtboard(other, 'b');
+    }
+    expect(frames).toHaveLength(0);
+    expect(editor.viewport.state).toEqual(settled);
+    // Goals went quiet: Welcome moving far away is followed alone (a pan), not framed together with Goals' old artboard.
+    advance(FOLLOW.together + 1);
+    editor.activity.createdArtboard(far, 'a');
+    run(FOLLOW.glide);
+    expect(editor.viewport.state.zoom).toBe(settled.zoom);
+    expect(editor.viewport.framing({ ...editor.doc.get(far)!.frame! }, FOLLOW.margin)).toBeNull();
   });
 });

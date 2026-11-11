@@ -15,6 +15,7 @@ import { frameIndexAt, frameTimeMs } from '../render/exportRuntime';
 import { codeFailureNote, codeLayerFailures } from '../export/codeLayers';
 import { formatTree, liveRect, measureArtboard, nodeLine, overflowNote } from './format';
 import { contrastIssues, contrastNote, layerContrast } from './contrast';
+import { compactScreenshot } from './screenshotImage';
 import { inspectArtboard, openFixesNote, slopNote } from './slop';
 import { INSPECT_TOOLS } from './inspectTools';
 import { htmlToSpecs } from './htmlToSpec';
@@ -227,7 +228,7 @@ const CORE_TOOLS: ToolDef[] = [
     title: 'Screenshot',
     readOnly: true,
     description:
-      'PNG of an artboard or of one node, rendered offscreen at the artboard\'s exact size (independent of what the human is looking at). ' +
+      'Image of an artboard or of one node, rendered offscreen at the artboard\'s exact size (independent of what the human is looking at). A PNG, or a JPEG downscaled to 2000 px on the long edge when the PNG is large (a whole tall page; models shrink such images anyway): screenshot a smaller node for detail, or pass exact: true for the lossless full-size PNG. ' +
       'Take one every 2-3 visual groups and at the end, and look at it critically: a correct DOM does not guarantee a correct look ' +
       '(overflow, wrapping, contrast, alignment, spacing). Inner nodes are cropped from their artboard, so inherited styles are correct. ' +
       'scale 2 gives a sharper image for checking small text; it costs 4× the pixels. ' +
@@ -236,7 +237,7 @@ const CORE_TOOLS: ToolDef[] = [
       'On a video page pass video_time_ms (0 … get_timeline total_ms) instead to see the scene playing at that moment of the whole video (node_id then optional). ' +
       'Pass state ("hover", "pressed" or "focus") to render node_id with its interaction-state styles applied, ' +
       'without any pointer; transitions are skipped, so you see the end of the transition. ' +
-      'The text result lists every text layer below its WCAG contrast (4.5:1, 3:1 from 24px / 19px bold) by name with the measured ratio, for flat backdrops; fix each one. ' +
+      'The text result lists every text layer below its WCAG contrast (4.5:1, 3:1 from 24px / 19px bold) by name with the measured ratio, for flat backdrops, also in hover / pressed / focus when a state changes a text or fill color ("on hover"); fix each one. ' +
       'It also lists the five most important design findings (Fix = a frame or layout defect: fix it; Check = an unchosen default asked as a question: keep it only with a reason from the brief) and how many more there are; inspect_design lists all.',
     inputSchema: {
       type: 'object',
@@ -246,6 +247,7 @@ const CORE_TOOLS: ToolDef[] = [
         state: { type: 'string', enum: ['hover', 'pressed', 'focus'], description: 'Render node_id as if hovered / pressed / focused (needs styles set with set_state_styles).' },
         time_ms: { type: 'number', minimum: 0, maximum: 600000, description: 'Show the artboard this many ms into its animations and code layers (delays included). Omit for the finished state.' },
         video_time_ms: { type: 'number', minimum: 0, maximum: 3600000, description: 'Video pages: a moment of the whole video; shows the scene playing then, at its scene time.' },
+        exact: { type: 'boolean', description: 'true: always the lossless PNG at full size (pixel comparisons). Large ones fill up your context; default false.' },
       },
       required: [],
       additionalProperties: false,
@@ -305,10 +307,12 @@ const CORE_TOOLS: ToolDef[] = [
       // The screenshot shows a failed layer's error banner (that is how it is seen); exports refuse such layers, so say so here too.
       const codeFailures = await codeLayerFailures(ctx.editor, [n.id], { waitMs: 1500 });
       const what = n.id === artboardId ? `artboard "${ab.name}"` : `${n.type} "${n.name}" (${n.id}) in "${ab.name}"`;
+      const sent = args['exact'] === true ? { data: shot.png, mimeType: 'image/png' as const, width: shot.width, height: shot.height } : await compactScreenshot(shot.png, shot.width, shot.height);
+      const sentNote = sent.mimeType === 'image/png' ? '' : ` Sent as a ${sent.width}×${sent.height} JPEG to keep the conversation small; for detail screenshot a smaller node (scale 2 for small text), or pass exact: true for the lossless PNG.`;
       return {
         content: [
-          { type: 'image', data: shot.png, mimeType: 'image/png' },
-          { type: 'text', text: `Screenshot of ${what}: ${shot.width}×${shot.height}px at ${scale}x.${state ? ` ${stateArg} state applied.` : ''}${timeMs !== undefined ? ` Frame ${frameIndexAt(timeMs, fps)} at ${fps} fps (${Math.round(frameTimeMs(frameIndexAt(timeMs, fps), fps) * 100) / 100} ms${video ? `; ${video.label}` : ''}): animations and code layers seeked there.` : ''}${note}${missingNote}${overflow ? ` Warning: ${overflow}` : ''}${contrast ? ` Warning: ${contrast}` : ''}${slop ? ` ${slop}` : ''}${codeFailures.length ? ` Warning: ${codeFailureNote(codeFailures)}` : ''}` },
+          { type: 'image', data: sent.data, mimeType: sent.mimeType },
+          { type: 'text', text: `Screenshot of ${what}: ${shot.width}×${shot.height}px at ${scale}x.${sentNote}${state ? ` ${stateArg} state applied.` : ''}${timeMs !== undefined ? ` Frame ${frameIndexAt(timeMs, fps)} at ${fps} fps (${Math.round(frameTimeMs(frameIndexAt(timeMs, fps), fps) * 100) / 100} ms${video ? `; ${video.label}` : ''}): animations and code layers seeked there.` : ''}${note}${missingNote}${overflow ? ` Warning: ${overflow}` : ''}${contrast ? ` Warning: ${contrast}` : ''}${slop ? ` ${slop}` : ''}${codeFailures.length ? ` Warning: ${codeFailureNote(codeFailures)}` : ''}` },
           ...(codeFailures.length ? [{ type: 'text' as const, text: JSON.stringify({ code_errors: codeFailures.map((f) => ({ node_id: f.nodeId, name: f.name, artboard_id: f.artboardId, message: f.message })) }) }] : []),
         ],
       };

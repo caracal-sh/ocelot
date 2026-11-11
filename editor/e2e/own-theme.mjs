@@ -33,7 +33,7 @@ const tool = async (name, a) => {
   return r.content;
 };
 const json = async (name, a) => JSON.parse((await tool(name, a))[0].text);
-const shot = async (ab) => Buffer.from((await tool('get_screenshot', { node_id: ab, scale: 1 })).find((c) => c.type === 'image').data, 'base64');
+const shot = async (ab) => Buffer.from((await tool('get_screenshot', { node_id: ab, scale: 1, exact: true })).find((c) => c.type === 'image').data, 'base64');
 const hash = (b) => createHash('sha1').update(b).digest('hex');
 const fail = (m) => {
   console.error(`FAIL: ${m}`);

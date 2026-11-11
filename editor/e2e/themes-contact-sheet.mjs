@@ -37,7 +37,7 @@ const shots = new Map();
 for (const t of themes) {
   const applied = JSON.parse((await tool('apply_theme', { theme_id: t.id }))[0].text);
   if (applied.contrast_warnings) console.error(`contrast warnings in ${t.id}:`, applied.contrast_warnings);
-  const png = Buffer.from((await tool('get_screenshot', { node_id: ab, scale: 1 })).find((c) => c.type === 'image').data, 'base64');
+  const png = Buffer.from((await tool('get_screenshot', { node_id: ab, scale: 1, exact: true })).find((c) => c.type === 'image').data, 'base64');
   await writeFile(`${OUT}/${t.id}.png`, png);
   shots.set(t.id, { png, name: t.name, mood: t.mood });
 }

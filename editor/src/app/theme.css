@@ -688,9 +688,9 @@ body {
 .at-tab.is-active { color: var(--at-text); background: var(--at-hover); }
 @media (hover: hover) { .at-tab:not(.is-active):hover { color: var(--at-text); } }
 .at-tab { display: inline-flex; align-items: center; gap: 5px; }
-/* A badge on the tab's top-right corner, out of the layout: it appearing never moves the tabs next to it. */
+/* A badge in the tab's top-right corner, inside the pill (it used to straddle the pill's edge), out of the layout: it appearing never moves the tabs next to it. */
 .at-tab:has(> .at-tab__dot) { position: relative; }
-.at-tab__dot { position: absolute; top: 3px; right: -1px; width: 6px; height: 6px; transition: opacity 150ms var(--at-ease-out); }
+.at-tab__dot { position: absolute; top: 4px; right: 3px; width: 5px; height: 5px; transition: opacity 150ms var(--at-ease-out); }
 @starting-style { .at-tab__dot { opacity: 0; } }
 .at-tab__dot[data-state="closed"] { opacity: 0; }
 /* The breathing is on the inner disc so it does not fight the fade of the dot itself. */

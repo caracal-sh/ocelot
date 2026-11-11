@@ -44,12 +44,18 @@ enum AgentLaunch {
     static let subagentConcurrency = 4
     static let bundledAgentsOff = ["scout", "designer", "reviewer", "security-reviewer", "librarian", "sonic"]
 
+    /// Auto-compaction for the sidebar agent, explicit so a person's own omp settings cannot turn it off: at 70% of the model's
+    /// window, first drop recoverable heavy content (old tool results, images: no model call), then summarize. omp's default
+    /// order also tries snapcompact (history as bitmap images: more image bytes). Keep in sync with editor/e2e/agent-sandbox.mjs.
+    static let compactionYml = "compaction:\n  enabled: true\n  thresholdPercent: 70\n  methodOrder:\n    - shake\n    - soft\n"
+
     /// Overlay `config.yml`: MCP tools exposed directly (no `xd://` devices), blocking subagents (the sidebar's turn waits for
-    /// them), only the Ocelot server, and the default model (the private agent dir has no user settings).
+    /// them), only the Ocelot server, auto-compaction, and the default model (the private agent dir has no user settings).
     static func configOverlay(defaultModel: String? = nil, thinkingLevel: String? = nil, extraDisabled: [String] = []) -> String {
         var text = "tools:\n  xdev: false\nasync:\n  enabled: false\ntask:\n  maxConcurrency: \(subagentConcurrency)\n  maxRecursionDepth: 1\n  disabledAgents:\n"
             + bundledAgentsOff.map { "    - \($0)\n" }.joined()
             + "disabledProviders:\n" + (disabledProviders + extraDisabled).map { "  - \($0)\n" }.joined()
+            + compactionYml
         if let defaultModel, !defaultModel.isEmpty { text += "modelRoles:\n  default: \(quoted(defaultModel))\n" }
         if let thinkingLevel, !thinkingLevel.isEmpty { text += "defaultThinkingLevel: \(quoted(thinkingLevel))\n" }
         return text

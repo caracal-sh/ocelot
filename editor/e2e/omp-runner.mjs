@@ -35,6 +35,8 @@ export const ALLOWED_COMMANDS = new Set([
   'remove_queued_message',
   'promote_queued_message',
   'abort_and_restore_queue',
+  // Summarize the conversation in place (the Agent tab's Compact button; also after a request too large to send).
+  'compact',
 ]);
 
 /**
