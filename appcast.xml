@@ -6,6 +6,19 @@
     <description>Ocelot updates</description>
     <language>en</language>
     <item>
+      <title>Ocelot 0.3.6</title>
+      <pubDate>Wed, 11 Nov 2026 09:52:16 +0000</pubDate>
+      <sparkle:version>1012</sparkle:version>
+      <sparkle:shortVersionString>0.3.6</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <description><![CDATA[<ul>
+<li>Conversation history in the agent sidebar. &quot;+&quot; starts a new conversation and keeps the old one; the clock button lists this document's conversations, and opening one continues it with everything the agent knew. Conversations are kept when you close the window or quit, stay outside the document (sharing a file never shares your chats), and can be deleted.</li>
+<li>No accidental stops: starting a new conversation, or switching, while the agent is working asks first.</li>
+<li>A design system made for the task. When a document has no style yet and you give no direction, the agent first creates one for this project: named colours, fonts and corner radii, saved with the document. Everything it draws uses them, so changing a colour or font in Assets › Styles restyles the whole design. Agents can do the same with <code>create_theme</code>.</li>
+</ul>]]></description>
+      <enclosure url="https://github.com/caracal-sh/ocelot/releases/download/v0.3.6/Ocelot-0.3.6.dmg" length="17167356" type="application/octet-stream" sparkle:edSignature="sr1nonfbtMzOeDKJNu3Z9MzTxbBwca5qLOfBO9k8gNR51mnAnJcN2Ua4oOwQBeApZ74Gdq3i0mihhzwZeJaWDw=="/>
+    </item>
+    <item>
       <title>Ocelot 0.3.5</title>
       <pubDate>Wed, 11 Nov 2026 09:05:47 +0000</pubDate>
       <sparkle:version>1011</sparkle:version>
