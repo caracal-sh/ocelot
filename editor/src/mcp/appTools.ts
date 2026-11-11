@@ -46,7 +46,7 @@ export interface AppSettingDef {
 export const APP_SETTINGS: readonly AppSettingDef[] = [
   { key: 'updates.automatic_checks', kind: 'boolean', where: 'Settings > Updates > Automatically check for updates', description: 'Ask GitHub once a day whether a newer version exists. Installing is always the person\'s choice.' },
   { key: 'images.default_model', kind: 'string', where: 'Settings > Images > Default model (also Assets > Providers in the editor)', description: 'Model id used by generate_image when it names none, e.g. "fal-ai/flux/dev"; "" or null = automatic (first available). Must be a model get_app_settings lists as available.' },
-  { key: 'cli.installed', kind: 'boolean', where: 'Settings > MCP > Command-line tool (App menu > Install Command-Line Tool…)', description: 'The `ocelot` command linked into ~/.local/bin. true installs the link, false removes it.' },
+  { key: 'cli.installed', kind: 'boolean', where: 'Settings > MCP > Command-line tool (App menu > Install Command-Line Tool…)', description: 'The `ocelot` command linked into ~/.local/bin (installing also adds that directory to the login shell\'s PATH when no startup file has it). true installs the link, false removes it.' },
   { key: 'agent.unconfined', kind: 'boolean', security: true, where: 'Settings > Agent > Run agent unconfined', description: 'Whether the sidebar agent runs outside its sandbox.' },
   { key: 'mcp.port', kind: 'number', security: true, where: 'Settings > MCP > Port', description: 'The loopback port of the MCP server.' },
   { key: 'mcp.token', kind: 'string', security: true, where: 'Settings > MCP > Token > Regenerate', description: 'The master token (always redacted).' },
@@ -290,7 +290,7 @@ export const APP_TOOLS: readonly AppToolDef[] = [
   {
     name: 'install_command_line_tool',
     title: 'Install the command-line tool',
-    description: 'Links `ocelot` into ~/.local/bin (App menu > Install Command-Line Tool…), or removes the link with remove: true. Same as set_app_settings { "cli.installed": true|false }.',
+    description: 'Links `ocelot` into ~/.local/bin and adds that directory to the login shell\'s PATH if needed (App menu > Install Command-Line Tool…), or removes the link with remove: true. Same as set_app_settings { "cli.installed": true|false }.',
     inputSchema: { type: 'object', properties: { remove: { type: 'boolean' } }, additionalProperties: false },
     readOnly: false,
   },

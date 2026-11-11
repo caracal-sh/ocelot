@@ -311,16 +311,39 @@ final class FrontDoorTests: XCTestCase {
         try FileManager.default.createDirectory(at: bundled.deletingLastPathComponent(), withIntermediateDirectories: true)
         try "#!/bin/sh\n".write(to: bundled, atomically: true, encoding: .utf8)
         try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: bundled.path)
-        let installer = CLIInstaller(bundled: bundled, installDirectory: dir.appendingPathComponent("bin"))
+        let home = dir.appendingPathComponent("home")
+        let installer = CLIInstaller(bundled: bundled, installDirectory: home.appendingPathComponent(".local/bin"), home: home, shell: "/bin/zsh")
         XCTAssertEqual(installer.status, .notInstalled)
         XCTAssertEqual(installer.commandForConfigs, bundled.path)
-        try installer.install()
+        let zshrc = home.appendingPathComponent(".zshrc")
+        try FileManager.default.createDirectory(at: home, withIntermediateDirectories: true)
+        try "alias ll='ls -l'".write(to: zshrc, atomically: true, encoding: .utf8)
+        XCTAssertEqual(try installer.install(), zshrc, "adds the directory to the zsh startup file")
         XCTAssertEqual(installer.status, .installed)
         XCTAssertEqual(installer.commandForConfigs, "ocelot")
-        try installer.install() // idempotent
+        XCTAssertNil(try installer.install(), "idempotent: the PATH line is added once")
+        XCTAssertEqual(try String(contentsOf: zshrc, encoding: .utf8), "alias ll='ls -l'\n\n\(CLIInstaller.pathMarker)\nexport PATH=\"$HOME/.local/bin:$PATH\"\n")
         try installer.uninstall()
         XCTAssertEqual(installer.status, .notInstalled)
         try Data().write(to: installer.link)
         XCTAssertThrowsError(try installer.install(), "never replaces a regular file")
+    }
+
+    func testCLIInstallerLeavesAnExistingPathAloneAndWritesFishSyntax() throws {
+        let bundled = dir.appendingPathComponent("Ocelot.app/Contents/Helpers/ocelot")
+        try FileManager.default.createDirectory(at: bundled.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try "#!/bin/sh\n".write(to: bundled, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: bundled.path)
+        let bashHome = dir.appendingPathComponent("bash-home")
+        try FileManager.default.createDirectory(at: bashHome, withIntermediateDirectories: true)
+        try ". \"$HOME/.local/bin/env\"\n".write(to: bashHome.appendingPathComponent(".profile"), atomically: true, encoding: .utf8)
+        XCTAssertNil(try CLIInstaller(bundled: bundled, home: bashHome, shell: "/bin/bash").install(), "another installer already put ~/.local/bin on PATH")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: bashHome.appendingPathComponent(".bash_profile").path))
+
+        let fishHome = dir.appendingPathComponent("fish-home")
+        let fish = CLIInstaller(bundled: bundled, home: fishHome, shell: "/opt/homebrew/bin/fish")
+        let file = try XCTUnwrap(try fish.install())
+        XCTAssertEqual(file.lastPathComponent, "ocelot.fish")
+        XCTAssertTrue(try String(contentsOf: file, encoding: .utf8).contains("fish_add_path -g \"$HOME/.local/bin\""))
     }
 }

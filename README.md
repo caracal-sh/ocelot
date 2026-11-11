@@ -2,6 +2,14 @@
 
 A macOS design tool where every layer is real HTML and CSS. A local MCP server lets AI agents read and edit the canvas while you work on the same document.
 
+<p align="center">
+  <a href="https://github.com/caracal-sh/ocelot/releases/latest/download/Ocelot.dmg"><strong>Download Ocelot for Mac</strong></a>
+  &nbsp;·&nbsp; macOS 14 or later &nbsp;·&nbsp;
+  <a href="https://github.com/caracal-sh/ocelot/releases">All releases</a>
+</p>
+
+![Ocelot: a design on the canvas, with layers and artboards](.github/ocelot.png)
+
 - **Canvas**: artboards are real web pages (same-origin iframes rendered by WebKit) on an infinite zoom and pan canvas.
 - **Editing**: select, drag, resize, edit text inline, layers, inspector, design tokens, keyboard shortcuts.
 - **Agents**: a built-in agent sidebar and a local MCP server with tools that reach every property a person can edit. Every edit shows up live on the canvas, and one undo reverts an agent's whole batch.
@@ -10,11 +18,22 @@ A macOS design tool where every layer is real HTML and CSS. A local MCP server l
 
 ## Install
 
+1. [Download `Ocelot.dmg`](https://github.com/caracal-sh/ocelot/releases/latest/download/Ocelot.dmg) (signed and notarized by Apple).
+2. Open it and drag **Ocelot** to **Applications**.
+3. Open Ocelot from Applications.
+
+Ocelot updates itself (Settings › Updates). No account is needed.
+
+<details>
+<summary>Install from the terminal instead</summary>
+
 ```sh
 curl -fsSL https://raw.githubusercontent.com/caracal-sh/ocelot/main/scripts/install.sh | bash
 ```
 
-The script downloads the latest release from this repository, verifies its checksum and code signature, copies `Ocelot.app` to `/Applications` and opens it. Ocelot then updates itself (Settings > Updates); the updater needs no account or token.
+The script downloads the latest release, verifies its checksum and code signature, copies `Ocelot.app` to `/Applications` and opens it.
+
+</details>
 
 ## Build from source
 

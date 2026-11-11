@@ -565,7 +565,7 @@
     {
       "name": "install_command_line_tool",
       "title": "Install the command-line tool",
-      "description": "Links `ocelot` into ~/.local/bin (App menu > Install Command-Line Tool…), or removes the link with remove: true. Same as set_app_settings { \"cli.installed\": true|false }.",
+      "description": "Links `ocelot` into ~/.local/bin and adds that directory to the login shell's PATH if needed (App menu > Install Command-Line Tool…), or removes the link with remove: true. Same as set_app_settings { \"cli.installed\": true|false }.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -670,7 +670,7 @@
       "key": "cli.installed",
       "kind": "boolean",
       "where": "Settings > MCP > Command-line tool (App menu > Install Command-Line Tool…)",
-      "description": "The `ocelot` command linked into ~/.local/bin. true installs the link, false removes it."
+      "description": "The `ocelot` command linked into ~/.local/bin (installing also adds that directory to the login shell's PATH when no startup file has it). true installs the link, false removes it."
     },
     {
       "key": "agent.unconfined",

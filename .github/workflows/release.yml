@@ -236,6 +236,9 @@ jobs:
           dmg="build/release/Ocelot-$VERSION.dmg"
           assets=("$dmg" "$dmg.sha256")
           [[ "$EDDSA_SIGNED" == "true" ]] && assets+=("$dmg.eddsa")
+          # The same DMG under a fixed name, so the README can link releases/latest/download/Ocelot.dmg (one click, any version).
+          cp "$dmg" build/release/Ocelot.dmg
+          assets+=(build/release/Ocelot.dmg)
           # Hand-written notes only (release-notes/<version>.md): GitHub's generated notes list PR titles and commit messages. The
           # notes are what users read, on the release page and in the update prompt.
           notes="release-notes/$VERSION.md"

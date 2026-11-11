@@ -320,7 +320,9 @@ struct UpdatesSettingsView: View {
             } header: {
                 Text("Updates")
             } footer: {
-                Text(footer)
+                if let footer {
+                    Text(footer)
+                }
             }
         }
         .formStyle(.grouped)
@@ -334,14 +336,9 @@ struct UpdatesSettingsView: View {
         return service.lastCheck.map { "Last checked \($0.formatted(date: .abbreviated, time: .shortened))" } ?? "Never checked"
     }
 
-    private var footer: String {
-        guard service.isConfigured else {
-            return "This build has no update feed (development and unsigned builds never contact an update server). Install releases with the script in the README."
-        }
-        let when = "When on, Ocelot asks GitHub once a day whether a newer version exists (the request carries the app and macOS version, nothing about your documents); you always choose whether to download and install. The first time, Ocelot asks before checking automatically."
-        if service.config?.needsAuth == false {
-            return "Updates come from Ocelot's public GitHub releases: no sign-in, and requests go only to GitHub (raw.githubusercontent.com, github.com). \(when)"
-        }
-        return "Ocelot's releases are private, so updates use your GitHub CLI sign-in (gh auth login): the token is read for each check, kept in memory only, and sent only to GitHub (api.github.com, raw.githubusercontent.com). \(when)"
+    /// Public builds need no explanation; the other two cases say why updates behave differently.
+    private var footer: String? {
+        guard service.isConfigured else { return "This build doesn't check for updates." }
+        return service.config?.needsAuth == true ? "Updates use your GitHub CLI sign-in (gh auth login)." : nil
     }
 }

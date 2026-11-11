@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { buildItem, enclosureUrl, parseNeedsAuth, renderFeed } from '../../scripts/release/appcast.mjs';
+import { buildItem, enclosureUrl, markdownToHtml, parseNeedsAuth, renderFeed } from '../../scripts/release/appcast.mjs';
 
 const releaseDir = fileURLToPath(new URL('../../scripts/release/', import.meta.url));
 const APPCAST = join(releaseDir, 'appcast.mjs');
@@ -35,6 +35,17 @@ describe('appcast enclosure', () => {
 
   it('names the repo in the feed link', () => {
     expect(renderFeed([], REPO)).toContain(`<link>https://github.com/${REPO}</link>`);
+  });
+
+  it('carries release notes as one inline HTML fragment in <description> (what Sparkle renders), no notes link, no document or script', () => {
+    const notes = markdownToHtml('Intro with `code` and **bold**.\n\n### Group\n- one ]]> two\n- <b>raw</b>');
+    const xml = buildItem(item({ notesHtml: notes }));
+    expect(xml).toMatch(/<description><!\[CDATA\[[\s\S]*\]\]><\/description>/);
+    expect(xml.match(/<description>/g)).toHaveLength(1);
+    expect(xml).not.toContain('releaseNotesLink');
+    expect(notes).toBe('<p>Intro with <code>code</code> and <strong>bold</strong>.</p>\n<h4>Group</h4>\n<ul>\n<li>one ]]&gt; two</li>\n<li>&lt;b&gt;raw&lt;/b&gt;</li>\n</ul>');
+    expect(notes).not.toMatch(/<(html|head|body|script|style)\b/i);
+    expect(buildItem(item({ notesHtml: 'a ]]> b' }))).toContain('a ]]]]><![CDATA[> b');
   });
 });
 
