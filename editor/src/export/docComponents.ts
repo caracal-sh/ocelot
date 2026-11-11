@@ -18,7 +18,8 @@
 
 import type { OcelotDocument } from '../model/document';
 import { isPlacementProp, propDefault, resolveOverrides } from '../model/components';
-import type { AttrMap, ComponentDef, ComponentProp, NodeData, NodeOverride, Overrides, PropValue, StyleMap } from '../model/types';
+import { linkEquals } from '../model/links';
+import type { AttrMap, ComponentDef, ComponentProp, NodeData, NodeLink, NodeOverride, Overrides, PropValue, StyleMap } from '../model/types';
 import { componentName, jsxStyleEntries } from './jsx';
 import { stylesToTailwind } from './tailwind';
 import type { ThemeUtilities } from './themeCss';
@@ -58,6 +59,8 @@ export interface ResolvedNode {
   attrs: AttrMap;
   text: string;
   html: string;
+  /** The prototype link the layer has in this instance (its own override, else the main's). */
+  link: NodeLink | null;
 }
 
 /** The main root's styles as an instance root has them: without the placement properties, which belong to the instance. */
@@ -75,7 +78,14 @@ export function resolveNode(n: NodeData, ov: NodeOverride | undefined, root: boo
     text = ov.text;
     html = '';
   }
-  return { hidden: ov?.hidden ?? n.hidden, styles: { ...(root ? stripPlacement(n.styles) : n.styles), ...ov?.styles }, attrs: { ...n.attrs, ...ov?.attrs }, text, html };
+  return {
+    hidden: ov?.hidden ?? n.hidden,
+    styles: { ...(root ? stripPlacement(n.styles) : n.styles), ...ov?.styles },
+    attrs: { ...n.attrs, ...ov?.attrs },
+    text,
+    html,
+    link: ov?.link !== undefined ? ov.link || null : n.link,
+  };
 }
 
 function mergeOverride(a: NodeOverride | undefined, b: NodeOverride | undefined): NodeOverride | undefined {
@@ -91,6 +101,7 @@ function mergeOverride(a: NodeOverride | undefined, b: NodeOverride | undefined)
     delete out.text;
   }
   if (b.hidden !== undefined) out.hidden = b.hidden;
+  if (b.link !== undefined) out.link = b.link;
   if (b.attrs) out.attrs = { ...a.attrs, ...b.attrs };
   if (b.styles) out.styles = { ...a.styles, ...b.styles };
   return out;
@@ -428,6 +439,8 @@ function diffResolved(a: ResolvedNode, b: ResolvedNode, root: boolean): string[]
   // The root's visibility, styles and attributes belong to the instance (placement, size, `href`): they become the usage's own props.
   if (root) return out;
   if (a.hidden !== b.hidden) out.push('hidden');
+  // A link of the instance's own (a nav item pointing elsewhere on this screen) is not a prop: the usage stays inline.
+  if (!linkEquals(a.link, b.link)) out.push('link');
   for (const k of new Set([...Object.keys(a.styles), ...Object.keys(b.styles)])) if (a.styles[k] !== b.styles[k]) out.push(k);
   for (const k of new Set([...Object.keys(a.attrs), ...Object.keys(b.attrs)])) if (a.attrs[k] !== b.attrs[k]) out.push(k);
   return out;
@@ -485,14 +498,18 @@ export function analyzeInstance(doc: OcelotDocument, plan: ComponentPlan, instan
   const full = resolveOverrides(def, { component: def.id, props: inst.props, overrides: explicit });
   const only = resolveOverrides(def, { component: def.id, props });
   const residual: string[] = [];
+  let propable = false;
   for (const id of new Set([...Object.keys(full), ...Object.keys(only)])) {
     const main = doc.get(id);
     if (!main) continue;
-    const fields = diffResolved(resolveNode(main, full[id], id === def.root), resolveNode(main, only[id], id === def.root), id === def.root);
-    if (fields.length) residual.push(`“${main.name}” ${[...new Set(fields)].slice(0, 4).join(', ')}`);
+    const fields = [...new Set(diffResolved(resolveNode(main, full[id], id === def.root), resolveNode(main, only[id], id === def.root), id === def.root))];
+    if (fields.some((f) => f !== 'link')) propable = true;
+    if (fields.length) residual.push(`“${main.name}” ${fields.slice(0, 4).join(', ')}`);
   }
   if (residual.length) {
-    return { ok: false, reason: `it overrides ${residual.slice(0, 3).join('; ')}${residual.length > 3 ? '…' : ''}, which no prop of ${def.name} covers (add a prop with update_component to export <${plan.name} … />).` };
+    // A link of the instance's own has no prop to carry it, so only the other fields get the update_component advice.
+    const hint = propable ? `which no prop of ${def.name} covers (add a prop with update_component to export <${plan.name} … />)` : `a link of its own that props cannot carry (link the main's layer instead to export <${plan.name} … />)`;
+    return { ok: false, reason: `it overrides ${residual.slice(0, 3).join('; ')}${residual.length > 3 ? '…' : ''}, ${hint}.` };
   }
 
   // The instance root: what it holds beyond what the component renders on its own.

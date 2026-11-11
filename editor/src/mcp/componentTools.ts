@@ -298,7 +298,7 @@ export function componentNodeInfo(doc: OcelotDocument, id: string): Record<strin
       name: info.component.name,
       main_node_id: p.of,
       overridden: overrideFieldNames(info.overrides[p.of] ?? {}),
-      next: `This layer is mirrored from the main "${info.component.name}" (${info.mainRoot}). Use set_instance on ${p.instanceId} for text, images, visibility and colours; edit ${p.of} in the main to change it everywhere.`,
+      next: `This layer is mirrored from the main "${info.component.name}" (${info.mainRoot}). Use set_instance on ${p.instanceId} for text, images, visibility and colours, and set_link on this layer for this instance's own link; edit ${p.of} in the main to change it everywhere.`,
     };
   }
   const main = doc.mainsContaining(id)[0];
@@ -533,7 +533,7 @@ export const COMPONENT_TOOLS: ToolDef[] = [
     readOnly: false,
     description:
       'Sends instances back to what the main says. With no options everything is reset (props and every override) except where the instance sits and how big it is (its own position, margins, width and height set on the instance itself). ' +
-      'targets limits it to layers (ids or unique names), fields to kinds of override ("text", "html", "hidden", "attrs", "styles", or "attr:src" / "style:color"), props: true resets all props, or a list of prop names.',
+      'targets limits it to layers (ids or unique names), fields to kinds of override ("text", "html", "hidden", "link", "attrs", "styles", or "attr:src" / "style:color"), props: true resets all props, or a list of prop names.',
     inputSchema: {
       type: 'object',
       properties: {

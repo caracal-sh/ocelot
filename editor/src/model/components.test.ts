@@ -240,6 +240,40 @@ describe('overrides', () => {
     expect(doc.overridesOf(a)).toEqual({});
   });
 
+  it('a layer inside an instance takes its own link: other instances and the main keep theirs, and the main\'s link again follows the main', () => {
+    const { doc, ops, history, label, place, partOf } = setup();
+    const pricing = doc.ops(ORIGIN.system).createArtboard({ name: 'Pricing', width: 800, height: 600 });
+    const signup = doc.ops(ORIGIN.system).createArtboard({ name: 'Signup', width: 800, height: 600 });
+    ops.setLink(label, { artboard: pricing });
+    const [a, b] = [place(), place()];
+    const [pa, pb] = [partOf(a, label), partOf(b, label)];
+    expect([doc.require(pa).link, doc.require(pb).link]).toEqual([{ artboard: pricing }, { artboard: pricing }]);
+
+    ops.setLink(pa, { artboard: signup });
+    expect(doc.require(pa).link).toEqual({ artboard: signup });
+    expect(doc.overridesOf(a)[label]).toEqual({ link: { artboard: signup } });
+    // The other instance and the main are untouched, and a later change to the main reaches only the one that follows it.
+    ops.setLink(label, { url: 'https://example.com' });
+    expect([doc.require(pa).link, doc.require(pb).link]).toEqual([{ artboard: signup }, { url: 'https://example.com' }]);
+
+    // No link on this instance although the main has one; then the main's link again: the override goes, it follows the main.
+    ops.setLink(pb, null);
+    expect(doc.require(pb).link).toBeNull();
+    expect(doc.overridesOf(b)[label]).toEqual({ link: false });
+    ops.setLink(pb, { url: 'https://example.com' });
+    expect(doc.overridesOf(b)).toEqual({});
+
+    // Survives a save and load; reset_instance with fields: ["link"] clears it; undo brings it back.
+    const loaded = decodeDocument(encodeDocument(doc));
+    expect(loaded.require(pa).link).toEqual({ artboard: signup });
+    history.breakHumanStep();
+    ops.resetInstance(a, { fields: ['link'] });
+    expect(doc.require(pa).link).toEqual({ url: 'https://example.com' });
+    history.undo();
+    expect(doc.require(pa).link).toEqual({ artboard: signup });
+    expect(checkInvariants(doc)).toEqual([]);
+  });
+
   it('an instance root can still be renamed, hidden, locked, linked, moved, duplicated and deleted', () => {
     const { doc, ops, ab, place } = setup();
     const a = place();

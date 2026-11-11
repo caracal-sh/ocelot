@@ -184,6 +184,8 @@ export interface NodeOverride {
   hidden?: boolean;
   attrs?: Record<string, string>;
   styles?: Record<string, string>;
+  /** This instance's own prototype link on the layer (a nav item, a button); false = no link here although the main has one. */
+  link?: NodeLink | false;
 }
 
 /** Overrides keyed by main-subtree node id (the main root's id keys the instance's own root). */

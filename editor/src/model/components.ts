@@ -26,6 +26,7 @@ import {
   type ComponentProp,
   type InstanceData,
   type NodeData,
+  type NodeLink,
   type NodeOverride,
   type NodeSpec,
   type NodeType,
@@ -255,6 +256,7 @@ function mergeOverride(entry: NodeOverride | undefined, patch: NodeOverride): No
     delete out.text;
   }
   if (patch.hidden !== undefined) out.hidden = patch.hidden;
+  if (patch.link !== undefined) out.link = patch.link;
   if (patch.attrs) out.attrs = { ...(out.attrs ?? {}), ...patch.attrs };
   if (patch.styles) out.styles = { ...(out.styles ?? {}), ...patch.styles };
   return out;
@@ -341,8 +343,10 @@ function applyFields(ops: DocumentOps, n: YNode, src: NodeData, ov: NodeOverride
   if (!root) {
     const hidden = ov?.hidden ?? src.hidden;
     if ((n.get('hidden') === true) !== hidden) n.set('hidden', hidden);
-    if (!linkEquals(readLink(n.get('link')), src.link)) {
-      if (src.link) n.set('link', normalizeLink(src.link));
+    // An instance's own link on the layer wins; false means "no link here" although the main has one.
+    const link = ov?.link !== undefined ? ov.link || null : src.link;
+    if (!linkEquals(readLink(n.get('link')), link)) {
+      if (link) n.set('link', normalizeLink(link));
       else n.delete('link');
     }
   }
@@ -698,6 +702,8 @@ export interface OverridePatch {
   hidden?: boolean | null;
   attrs?: Record<string, string | null>;
   styles?: Record<string, string | null>;
+  /** A link of this instance's own (false: none here); null follows the main again. */
+  link?: NodeLink | false | null;
 }
 
 export type OverrideInput = OverridePatch & { target: string };
@@ -809,6 +815,11 @@ export function normalizePatch(doc: OcelotDocument, def: ComponentLike, key: str
     }
     out.styles = styles;
   }
+  if (raw.link !== undefined) {
+    nul(raw.link, 'link');
+    if (root) throw new ModelError('invalid_argument', `The instance itself carries its own link: set it with set_link on the instance ${label}, not as an override.`);
+    out.link = raw.link === null || raw.link === false ? raw.link : (normalizeLink(raw.link, `link of ${label}`) as NodeLink);
+  }
   return out;
 }
 
@@ -832,6 +843,10 @@ function applyPatch(entry: NodeOverride | undefined, patch: OverridePatch): Node
   if (patch.hidden !== undefined) {
     if (patch.hidden === null) delete out.hidden;
     else out.hidden = patch.hidden;
+  }
+  if (patch.link !== undefined) {
+    if (patch.link === null) delete out.link;
+    else out.link = patch.link;
   }
   for (const group of ['attrs', 'styles'] as const) {
     const p = patch[group];
@@ -953,6 +968,7 @@ function clearField(overrides: Overrides, node: string, field: string): void {
     delete e.text;
     delete e.html;
   } else if (field === 'hidden') delete e.hidden;
+  else if (field === 'link') delete e.link;
   else if (field.startsWith('attr:') && e.attrs) {
     delete e.attrs[field.slice(5)];
     if (!Object.keys(e.attrs).length) delete e.attrs;
@@ -975,6 +991,7 @@ export function overrideFieldNames(e: NodeOverride): string[] {
   if (e.text !== undefined) out.push('text');
   if (e.html !== undefined) out.push('html');
   if (e.hidden !== undefined) out.push('hidden');
+  if (e.link !== undefined) out.push('link');
   for (const k of Object.keys(e.attrs ?? {})) out.push(`attr:${k}`);
   for (const k of Object.keys(e.styles ?? {})) out.push(`style:${k}`);
   return out;
@@ -995,8 +1012,8 @@ export function resetInstance(ops: DocumentOps, instanceId: string, opts: ResetO
   const full = !opts.targets?.length && !opts.fields?.length;
   const targets = opts.targets?.length ? opts.targets.map((t) => resolveTarget(doc, def, t, instanceId)) : Object.keys(inst.overrides ?? {});
   for (const f of opts.fields ?? []) {
-    if (!['text', 'html', 'hidden', 'attrs', 'styles'].includes(f) && !f.startsWith('attr:') && !f.startsWith('style:')) {
-      throw new ModelError('invalid_argument', `Unknown field "${f}". Use text, html, hidden, attrs, styles, or attr:NAME / style:NAME (e.g. style:color).`);
+    if (!['text', 'html', 'hidden', 'link', 'attrs', 'styles'].includes(f) && !f.startsWith('attr:') && !f.startsWith('style:')) {
+      throw new ModelError('invalid_argument', `Unknown field "${f}". Use text, html, hidden, link, attrs, styles, or attr:NAME / style:NAME (e.g. style:color).`);
     }
   }
   const overrides: Overrides = structuredClone(inst.overrides ?? {});

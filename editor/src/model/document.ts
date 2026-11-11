@@ -1253,11 +1253,11 @@ export class DocumentOps {
   /**
    * Sets (or, with null, clears) a layer's prototype link. An internal link must name an existing artboard; later deleting
    * that artboard leaves the link stored but "missing" (undo of the delete restores it). Artboards cannot carry links:
-   * link a layer inside the screen.
+   * link a layer inside the screen. On a layer inside a component instance (a nav item of a shared nav) the link is this
+   * instance's own override: other instances keep theirs, and setting the main's link again follows the main.
    */
   setLink(id: string, link: NodeLink | null): void {
     const n = this.doc.ynode(id);
-    refuseInstanceLayer(this.doc, id, 'its link is mirrored from the main', true);
     const type = n.get('type') as NodeType;
     if (type === 'artboard') {
       throw new ModelError('invalid_argument', `"${id}" is an artboard; screens cannot carry a link. Link a layer inside it (a button, nav item or card) with set_link.`);
@@ -1265,6 +1265,13 @@ export class DocumentOps {
     const next = normalizeLink(link);
     if (next && isInternalLink(next) && this.doc.nodes.get(next.artboard)?.get('type') !== 'artboard') {
       throw new ModelError('not_found', `Artboard "${next.artboard}" does not exist, so "${id}" cannot link to it. Call list_pages or get_links for current artboard ids, or link to { url } instead.`);
+    }
+    if (instanceLayerKind(this.doc, id) === 'part') {
+      const part = partInfo(this.doc, id);
+      const mainLink = part ? readLink(this.doc.nodes.get(part.of)?.get('link')) : null;
+      // The main's own link again: follow the main (null clears the override); else this instance's link, or false for none.
+      routeToOverride(this, id, { link: linkEquals(mainLink, next) ? null : (next ?? false) });
+      return;
     }
     if (linkEquals(readLink(n.get('link')), next)) return;
     this.transact(() => {
