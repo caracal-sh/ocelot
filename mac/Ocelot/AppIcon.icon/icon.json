@@ -1,17 +1,46 @@
 {
   "fill": {
-    "solid": "srgb:0.04706,0.04314,0.03922,1.00000"
+    "linear-gradient": [
+      "srgb:0.12941,0.10196,0.07843,1.00000",
+      "srgb:0.04706,0.04314,0.03922,1.00000"
+    ],
+    "orientation": {
+      "start": {
+        "x": 0.5,
+        "y": 0
+      },
+      "stop": {
+        "x": 0.5,
+        "y": 1
+      }
+    }
   },
   "groups": [
     {
       "layers": [
         {
-          "glass": true,
+          "fill": {
+            "linear-gradient": [
+              "srgb:0.96863,0.78431,0.38431,1.00000",
+              "srgb:0.91765,0.65882,0.19608,1.00000"
+            ],
+            "orientation": {
+              "start": {
+                "x": 0.5,
+                "y": 0
+              },
+              "stop": {
+                "x": 0.5,
+                "y": 1
+              }
+            }
+          },
+          "glass": false,
           "hidden": false,
           "image-name": "ocelot-head.svg",
           "name": "ocelot-head",
           "position": {
-            "scale": 0.92,
+            "scale": 0.84,
             "translation-in-points": [
               0,
               0
