@@ -1,0 +1,9 @@
+/* The studio's preset code field (DsPresetCode.tsx). Sits above the knobs, inside the same .ds-knob rhythm. */
+.ds-preset { margin: 0 14px; }
+.ds-preset__row { display: flex; gap: 6px; }
+.ds-preset__field { flex: 1; min-width: 0; font-family: var(--at-font-mono); }
+.ds-studio .ds-preset__field, .ds-studio .ds-preset__row .at-btn { height: 24px; }
+.ds-preset__field[aria-invalid="true"], .ds-preset__field[aria-invalid="true"]:focus { border-color: var(--at-danger); }
+.ds-preset__code { font-family: var(--at-font-mono); }
+.ds-preset__copy { align-self: flex-start; }
+.ds-preset__note { margin: 0; }

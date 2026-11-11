@@ -1,0 +1,8 @@
+{
+  "status": "COMPLETED",
+  "request_id": "764cabcf-b745-4b3e-ae38-1200304cf45b",
+  "response_url": "https://queue.fal.run/fal-ai/flux/requests/764cabcf-b745-4b3e-ae38-1200304cf45b",
+  "logs": [],
+  "error": "The prompt was rejected by the content checker.",
+  "error_type": "content_policy_violation"
+}

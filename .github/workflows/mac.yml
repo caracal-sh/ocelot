@@ -1,0 +1,55 @@
+name: macOS app
+
+# The Swift host: generate the Xcode project, build the Release app with the bundled editor, run the XCTest suite.
+# Pull requests from forks run this too: it needs no secrets and gets a read-only token.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: mac-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  macos:
+    name: macOS app (xcodegen, build, XCTest)
+    runs-on: macos-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      # bun installs and runs the scripts; Node stays the runtime (package bins keep their node shebang).
+      - uses: oven-sh/setup-bun@v2.2.0
+        with:
+          bun-version: 1.4.4
+      - uses: actions/cache@v6
+        with:
+          path: ~/.bun/install/cache
+          key: bun-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('editor/bun.lock') }}
+
+      # The app icon needs the newest Xcode the image carries (Icon Composer documents need Xcode 26 or later).
+      - name: Select the newest stable Xcode
+        run: |
+          set -euo pipefail
+          xcode="$(printf '%s\n' /Applications/Xcode_[0-9]*.app | grep -viE 'beta|_rc|release_candidate' | sort -V | tail -n1 || true)"
+          if [[ -d "$xcode" ]]; then
+            sudo xcode-select -s "$xcode/Contents/Developer"
+          else
+            echo "::warning::No versioned Xcode found on this runner image; building with the default Xcode."
+          fi
+          xcodebuild -version
+
+      - run: brew install xcodegen
+      - run: xcodegen --version
+      - run: make build
+      - name: Check the editor is bundled
+        run: test -f build/DerivedData/Build/Products/Release/Ocelot.app/Contents/Resources/dist/index.html
+      - run: make test-swift

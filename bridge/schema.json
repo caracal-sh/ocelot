@@ -1,0 +1,653 @@
+{
+  "$comment": "Single source of truth for Swift <-> TS bridge messages. Edit this file, then run `make gen` (or `bun run gen:bridge` in /editor). Field types: string | number | integer | boolean | json | <TypeName>, optionally suffixed with [] (array) and/or ? (optional).",
+  "version": 1,
+  "names": {
+    "$comment": "JS identifiers used by the transport. messageHandler: window.webkit.messageHandlers.<name> (TS -> Swift). editorGlobal: window.<name>.dispatch(json) (Swift -> TS).",
+    "messageHandler": "ocelotBridge",
+    "editorGlobal": "__ocelotEditor"
+  },
+  "errorCodes": [
+    "timeout",
+    "unknown_method",
+    "invalid_params",
+    "internal",
+    "host_unavailable",
+    "cancelled"
+  ],
+  "types": {
+    "Empty": {},
+    "PingParams": {
+      "message": "string"
+    },
+    "PingResult": {
+      "message": "string",
+      "from": "string",
+      "version": "string",
+      "receivedAt": "number"
+    },
+    "HostInfo": {
+      "appName": "string",
+      "appVersion": "string",
+      "build": "string",
+      "devMode": "boolean",
+      "osVersion": "string"
+    },
+    "LogParams": {
+      "level": "string",
+      "message": "string",
+      "data": "json?"
+    },
+    "DocumentFile": {
+      "format": "string",
+      "version": "integer",
+      "name": "string",
+      "savedAt": "string",
+      "yjs": "string",
+      "tree": "json",
+      "projectId": "string?",
+      "currentPageId": "string?"
+    },
+    "ProjectInfo": {
+      "projectId": "string",
+      "name": "string"
+    },
+    "LoadDocumentParams": {
+      "file": "DocumentFile",
+      "name": "string?"
+    },
+    "SetNameParams": {
+      "name": "string"
+    },
+    "DocumentChangedParams": {
+      "name": "string",
+      "revision": "integer"
+    },
+    "StartAttachment": {
+      "kind": "string",
+      "name": "string",
+      "mimeType": "string",
+      "dataBase64": "string?",
+      "text": "string?"
+    },
+    "StartWithPromptParams": {
+      "prompt": "string",
+      "attachments": "StartAttachment[]?"
+    },
+    "StartWithPromptResult": {
+      "started": "boolean"
+    },
+    "PreviewResult": {
+      "png": "string?"
+    },
+    "HistoryResult": {
+      "applied": "boolean",
+      "actor": "string?",
+      "label": "string?"
+    },
+    "McpMessage": {
+      "body": "string",
+      "client": "string?",
+      "readOnly": "boolean?"
+    },
+    "McpReply": {
+      "body": "string?"
+    },
+    "SnapshotRequest": {
+      "html": "string",
+      "width": "number",
+      "height": "number",
+      "scale": "number",
+      "nodeId": "string?",
+      "transparent": "boolean?"
+    },
+    "SnapshotResult": {
+      "png": "string",
+      "width": "integer",
+      "height": "integer",
+      "contentWidth": "number",
+      "contentHeight": "number"
+    },
+    "FontList": {
+      "families": "string[]"
+    },
+    "McpStatus": {
+      "url": "string",
+      "token": "string",
+      "command": "string",
+      "running": "boolean",
+      "error": "string?"
+    },
+    "McpClientConfigParams": {
+      "client": "string"
+    },
+    "McpClientConfig": {
+      "client": "string",
+      "text": "string",
+      "running": "boolean",
+      "error": "string?"
+    },
+    "WindowChromeParams": {
+      "leadingInset": "integer",
+      "title": "string",
+      "edited": "boolean"
+    },
+    "CopyTextParams": {
+      "text": "string"
+    },
+    "OpenUrlParams": {
+      "url": "string"
+    },
+    "PresentParams": {
+      "active": "boolean?",
+      "presenter": "boolean?",
+      "display": "string?"
+    },
+    "PresentResult": {
+      "active": "boolean"
+    },
+    "PresenterScreen": {
+      "id": "string",
+      "name": "string",
+      "x": "number",
+      "y": "number",
+      "width": "number",
+      "height": "number",
+      "scale": "number",
+      "maxFps": "number",
+      "primary": "boolean",
+      "holdsEditor": "boolean"
+    },
+    "PresenterScreens": {
+      "screens": "PresenterScreen[]"
+    },
+    "PresenterOpenParams": {
+      "screenId": "string",
+      "windowed": "boolean?"
+    },
+    "PresenterOpenResult": {
+      "screenId": "string",
+      "windowed": "boolean"
+    },
+    "PresenterPushParams": {
+      "message": "string"
+    },
+    "PresenterEventParams": {
+      "type": "string"
+    },
+    "AgentInfo": {
+      "available": "boolean",
+      "loggedIn": "boolean",
+      "version": "string?",
+      "path": "string?",
+      "error": "string?",
+      "models": "json?",
+      "isolation": "string?",
+      "warning": "string?",
+      "gatewayPort": "integer?",
+      "installer": "string?",
+      "installCommand": "string?"
+    },
+    "AgentStartParams": {
+      "processId": "string",
+      "systemPrompt": "string",
+      "model": "string?",
+      "thinking": "string?"
+    },
+    "AgentSendParams": {
+      "processId": "string",
+      "command": "json"
+    },
+    "AgentProcessId": {
+      "processId": "string"
+    },
+    "AgentEventParams": {
+      "processId": "string",
+      "lines": "string[]",
+      "done": "boolean",
+      "exitCode": "integer?",
+      "stderr": "string?"
+    },
+    "AssetRecord": {
+      "id": "string",
+      "ext": "string",
+      "mime": "string",
+      "bytes": "integer",
+      "width": "integer?",
+      "height": "integer?",
+      "created": "string",
+      "kind": "string",
+      "name": "string?",
+      "prompt": "string?",
+      "provider": "string?",
+      "model": "string?",
+      "seed": "integer?",
+      "sources": "string[]?",
+      "params": "json?"
+    },
+    "AssetList": {
+      "assets": "AssetRecord[]"
+    },
+    "AssetIdParams": {
+      "id": "string"
+    },
+    "AssetIdsParams": {
+      "ids": "string[]"
+    },
+    "AssetData": {
+      "id": "string",
+      "mime": "string",
+      "base64": "string"
+    },
+    "AssetImportParams": {
+      "base64": "string",
+      "name": "string?",
+      "kind": "string?",
+      "prompt": "string?",
+      "provider": "string?",
+      "model": "string?",
+      "sources": "string[]?",
+      "params": "json?"
+    },
+    "ImageModelInfo": {
+      "id": "string",
+      "provider": "string",
+      "model": "string",
+      "label": "string",
+      "capabilities": "string[]",
+      "aspects": "string[]?",
+      "maxN": "integer?",
+      "cost": "string?",
+      "note": "string?",
+      "available": "boolean",
+      "unavailableReason": "string?"
+    },
+    "ImageProviderInfo": {
+      "id": "string",
+      "label": "string",
+      "status": "string",
+      "detail": "string",
+      "models": "ImageModelInfo[]",
+      "keyStored": "boolean?",
+      "setup": "string?"
+    },
+    "ImageProviderList": {
+      "providers": "ImageProviderInfo[]",
+      "defaultModel": "string?"
+    },
+    "ImageGenerateParams": {
+      "requestId": "string",
+      "operation": "string",
+      "model": "string",
+      "prompt": "string",
+      "aspect": "string?",
+      "size": "string?",
+      "n": "integer",
+      "background": "string",
+      "quality": "string?",
+      "seed": "integer?",
+      "references": "string[]?",
+      "mask": "string?",
+      "cropToSubject": "boolean?"
+    },
+    "ImageGenerateResult": {
+      "assets": "AssetRecord[]",
+      "warnings": "string[]",
+      "elapsedMs": "integer"
+    },
+    "ImageRequestId": {
+      "requestId": "string"
+    },
+    "ImageSetKeyParams": {
+      "provider": "string",
+      "key": "string?"
+    },
+    "ImageSetDefaultParams": {
+      "model": "string?"
+    },
+    "ImageProgressParams": {
+      "requestId": "string",
+      "stage": "string",
+      "message": "string",
+      "fraction": "number?"
+    },
+    "ExportFile": {
+      "path": "string",
+      "text": "string?",
+      "assetId": "string?",
+      "font": "string?",
+      "base64": "string?"
+    },
+    "ExportSaveParams": {
+      "name": "string",
+      "files": "ExportFile[]"
+    },
+    "ExportSaveResult": {
+      "path": "string",
+      "cancelled": "boolean?"
+    },
+    "ExportItem": {
+      "file": "string",
+      "html": "string",
+      "width": "number",
+      "height": "number",
+      "nodeId": "string?",
+      "transparent": "boolean?",
+      "notes": "string?"
+    },
+    "ExportRunParams": {
+      "runId": "string",
+      "kind": "string",
+      "scale": "number",
+      "destination": "string",
+      "suggestedName": "string",
+      "previews": "integer?",
+      "items": "ExportItem[]"
+    },
+    "ExportedFile": {
+      "name": "string",
+      "path": "string",
+      "bytes": "integer",
+      "width": "integer",
+      "height": "integer",
+      "pages": "integer?",
+      "preview": "string?"
+    },
+    "ExportRunResult": {
+      "files": "ExportedFile[]",
+      "folder": "string?",
+      "copied": "boolean?",
+      "cancelled": "boolean?",
+      "warnings": "string[]?"
+    },
+    "ExportWriteFileParams": {
+      "name": "string",
+      "dataBase64": "string",
+      "destination": "string",
+      "runId": "string",
+      "width": "integer?",
+      "height": "integer?",
+      "pages": "integer?"
+    },
+    "ExportCancelParams": {
+      "runId": "string"
+    },
+    "VideoFile": {
+      "path": "string",
+      "mime": "string",
+      "text": "string?",
+      "base64": "string?"
+    },
+    "VideoExportParams": {
+      "runId": "string",
+      "destination": "string",
+      "suggestedName": "string",
+      "codec": "string",
+      "width": "number",
+      "height": "number",
+      "outWidth": "integer",
+      "outHeight": "integer",
+      "fps": "integer",
+      "startFrame": "integer",
+      "frameCount": "integer",
+      "alpha": "boolean",
+      "entry": "string",
+      "files": "VideoFile[]",
+      "previews": "integer?"
+    },
+    "VideoExportResult": {
+      "files": "ExportedFile[]",
+      "folder": "string?",
+      "cancelled": "boolean?",
+      "warnings": "string[]?",
+      "frameHashes": "string[]",
+      "previews": "string[]",
+      "elapsedMs": "integer",
+      "renderFps": "number",
+      "workers": "integer"
+    },
+    "ExportProgressParams": {
+      "runId": "string",
+      "done": "integer",
+      "total": "integer",
+      "message": "string"
+    },
+    "AgentActivityParams": {
+      "client": "string",
+      "message": "string"
+    }
+  },
+  "host": {
+    "$comment": "Implemented by the Swift host, called by the editor.",
+    "host.ping": {
+      "params": "PingParams",
+      "result": "PingResult"
+    },
+    "host.getInfo": {
+      "params": "Empty",
+      "result": "HostInfo"
+    },
+    "host.log": {
+      "params": "LogParams",
+      "result": "Empty"
+    },
+    "host.documentChanged": {
+      "params": "DocumentChangedParams",
+      "result": "Empty"
+    },
+    "host.renderSnapshot": {
+      "params": "SnapshotRequest",
+      "result": "SnapshotResult"
+    },
+    "host.listFonts": {
+      "params": "Empty",
+      "result": "FontList"
+    },
+    "host.getMcpStatus": {
+      "params": "Empty",
+      "result": "McpStatus"
+    },
+    "host.getMcpClientConfig": {
+      "params": "McpClientConfigParams",
+      "result": "McpClientConfig"
+    },
+    "host.copyText": {
+      "params": "CopyTextParams",
+      "result": "Empty"
+    },
+    "host.openURL": {
+      "params": "OpenUrlParams",
+      "result": "Empty"
+    },
+    "host.windowToggleFullScreen": {
+      "params": "Empty",
+      "result": "Empty"
+    },
+    "host.presenterListScreens": {
+      "params": "Empty",
+      "result": "PresenterScreens"
+    },
+    "host.presenterOpenAudience": {
+      "params": "PresenterOpenParams",
+      "result": "PresenterOpenResult"
+    },
+    "host.presenterPush": {
+      "params": "PresenterPushParams",
+      "result": "Empty"
+    },
+    "host.presenterClose": {
+      "params": "Empty",
+      "result": "Empty"
+    },
+    "host.windowDrag": {
+      "params": "Empty",
+      "result": "Empty"
+    },
+    "host.windowTitlebarDoubleClick": {
+      "params": "Empty",
+      "result": "Empty"
+    },
+    "host.agentStatus": {
+      "params": "Empty",
+      "result": "AgentInfo"
+    },
+    "host.agentLogin": {
+      "params": "Empty",
+      "result": "AgentInfo"
+    },
+    "host.agentInstall": {
+      "params": "Empty",
+      "result": "AgentInfo"
+    },
+    "host.agentStart": {
+      "params": "AgentStartParams",
+      "result": "Empty"
+    },
+    "host.agentSend": {
+      "params": "AgentSendParams",
+      "result": "Empty"
+    },
+    "host.agentStop": {
+      "params": "AgentProcessId",
+      "result": "Empty"
+    },
+    "host.assetsList": {
+      "params": "Empty",
+      "result": "AssetList"
+    },
+    "host.assetsRead": {
+      "params": "AssetIdParams",
+      "result": "AssetData"
+    },
+    "host.assetsImport": {
+      "params": "AssetImportParams",
+      "result": "AssetRecord"
+    },
+    "host.assetsDelete": {
+      "params": "AssetIdsParams",
+      "result": "AssetList"
+    },
+    "host.imageProviders": {
+      "params": "Empty",
+      "result": "ImageProviderList"
+    },
+    "host.imageGenerate": {
+      "params": "ImageGenerateParams",
+      "result": "ImageGenerateResult"
+    },
+    "host.imageCancel": {
+      "params": "ImageRequestId",
+      "result": "Empty"
+    },
+    "host.imageSetKey": {
+      "params": "ImageSetKeyParams",
+      "result": "ImageProviderList"
+    },
+    "host.imageSetDefault": {
+      "params": "ImageSetDefaultParams",
+      "result": "ImageProviderList"
+    },
+    "host.exportSave": {
+      "params": "ExportSaveParams",
+      "result": "ExportSaveResult"
+    },
+    "host.exportRun": {
+      "params": "ExportRunParams",
+      "result": "ExportRunResult"
+    },
+    "host.exportWriteFile": {
+      "params": "ExportWriteFileParams",
+      "result": "ExportRunResult"
+    },
+    "host.exportCancel": {
+      "params": "ExportCancelParams",
+      "result": "Empty"
+    },
+    "host.exportVideoRun": {
+      "params": "VideoExportParams",
+      "result": "VideoExportResult"
+    },
+    "host.exportVideoCancel": {
+      "params": "ExportCancelParams",
+      "result": "Empty"
+    }
+  },
+  "editor": {
+    "$comment": "Implemented by the editor, called by the Swift host.",
+    "editor.ping": {
+      "params": "PingParams",
+      "result": "PingResult"
+    },
+    "editor.getDocument": {
+      "params": "Empty",
+      "result": "DocumentFile"
+    },
+    "editor.loadDocument": {
+      "params": "LoadDocumentParams",
+      "result": "Empty"
+    },
+    "editor.setName": {
+      "params": "SetNameParams",
+      "result": "Empty"
+    },
+    "editor.undo": {
+      "params": "Empty",
+      "result": "HistoryResult"
+    },
+    "editor.redo": {
+      "params": "Empty",
+      "result": "HistoryResult"
+    },
+    "editor.getProjectInfo": {
+      "params": "Empty",
+      "result": "ProjectInfo"
+    },
+    "editor.regenerateProjectId": {
+      "params": "Empty",
+      "result": "ProjectInfo"
+    },
+    "editor.mcpHandle": {
+      "params": "McpMessage",
+      "result": "McpReply"
+    },
+    "editor.agentEvent": {
+      "params": "AgentEventParams",
+      "result": "Empty"
+    },
+    "editor.windowChrome": {
+      "params": "WindowChromeParams",
+      "result": "Empty"
+    },
+    "editor.present": {
+      "params": "PresentParams",
+      "result": "PresentResult"
+    },
+    "editor.presenterEvent": {
+      "params": "PresenterEventParams",
+      "result": "Empty"
+    },
+    "editor.startWithPrompt": {
+      "params": "StartWithPromptParams",
+      "result": "StartWithPromptResult"
+    },
+    "editor.renderPreview": {
+      "params": "Empty",
+      "result": "PreviewResult"
+    },
+    "editor.imageProgress": {
+      "params": "ImageProgressParams",
+      "result": "Empty"
+    },
+    "editor.imageProvidersChanged": {
+      "params": "Empty",
+      "result": "Empty"
+    },
+    "editor.exportProgress": {
+      "params": "ExportProgressParams",
+      "result": "Empty"
+    },
+    "editor.agentActivity": {
+      "params": "AgentActivityParams",
+      "result": "Empty"
+    }
+  }
+}

@@ -1,0 +1,99 @@
+// Messages the person queues or steers while the agent works. omp owns the queue: `queue_update` frames carry
+// the chip texts (`steering` is delivered at the next step, `followUp` after the turn), and the sidebar renders
+// exactly those snapshots. What omp cannot give back is what the person typed (the chip text is the whole message,
+// with the selection line, image notes and attachment envelopes), so the sidebar remembers it per message text:
+// chips show the typed words and an attachment count, and a withdrawn message goes back into the composer as typed.
+
+import type { Attachment } from './attachments';
+
+export type QueueName = 'steering' | 'followUp';
+/** How a message sent while the agent works is delivered: `queue` after the turn, `steer` at the next step. */
+export type SendMode = 'queue' | 'steer';
+
+export interface QueuedMeta {
+  /** The exact text sent to omp (and listed in `queue_update`). */
+  key: string;
+  /** What the person typed. */
+  text: string;
+  /** The external agent that queued it (sidebar_agent tool); absent for the person's own. */
+  from?: string;
+  context?: string;
+  attachments: Attachment[];
+}
+
+export interface QueuedItem {
+  /** The text omp lists for this message: what `remove_queued_message` and `promote_queued_message` take. */
+  key: string;
+  text: string;
+  attachments: number;
+  from?: string;
+}
+
+export interface QueueSnapshot {
+  steering: QueuedItem[];
+  followUp: QueuedItem[];
+}
+
+export const EMPTY_QUEUE: QueueSnapshot = { steering: [], followUp: [] };
+
+/** Typed text and attachments handed back to the composer (Stop, or a removed chip). */
+export interface RestoredDraft {
+  text: string;
+  attachments: Attachment[];
+}
+
+export class QueueTracker {
+  #meta: QueuedMeta[] = [];
+
+  add(meta: QueuedMeta): void {
+    this.#meta.push(meta);
+  }
+
+  /** Forgets a message that omp did not accept. */
+  discard(meta: QueuedMeta): void {
+    this.#meta = this.#meta.filter((m) => m !== meta);
+  }
+
+  /** Removes and returns the oldest message sent with exactly this text (duplicates are delivered in order). */
+  take(key: string): QueuedMeta | undefined {
+    const i = this.#meta.findIndex((m) => m.key === key);
+    return i < 0 ? undefined : this.#meta.splice(i, 1)[0];
+  }
+
+  clear(): void {
+    this.#meta = [];
+  }
+
+  /** The chips for a `queue_update` frame (or `get_state.queuedMessages`); null when the frame has no queue lists. */
+  view(frame: Record<string, unknown>): QueueSnapshot | null {
+    const lists = (v: unknown): string[] | null => (Array.isArray(v) && v.every((x) => typeof x === 'string') ? (v as string[]) : null);
+    const steering = lists(frame['steering']);
+    const followUp = lists(frame['followUp']);
+    if (!steering || !followUp) return null;
+    const item = (key: string): QueuedItem => {
+      const meta = this.#meta.find((m) => m.key === key);
+      return { key, text: meta?.text ?? key, attachments: meta?.attachments.length ?? 0, ...(meta?.from ? { from: meta.from } : {}) };
+    };
+    return { steering: steering.map(item), followUp: followUp.map(item) };
+  }
+
+  /** The composer draft for withdrawn messages (omp's chip texts), oldest first: typed texts, blank line between, with their attachments. */
+  draft(keys: readonly string[]): RestoredDraft {
+    const texts: string[] = [];
+    const attachments: Attachment[] = [];
+    for (const key of keys) {
+      const meta = this.take(key);
+      texts.push((meta?.text ?? key).trim());
+      if (meta) attachments.push(...meta.attachments);
+    }
+    return { text: texts.filter(Boolean).join('\n\n'), attachments };
+  }
+}
+
+/** The texts of a `{ steering: [{ text }], followUp: [{ text }] }` reply (abort_and_restore_queue), steering first. */
+export function withdrawnTexts(data: unknown): string[] {
+  if (typeof data !== 'object' || data === null) return [];
+  const entries = (v: unknown): string[] => (Array.isArray(v) ? v.flatMap((e) => (typeof e === 'object' && e !== null && typeof (e as { text?: unknown }).text === 'string' ? [(e as { text: string }).text] : [])) : []);
+  const d = data as Record<string, unknown>;
+  return [...entries(d['steering']), ...entries(d['followUp'])];
+}

@@ -1,0 +1,42 @@
+/* Floating text format bar (canvas/TextFormatBar.tsx). Outer radius 10 = inner 6 + 3 padding + 1 border. Enter/exit and origin: the shared
+   floating-surface motion at the end of app/theme.css (it grows out of the text layer's edge: data-below flips it). */
+.at-tfbar {
+  position: fixed; z-index: 35; display: flex; align-items: center; flex-wrap: wrap; gap: 2px; padding: 3px; max-width: 320px;
+  border: 1px solid transparent; border-radius: 10px; background: var(--at-panel); box-shadow: var(--at-shadow-float);
+  -webkit-user-select: none; user-select: none;
+}
+.at-tfbar__btn {
+  flex: none; display: grid; place-items: center; width: 26px; height: 26px; padding: 0; color: var(--at-text-2);
+  border: 0; border-radius: var(--at-radius-m); background: transparent; cursor: default;
+}
+@media (hover: hover) { .at-tfbar__btn:hover:not(:disabled) { background: var(--at-hover); color: var(--at-text); } }
+.at-tfbar__btn:disabled { color: var(--at-text-3); }
+.at-tfbar__btn[aria-pressed="true"], .at-tfbar__btn[aria-expanded="true"] { background: var(--at-hover); color: var(--at-text); }
+.at-tfbar__btn[aria-pressed="true"] { background: color-mix(in srgb, var(--at-accent) 16%, transparent); color: var(--at-accent); }
+.at-tfbar__btn:focus-visible, .at-tfbar__size:focus-visible, .at-tfbar__url:focus-visible { outline: 2px solid var(--at-accent); outline-offset: -2px; }
+@media (prefers-reduced-motion: no-preference) {
+  .at-tfbar__btn { transition: scale 150ms ease-out, background-color 150ms ease; }
+  .at-tfbar__btn:active:not(:disabled) { scale: 0.96; }
+}
+.at-tfbar__sep { flex: none; width: 1px; height: 16px; margin: 0 3px; background: var(--at-border); }
+.at-tfbar__swatch {
+  position: relative; width: 16px; height: 16px; border-radius: var(--at-radius-xs);
+  background: conic-gradient(#c8c8c8 25%, #fff 0 50%, #c8c8c8 0 75%, #fff 0) 0 0 / 8px 8px;
+}
+.at-tfbar__swatch::after { content: ''; position: absolute; inset: 0; border-radius: inherit; background: var(--at-swatch, transparent); box-shadow: inset 0 0 0 1px oklch(0 0 0 / 0.16); }
+.at-tfbar__swatch.is-mixed::after { background: linear-gradient(135deg, transparent 44%, var(--at-text-3) 44% 56%, transparent 56%); }
+.at-tfbar__size {
+  flex: none; width: 44px; height: 26px; margin: 0 2px; padding: 0 6px; font: var(--at-type-small); font-variant-numeric: tabular-nums; text-align: center;
+  color: var(--at-text); border: 1px solid transparent; border-radius: var(--at-radius-s); background: var(--at-bg); outline: none;
+}
+.at-tfbar__size:focus { border-color: var(--at-accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--at-accent) 25%, transparent); }
+.at-tfbar__size:disabled { color: var(--at-text-3); }
+.at-tfbar__size::placeholder { color: var(--at-text-3); }
+.at-tfbar__link { flex-basis: 100%; display: flex; align-items: center; flex-wrap: wrap; gap: 2px; padding-top: 2px; }
+.at-tfbar__url {
+  flex: 1; min-width: 0; height: 26px; padding: 0 8px; font: var(--at-type-small); color: var(--at-text);
+  border: 1px solid transparent; border-radius: var(--at-radius-s); background: var(--at-bg); outline: none;
+}
+.at-tfbar__url:focus { border-color: var(--at-accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--at-accent) 25%, transparent); }
+.at-tfbar__url[aria-invalid="true"] { border-color: var(--at-danger); }
+.at-tfbar__error { flex-basis: 100%; margin: 2px 2px 0; font: var(--at-type-small); color: var(--at-danger); }

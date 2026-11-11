@@ -1,0 +1,48 @@
+name: CI
+
+# The editor, its tests and the headless checks run on Linux: they are platform-independent. The Swift host is built and
+# tested by mac.yml. Pull requests from forks run this too: it needs no secrets and gets a read-only token.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# A newer push to the same branch or pull request supersedes the run in progress.
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  editor:
+    name: Editor (typecheck, tests, build)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      # bun installs and runs the scripts; Node stays the runtime (package bins keep their node shebang).
+      - uses: oven-sh/setup-bun@v2.2.0
+        with:
+          bun-version: 1.4.4
+      - uses: actions/cache@v6
+        with:
+          path: ~/.bun/install/cache
+          key: bun-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('editor/bun.lock') }}
+      - name: Test browsers, their system packages and ffmpeg (cached)
+        uses: ./.github/actions/test-deps
+      - run: make test-editor
+      - run: make e2e
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: e2e-screenshots
+          path: editor/e2e/out/
+          if-no-files-found: ignore
+          retention-days: 7

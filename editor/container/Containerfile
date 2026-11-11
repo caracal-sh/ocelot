@@ -1,0 +1,52 @@
+# ocelot-headless: the Ocelot editor + MCP endpoint in headless Chromium, for one project.
+#
+# Build with `make container` (or scripts/build-container.sh); it builds editor/dist first and uses
+# editor/ as the build context. Contains no credentials and no omp: the agent runs outside and
+# reaches this container's MCP endpoint through the Mac front door.
+#
+# Run (this is what `ocelot run` does):
+#   docker run -d --init --read-only --tmpfs /tmp --cpus 2 --memory 2g \
+#     --mount type=bind,source=/path/Design.ocelot,target=/project \
+#     -p 127.0.0.1:7421:7420 --env-file <file with OCELOT_PROJECT_TOKEN=...> ocelot-headless:dev
+#
+# Pinned: Node 22 LTS (Debian bookworm), Playwright's version must match editor/package.json
+# (scripts/build-container.sh passes it as PLAYWRIGHT_VERSION). bun 1.4.4 (the repo's package manager) installs
+# Playwright; its binary is bind-mounted from the official image for that one step, so it is not in the final image.
+FROM oven/bun:1.4.4@sha256:1d22548f177f4ff38e0c15baa3c2c46c6c2060ba2d1bc573bb4720b407548f1d AS bun
+
+FROM node:22.23.4-bookworm-slim@sha256:5ec23b7c622b00547753bc6ffd78085dd868a68aeb41c8e0a1418f033e13d96d
+
+ARG PLAYWRIGHT_VERSION=1.65.0
+
+# Fonts: Inter (UI default), Noto (Latin/Greek/Cyrillic + symbols + emoji), JetBrains Mono and DejaVu Sans Mono.
+# ffmpeg: export_video encodes with it (the root FS is read-only at run time, so it has to be installed here).
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends \
+      ca-certificates fontconfig fonts-inter fonts-noto-core fonts-noto-color-emoji fonts-jetbrains-mono fonts-dejavu-core ffmpeg \
+ && fc-cache -f \
+ && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+ENV PLAYWRIGHT_BROWSERS_PATH=/opt/ms-playwright
+# Headless shell only (what chromium.launch() uses headlessly), plus its system libraries.
+RUN --mount=type=bind,from=bun,source=/usr/local/bin/bun,target=/usr/local/bin/bun \
+    echo '{"private":true}' > package.json \
+ && bun add --production --exact "playwright@${PLAYWRIGHT_VERSION}" \
+ && bun x playwright install --with-deps --only-shell chromium \
+ && rm -rf /var/lib/apt/lists/* /root/.bun /tmp/* /opt/ms-playwright/ffmpeg-*
+
+# e2e/ holds the host and its two imports; dist/ is the built editor (see .dockerignore).
+COPY dist ./editor/dist
+COPY e2e ./editor/e2e
+COPY container/entrypoint.sh /usr/local/bin/ocelot-entrypoint
+
+ENV NODE_ENV=production \
+    OCELOT_CHROMIUM_NO_SANDBOX=1 \
+    OCELOT_IDLE_STOP_MIN=30
+
+# Non-root; root FS is read-only at run time, so everything mutable lives under /tmp (tmpfs).
+USER node
+EXPOSE 7420
+HEALTHCHECK --interval=15s --timeout=3s --start-period=20s --retries=3 \
+  CMD node -e "fetch('http://127.0.0.1:7420/healthz').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"
+ENTRYPOINT ["/usr/local/bin/ocelot-entrypoint"]

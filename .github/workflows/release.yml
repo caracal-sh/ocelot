@@ -1,0 +1,349 @@
+name: Release
+
+# Pushing a tag `vX.Y.Z` (`make release-tag VERSION=X.Y.Z`) builds Ocelot, signs it (Developer ID), notarizes it,
+# publishes a GitHub release with Ocelot-X.Y.Z.dmg (+ .sha256 + .eddsa) and adds it to the Sparkle appcast on the
+# orphan `updates` branch. Installed copies read that appcast and the DMG from plain public URLs, no token.
+#
+# Only tags trigger it: never a pull request, and so never code from a fork with the signing secrets. The secrets are
+# read by single steps only, and the tag must point at a commit of `main`. They live in the `release` environment
+# (Settings > Environments), where required reviewers can gate every release.
+#
+# Secrets: DEVELOPER_ID_P12_BASE64, DEVELOPER_ID_P12_PASSWORD (Developer ID Application certificate),
+# NOTARY_API_KEY_P8_BASE64, NOTARY_API_KEY_ID, NOTARY_ISSUER_ID (App Store Connect API key), SPARKLE_ED_PRIVATE_KEY.
+# Variables: SPARKLE_PUBLIC_ED_KEY (matches that private key), DEVELOPER_TEAM_ID (logs only).
+# A missing secret downgrades the release with a warning instead of failing it: no certificate gives an ad-hoc
+# build, no notary key a signed but un-notarized one, no Sparkle key a release that is not offered to installed copies.
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+jobs:
+  # The editor tests on Linux, before the macOS build starts: the same checks as ci.yml. A red test stops the release.
+  tests:
+    name: Tests (Linux)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      # bun installs and runs the scripts; Node stays the runtime (package bins keep their node shebang).
+      - uses: oven-sh/setup-bun@v2.2.0
+        with:
+          bun-version: 1.4.4
+      - uses: actions/cache@v6
+        with:
+          path: ~/.bun/install/cache
+          key: bun-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('editor/bun.lock') }}
+      - name: Test browsers, their system packages and ffmpeg (cached)
+        uses: ./.github/actions/test-deps
+      - run: make test-editor
+
+  build:
+    name: Build, notarize, publish
+    needs: tests
+    runs-on: macos-26
+    timeout-minutes: 90
+    # Secrets and variables of the `release` environment (create it under Settings > Environments; required reviewers optional).
+    environment: release
+    permissions:
+      contents: write
+    # One build per version; two different tags may build side by side (the appcast job below serializes them).
+    concurrency:
+      group: release-build-${{ github.ref_name }}
+      cancel-in-progress: false
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      tag: ${{ steps.version.outputs.tag }}
+      prerelease: ${{ steps.version.outputs.prerelease }}
+      sha: ${{ github.sha }}
+      appcast: ${{ steps.meta.outputs.appcast }}
+      build: ${{ steps.meta.outputs.build }}
+      min_os: ${{ steps.meta.outputs.min_os }}
+      length: ${{ steps.meta.outputs.length }}
+      signature: ${{ steps.meta.outputs.signature }}
+      asset_id: ${{ steps.meta.outputs.asset_id }}
+      update_repo: ${{ steps.meta.outputs.update_repo }}
+      needs_auth: ${{ steps.meta.outputs.needs_auth }}
+    env:
+      OCELOT_NOTARY_PROFILE: ocelot-ci
+    steps:
+      - name: Work out the version
+        id: version
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME#v}"
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]] || { echo "::error::'$version' is not a version like 0.2.0 or 1.0.0-beta.1."; exit 1; }
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=v$version" >> "$GITHUB_OUTPUT"
+          # Pre-releases (1.0.0-beta.1) are published but never offered by the updater.
+          if [[ "$version" == *-* ]]; then echo "prerelease=true" >> "$GITHUB_OUTPUT"; else echo "prerelease=false" >> "$GITHUB_OUTPUT"; fi
+
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # the build number is the commit count (Sparkle needs it to grow)
+          persist-credentials: false
+
+      # The signing secrets only ever build code that is on main.
+      - name: The tagged commit must be on main
+        env:
+          GH_SERVER_URL: ${{ github.server_url }}
+          GH_REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          git fetch --quiet "$GH_SERVER_URL/$GH_REPOSITORY" main
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" FETCH_HEAD; then
+            echo "::error::$GITHUB_REF_NAME does not point at a commit of main. Merge the change, then tag main."
+            exit 1
+          fi
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      # bun installs and runs the scripts; Node stays the runtime (package bins keep their node shebang).
+      - uses: oven-sh/setup-bun@v2.2.0
+        with:
+          bun-version: 1.4.4
+      - uses: actions/cache@v6
+        with:
+          path: ~/.bun/install/cache
+          key: bun-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('editor/bun.lock') }}
+
+      - name: Select the newest stable Xcode
+        run: |
+          set -euo pipefail
+          xcode="$(printf '%s\n' /Applications/Xcode_[0-9]*.app | grep -viE 'beta|_rc|release_candidate' | sort -V | tail -n1 || true)"
+          if [[ -d "$xcode" ]]; then
+            sudo xcode-select -s "$xcode/Contents/Developer"
+          else
+            echo "::warning::No versioned Xcode found on this runner image; building with the default Xcode."
+          fi
+          xcodebuild -version
+
+      - run: brew install xcodegen
+      - run: xcodegen --version
+
+      - name: Import the Developer ID certificate into a temporary keychain
+        id: cert
+        env:
+          CERT_P12_BASE64: ${{ secrets.DEVELOPER_ID_P12_BASE64 }}
+          CERT_P12_PASSWORD: ${{ secrets.DEVELOPER_ID_P12_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [[ -z "$CERT_P12_BASE64" ]]; then
+            echo "::warning::Secret DEVELOPER_ID_P12_BASE64 is missing: building ad-hoc, without notarization. The DMG installs through scripts/install.sh (curl downloads are not quarantined) but Gatekeeper rejects it on a normal download."
+            echo "OCELOT_SIGN_IDENTITY=-" >> "$GITHUB_ENV"
+            echo "signed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # runner.temp is not available in job-level env, so the path is set here for later steps.
+          KEYCHAIN_PATH="$RUNNER_TEMP/release.keychain-db"
+          echo "KEYCHAIN_PATH=$KEYCHAIN_PATH" >> "$GITHUB_ENV"
+          keychain_password="$(uuidgen)"
+          security create-keychain -p "$keychain_password" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$keychain_password" "$KEYCHAIN_PATH"
+          echo "$CERT_P12_BASE64" | base64 --decode > "$RUNNER_TEMP/developer-id.p12"
+          security import "$RUNNER_TEMP/developer-id.p12" -P "$CERT_P12_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH" -T /usr/bin/codesign -T /usr/bin/security
+          rm -f "$RUNNER_TEMP/developer-id.p12"
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$keychain_password" "$KEYCHAIN_PATH" >/dev/null
+          # shellcheck disable=SC2046 # the existing search list is one path per word
+          security list-keychains -d user -s "$KEYCHAIN_PATH" $(security list-keychains -d user | tr -d '"')
+          security find-identity -v -p codesigning "$KEYCHAIN_PATH"
+          echo "signed=true" >> "$GITHUB_OUTPUT"
+
+      - name: Store the notarization credentials (App Store Connect API key)
+        id: notary
+        if: steps.cert.outputs.signed == 'true'
+        env:
+          NOTARY_KEY_P8_BASE64: ${{ secrets.NOTARY_API_KEY_P8_BASE64 }}
+          NOTARY_KEY_ID: ${{ secrets.NOTARY_API_KEY_ID }}
+          NOTARY_ISSUER_ID: ${{ secrets.NOTARY_ISSUER_ID }}
+        run: |
+          set -euo pipefail
+          if [[ -z "$NOTARY_KEY_P8_BASE64" || -z "$NOTARY_KEY_ID" || -z "$NOTARY_ISSUER_ID" ]]; then
+            echo "::warning::NOTARY_API_KEY_P8_BASE64, NOTARY_API_KEY_ID or NOTARY_ISSUER_ID is missing: the build is signed but not notarized, so Gatekeeper will warn on a normal download."
+            echo "notarize=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          (umask 077; echo "$NOTARY_KEY_P8_BASE64" | base64 --decode > "$RUNNER_TEMP/notary.p8")
+          xcrun notarytool store-credentials "$OCELOT_NOTARY_PROFILE" --key "$RUNNER_TEMP/notary.p8" --key-id "$NOTARY_KEY_ID" --issuer "$NOTARY_ISSUER_ID" --keychain "$KEYCHAIN_PATH"
+          rm -f "$RUNNER_TEMP/notary.p8"
+          echo "OCELOT_NOTARY_KEYCHAIN=$KEYCHAIN_PATH" >> "$GITHUB_ENV"
+          echo "notarize=true" >> "$GITHUB_OUTPUT"
+
+      - name: Build, sign, notarize, package
+        env:
+          OCELOT_VERSION: ${{ steps.version.outputs.version }}
+          OCELOT_TEAM_ID: ${{ vars.DEVELOPER_TEAM_ID }}
+          SPARKLE_PUBLIC_ED_KEY: ${{ vars.SPARKLE_PUBLIC_ED_KEY }}
+          # The app reads its updates from the repository it was built in, over plain public URLs (no token).
+          OCELOT_UPDATE_REPO: ${{ github.repository }}
+          OCELOT_UPDATE_NEEDS_AUTH: 'NO'
+          NOTARIZE: ${{ steps.notary.outputs.notarize }}
+        run: |
+          set -euo pipefail
+          OCELOT_BUILD="$(git rev-list --count HEAD)"
+          export OCELOT_BUILD
+          make editor-build project
+          if [[ "$NOTARIZE" == "true" ]]; then mode=release; else mode=dmg; fi
+          MODE="$mode" scripts/release/release.sh
+
+      - name: EdDSA-sign the DMG for Sparkle
+        id: eddsa
+        env:
+          OCELOT_VERSION: ${{ steps.version.outputs.version }}
+          SPARKLE_ED_PRIVATE_KEY: ${{ secrets.SPARKLE_ED_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          if [[ -z "$SPARKLE_ED_PRIVATE_KEY" ]]; then
+            echo "::warning::Secret SPARKLE_ED_PRIVATE_KEY is missing: the release is published without an update signature, so installed copies will not be offered it."
+            echo "signed=false" >> "$GITHUB_OUTPUT"
+            (cd build/release && shasum -a 256 "Ocelot-$OCELOT_VERSION.dmg" > "Ocelot-$OCELOT_VERSION.dmg.sha256")
+            exit 0
+          fi
+          (umask 077; printf '%s' "$SPARKLE_ED_PRIVATE_KEY" > "$RUNNER_TEMP/sparkle_ed.key")
+          SPARKLE_PRIVATE_KEY_FILE="$RUNNER_TEMP/sparkle_ed.key" scripts/release/sign-update.sh
+          echo "signed=true" >> "$GITHUB_OUTPUT"
+
+      - name: Verify what will be published
+        env:
+          OCELOT_VERSION: ${{ steps.version.outputs.version }}
+          NOTARIZE: ${{ steps.notary.outputs.notarize }}
+        run: |
+          set -euo pipefail
+          if [[ "$NOTARIZE" == "true" ]]; then export OCELOT_EXPECT_NOTARIZED=1; fi
+          scripts/release/verify.sh "build/release/Ocelot-$OCELOT_VERSION.dmg"
+
+      - name: Publish the GitHub release
+        id: publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+          TAG: ${{ steps.version.outputs.tag }}
+          PRERELEASE: ${{ steps.version.outputs.prerelease }}
+          EDDSA_SIGNED: ${{ steps.eddsa.outputs.signed }}
+        run: |
+          set -euo pipefail
+          dmg="build/release/Ocelot-$VERSION.dmg"
+          assets=("$dmg" "$dmg.sha256")
+          [[ "$EDDSA_SIGNED" == "true" ]] && assets+=("$dmg.eddsa")
+          # Hand-written notes only (release-notes/<version>.md): GitHub's generated notes list PR titles and commit messages. The
+          # notes are what users read, on the release page and in the update prompt.
+          notes="release-notes/$VERSION.md"
+          if [[ ! -f "$notes" ]]; then
+            echo "::error::Write $notes (what changed for users) and commit it before releasing; generated notes are not used."
+            exit 1
+          fi
+          flags=(--notes-file "$notes")
+          flags+=(--target "$GITHUB_SHA")
+          [[ "$PRERELEASE" == "true" ]] && flags+=(--prerelease)
+          gh release create "$TAG" "${flags[@]}" --title "Ocelot $VERSION" "${assets[@]}"
+
+      - name: Read the numbers the appcast needs
+        id: meta
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+          TAG: ${{ steps.version.outputs.tag }}
+          PRERELEASE: ${{ steps.version.outputs.prerelease }}
+          EDDSA_SIGNED: ${{ steps.eddsa.outputs.signed }}
+        run: |
+          set -euo pipefail
+          dmg="build/release/Ocelot-$VERSION.dmg"
+          plist="build/release/Ocelot.app/Contents/Info.plist"
+          # A private repo's appcast points at the API URL of the DMG asset, so it needs the asset's id; a public one's
+          # points at the download URL and needs none.
+          needs_auth="$(plutil -extract OcelotUpdateNeedsAuth raw -o - "$plist")"
+          asset_id=""
+          if [[ "$needs_auth" == "YES" ]]; then
+            asset_id="$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$TAG" --jq ".assets[] | select(.name == \"Ocelot-$VERSION.dmg\") | .id")"
+            [[ "$asset_id" =~ ^[0-9]+$ ]] || { echo "::error::Could not find the DMG asset of release $TAG."; exit 1; }
+          fi
+          if [[ "$EDDSA_SIGNED" == "true" && "$PRERELEASE" != "true" ]]; then appcast=true; else appcast=false; fi
+          {
+            echo "appcast=$appcast"
+            echo "asset_id=$asset_id"
+            echo "needs_auth=$needs_auth"
+            echo "update_repo=$(plutil -extract OcelotUpdateRepo raw -o - "$plist")"
+            echo "build=$(plutil -extract CFBundleVersion raw -o - "$plist")"
+            echo "min_os=$(plutil -extract LSMinimumSystemVersion raw -o - "$plist")"
+            echo "length=$(stat -f %z "$dmg")"
+            if [[ "$EDDSA_SIGNED" == "true" ]]; then echo "signature=$(tr -d '[:space:]' < "$dmg.eddsa")"; fi
+          } >> "$GITHUB_OUTPUT"
+          if [[ "$appcast" == "false" ]]; then echo "::notice::The appcast is not updated (pre-release, or no EdDSA key): installed copies are not offered $TAG."; fi
+
+      - name: Remove the temporary keychain and keys
+        if: always()
+        run: |
+          if [[ -n "${KEYCHAIN_PATH:-}" ]]; then security delete-keychain "$KEYCHAIN_PATH" || true; fi
+          rm -f "$RUNNER_TEMP/sparkle_ed.key" "$RUNNER_TEMP/notary.p8" "$RUNNER_TEMP/developer-id.p12"
+
+  appcast:
+    name: Update the appcast
+    needs: build
+    if: needs.build.outputs.appcast == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    # The appcast is one file on one branch: only one release at a time may edit it.
+    concurrency:
+      group: release-appcast
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.build.outputs.sha }}
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+
+      - name: Add the release to appcast.xml on the updates branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.build.outputs.version }}
+          TAG: ${{ needs.build.outputs.tag }}
+          BUILD: ${{ needs.build.outputs.build }}
+          MIN_OS: ${{ needs.build.outputs.min_os }}
+          LENGTH: ${{ needs.build.outputs.length }}
+          SIGNATURE: ${{ needs.build.outputs.signature }}
+          ASSET_ID: ${{ needs.build.outputs.asset_id }}
+          UPDATE_REPO: ${{ needs.build.outputs.update_repo }}
+          NEEDS_AUTH: ${{ needs.build.outputs.needs_auth }}
+        run: |
+          set -euo pipefail
+          gh release view "$TAG" --json body --jq .body > "$RUNNER_TEMP/notes.md"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          wt="$RUNNER_TEMP/updates"
+          for attempt in 1 2 3 4 5; do
+            rm -rf "$wt"; git worktree prune
+            if git fetch --quiet origin updates; then
+              git worktree add --quiet -B updates "$wt" FETCH_HEAD
+            else
+              # First release: the orphan branch does not exist yet.
+              git worktree add --quiet --detach "$wt"
+              git -C "$wt" checkout --quiet --orphan updates
+              git -C "$wt" rm -rfq . || true
+            fi
+            node scripts/release/appcast.mjs --out "$wt/appcast.xml" --existing "$wt/appcast.xml" \
+              --version "$VERSION" --build "$BUILD" --min-os "$MIN_OS" --repo "$UPDATE_REPO" --needs-auth "$NEEDS_AUTH" \
+              --asset-id "$ASSET_ID" --length "$LENGTH" --signature "$SIGNATURE" --notes-file "$RUNNER_TEMP/notes.md"
+            git -C "$wt" add appcast.xml
+            git -C "$wt" commit --quiet -m "Ocelot $VERSION"
+            if git -C "$wt" push --quiet origin updates; then
+              echo "Appcast updated for $TAG (attempt $attempt)."
+              exit 0
+            fi
+            echo "::warning::Pushing the appcast failed (attempt $attempt); fetching and retrying."
+            sleep $((attempt * 3))
+          done
+          echo "::error::Could not push the appcast to the updates branch after 5 attempts. Re-run this job."
+          exit 1

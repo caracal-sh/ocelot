@@ -1,0 +1,8 @@
+# Build context for editor/container/Containerfile: only dist/, e2e/ and container/ are copied.
+node_modules
+src
+public
+scripts
+e2e/out
+**/*.map
+*.tsbuildinfo

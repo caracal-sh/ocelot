@@ -1,0 +1,98 @@
+/* Timeline under the canvas on video pages (panels/Timeline.tsx). Frequent actions (scrubbing, stepping) never animate;
+   only the chip popover and the tile lift while reordering get a short ease, both behind reduced motion. */
+
+.at-tl {
+  --at-bars-label: 132px;
+  flex: none; box-sizing: border-box; max-height: 296px; display: flex; flex-direction: column; gap: 8px;
+  padding: 8px 12px 10px; background: var(--at-panel); border-top: 1px solid var(--at-border);
+  font: var(--at-type-small); color: var(--at-text); overflow: hidden; user-select: none;
+}
+
+.at-tl__transport { display: flex; align-items: center; gap: 4px; min-height: 26px; }
+.at-tl__play { color: var(--at-text); }
+.at-tl__transport .at-btn[aria-pressed="true"] { color: var(--at-accent); background: color-mix(in srgb, var(--at-accent) 14%, transparent); }
+.at-tl__time { margin-left: 8px; font: var(--at-type-body); font-variant-numeric: tabular-nums; color: var(--at-text-2); }
+.at-tl__time strong { color: var(--at-text); font-weight: 600; }
+.at-tl__meta { margin-left: 10px; color: var(--at-text-2); font-variant-numeric: tabular-nums; }
+.at-tl__hint { margin-left: auto; color: var(--at-text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.at-tl__error { margin: 0; padding: 6px 8px; border-radius: var(--at-radius-m); color: var(--at-danger); background: color-mix(in srgb, var(--at-danger) 10%, transparent); user-select: text; }
+.at-tl__empty { margin: 0; padding: 14px 0 6px; color: var(--at-text-2); }
+
+/* Scene strip */
+.at-tl__strip { flex: none; overflow-x: auto; overflow-y: hidden; padding-bottom: 2px; }
+.at-tl__tiles { position: relative; display: flex; height: 112px; touch-action: none; }
+.at-tile {
+  position: absolute; top: 0; bottom: 0; box-sizing: border-box; padding: 0 2px; display: flex; flex-direction: column; gap: 3px; min-width: 0;
+}
+.at-tile__head { display: flex; align-items: center; gap: 5px; height: 18px; min-width: 0; cursor: grab; color: var(--at-text-2); }
+.at-tile__head:active { cursor: grabbing; }
+.at-tile[data-focus] .at-tile__head { color: var(--at-text); }
+.at-tile__grip { flex: none; width: 6px; height: 10px; opacity: 0.55; background: radial-gradient(circle, currentColor 1px, transparent 1.4px) 0 0 / 3px 4px; }
+.at-tile__name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
+.at-tile__agent { flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--at-agent); }
+@media (prefers-reduced-motion: no-preference) {
+  .at-tile__agent { animation: var(--at-pulse); }
+}
+.at-tile__duration {
+  flex: none; height: 16px; padding: 0 5px; border: 0; border-radius: var(--at-radius-s); background: transparent; color: inherit;
+  font: inherit; font-variant-numeric: tabular-nums; cursor: text;
+}
+@media (hover: hover) { .at-tile__duration:hover { background: var(--at-hover); } }
+.at-tile__duration--edit { width: 46px; background: var(--at-bg); color: var(--at-text); outline: 1.5px solid var(--at-accent); text-align: right; }
+.at-tile__thumb {
+  position: relative; flex: none; align-self: stretch; height: 88px; overflow: hidden; cursor: col-resize;
+  border-radius: var(--at-radius-m); background: var(--at-canvas); box-shadow: 0 0 0 1px var(--at-border);
+}
+.at-tile[data-focus] .at-tile__thumb { box-shadow: 0 0 0 1.5px var(--at-accent); }
+.at-tile[data-agent] .at-tile__thumb { box-shadow: 0 0 0 1.5px var(--at-agent); }
+.at-tile__thumb img { display: block; width: 100%; height: 100%; object-fit: contain; pointer-events: none; }
+.at-tile__flat { position: absolute; inset: 0; background: linear-gradient(135deg, var(--at-canvas), var(--at-hover)); }
+.at-tile[data-dragging] { opacity: 0.55; }
+
+.at-tl__insert { position: absolute; top: 0; bottom: 0; width: 2px; margin-left: -1px; background: var(--at-accent); pointer-events: none; }
+.at-tl__playhead {
+  position: absolute; top: 18px; bottom: 0; width: 0; margin-left: -1px; border-left: 2px solid var(--at-accent); pointer-events: none; z-index: 3;
+}
+.at-tl__playhead::before {
+  content: ""; position: absolute; top: -5px; left: -6px; width: 10px; height: 8px; background: var(--at-accent); clip-path: polygon(0 0, 100% 0, 50% 100%);
+}
+
+/* Transition chips sit on the boundary between two scenes. */
+.at-tl-chip { position: absolute; top: 44px; z-index: 4; translate: -50% 0; }
+.at-tl-chip__btn {
+  height: 18px; padding: 0 7px; border: 0; border-radius: 9px; white-space: nowrap; cursor: default;
+  font: var(--at-type-small); font-variant-numeric: tabular-nums; color: var(--at-text);
+  background: var(--at-panel); box-shadow: 0 0 0 1px var(--at-border), 0 1px 3px oklch(0 0 0 / 0.12);
+}
+.at-tl-chip__btn[data-kind="none"] { color: var(--at-text-2); }
+.at-tl-chip__btn[aria-expanded="true"] { box-shadow: 0 0 0 1px var(--at-accent), 0 1px 3px oklch(0 0 0 / 0.12); }
+@media (hover: hover) { .at-tl-chip__btn:hover { box-shadow: 0 0 0 1px var(--at-accent), 0 1px 3px oklch(0 0 0 / 0.12); } }
+.at-tl-chip__pop {
+  position: fixed; z-index: 40; display: grid; gap: 8px; width: 168px; padding: 9px; outline: none;
+  font: var(--at-type-small); color: var(--at-text); -webkit-user-select: none; user-select: none;
+  border: 1px solid transparent; border-radius: var(--at-radius-l); background: var(--at-panel); box-shadow: var(--at-shadow-float);
+}
+.at-tl-chip__pop label { display: grid; gap: 3px; color: var(--at-text-2); }
+.at-tl-chip__pop select, .at-tl-chip__pop input {
+  height: 24px; padding: 0 6px; border: 1px solid transparent; border-radius: var(--at-radius-s); background: var(--at-bg); color: var(--at-text); font: inherit; box-shadow: 0 0 0 1px var(--at-border);
+}
+.at-tl-chip__pop input:disabled { color: var(--at-text-3); }
+/* Enter and exit: the shared floating-surface motion at the end of app/theme.css (opacity + scale 0.96 from the chip; exit via useExitGhost). */
+
+/* Animation bars of the focused scene */
+.at-bars { position: relative; display: flex; flex-direction: column; gap: 4px; min-height: 0; }
+.at-bars__head { display: flex; justify-content: space-between; color: var(--at-text-2); }
+.at-bars__head span:first-child { color: var(--at-text); font-weight: 500; }
+.at-bars__empty { margin: 0; color: var(--at-text-2); }
+.at-bars__rows { position: relative; display: flex; flex-direction: column; gap: 3px; max-height: 84px; overflow-y: auto; }
+.at-bar { display: flex; align-items: center; gap: 8px; height: 18px; flex: none; }
+.at-bar__label {
+  flex: none; width: calc(var(--at-bars-label) - 8px); padding: 0; border: 0; background: transparent; text-align: left; cursor: default;
+  font: inherit; color: var(--at-text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+@media (hover: hover) { .at-bar__label:hover { color: var(--at-text); } }
+.at-bar__track { position: relative; flex: 1; height: 10px; border-radius: 5px; background: var(--at-bg); cursor: col-resize; }
+.at-bar__fill { position: absolute; top: 0; bottom: 0; min-width: 4px; border-radius: 5px; background: var(--at-accent); opacity: 0.85; }
+.at-bar[data-kind="code"] .at-bar__fill { background: var(--at-agent); opacity: 0.55; }
+.at-bar__fill[data-clipped] { border-top-right-radius: 0; border-bottom-right-radius: 0; background-image: repeating-linear-gradient(135deg, transparent 0 4px, oklch(1 0 0 / 0.35) 4px 6px); }
+.at-bars__playhead { position: absolute; top: 0; bottom: 0; width: 0; border-left: 1.5px solid var(--at-accent); pointer-events: none; }

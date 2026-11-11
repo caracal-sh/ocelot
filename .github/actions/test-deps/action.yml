@@ -1,0 +1,33 @@
+name: Test dependencies
+description: >
+  Playwright's Chromium + WebKit, their system packages, and ffmpeg, for the editor tests on Linux. A fresh runner spends
+  about 45 s here, two thirds of it downloading apt packages (fonts, GStreamer, codecs). The downloaded .debs and the
+  browsers go into the Actions cache, so a warm run only installs them. Keyed on bun.lock: a Playwright upgrade changes
+  it and starts a fresh cache.
+runs:
+  using: composite
+  steps:
+    - name: Keep apt's downloads in a cacheable folder
+      shell: bash
+      run: |
+        set -euo pipefail
+        mkdir -p "$HOME/.cache/apt-archives/partial"
+        printf 'Dir::Cache::Archives "%s";\nBinary::apt::APT::Keep-Downloaded-Packages "true";\n' "$HOME/.cache/apt-archives" \
+          | sudo tee /etc/apt/apt.conf.d/90ocelot-test-deps >/dev/null
+        sudo rm -f /etc/apt/apt.conf.d/docker-clean
+
+    - uses: actions/cache@v6
+      with:
+        path: |
+          ~/.cache/apt-archives
+          ~/.cache/ms-playwright
+        key: test-deps-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('editor/bun.lock') }}
+
+    - name: Install the browsers, their system packages and ffmpeg
+      shell: bash
+      run: |
+        set -euo pipefail
+        make browsers PLAYWRIGHT_FLAGS=--with-deps
+        make ffmpeg
+        # apt wrote the archives as root; the cache is saved as the runner user after the job.
+        sudo chown -R "$(id -u):$(id -g)" "$HOME/.cache/apt-archives"

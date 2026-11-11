@@ -1,0 +1,9 @@
+{
+  "images": [
+    { "url": "https://v3.fal.media/files/penguin/Qk2xT7_flux-dev.png", "width": 1024, "height": 768, "content_type": "image/png" }
+  ],
+  "timings": { "inference": 1.37 },
+  "seed": 1337,
+  "has_nsfw_concepts": [false],
+  "prompt": "a calm lake at dawn"
+}

@@ -1,0 +1,1429 @@
+/* Editor chrome. Calm, compact, follows the system appearance. */
+/* Geist Serif (Vercel, SIL Open Font License 1.1: public/fonts/GeistSerif-OFL.txt), bundled: no network. */
+@font-face {
+  font-family: 'Geist Serif';
+  src: url('/fonts/GeistSerif-Variable.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+:root {
+  color-scheme: light dark;
+  --at-font: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue', sans-serif;
+  --at-font-mono: ui-monospace, 'SF Mono', Menlo, monospace;
+  /* Display only (empty-state headings): Geist Serif is a high-contrast display face, never below ~20px. */
+  --at-font-display: 'Geist Serif', ui-serif, 'New York', Georgia, serif;
+
+  /* Type: macOS regular (13) and small (11) control sizes. Hierarchy comes from weight and color. */
+  --at-type-body: 400 13px/16px var(--at-font);         /* toolbar buttons, tabs (500), layer + token rows, toasts, empty states */
+  --at-type-title: 600 13px/16px var(--at-font);        /* panel titles */
+  --at-type-small: 400 11px/14px var(--at-font);        /* inspector labels + inputs, status bar, counts, badges, artboard label */
+  --at-type-small-strong: 600 11px/14px var(--at-font); /* inspector section titles */
+
+  /* Radii: outer = inner + inset */
+  --at-radius-xs: 2px;  /* resize handles, swatches inset 4px in a row */
+  --at-radius-s: 4px;   /* inputs, chips, inline rename, layer action buttons */
+  --at-radius-m: 6px;   /* buttons, tabs, list rows, banner */
+  --at-radius-l: 10px;  /* toasts and other floating surfaces */
+
+  --at-bg: #f5f5f7;
+  --at-panel: #ffffff;
+  --at-canvas: #e8e8ea;
+  --at-border: rgba(0, 0, 0, 0.1);
+  --at-text: #1d1d1f;
+  --at-text-2: #6e6e73;
+  --at-text-3: #b0b0b5;          /* disabled + placeholder only */
+  --at-accent: #007aff;          /* macOS systemBlue (light) */
+  --at-agent: #b25000;           /* deep systemOrange: 5.2:1 vs #fff */
+  --at-on-agent: #ffffff;
+  --at-guide: #e5173f;           /* smart guides: 4.7:1 under white labels */
+  --at-on-guide: #ffffff;
+  --at-hover: rgba(0, 0, 0, 0.06);
+  --at-active: rgba(0, 0, 0, 0.11);
+  --at-danger: #d70015;
+  --at-toast-bg: #1d1d1f;
+  --at-toast-fg: #ffffff;
+  --at-shadow-float: 0 0 0 1px oklch(0 0 0 / 0.06), 0 2px 4px -1px oklch(0 0 0 / 0.08), 0 8px 24px -4px oklch(0 0 0 / 0.18);
+  --at-artboard-shadow: 0 0 0 1px rgba(0, 0, 0, 0.08), 0 2px 10px rgba(0, 0, 0, 0.06);
+  --at-toolbar-h: 40px; /* = WindowChrome.toolbarHeight (Swift): the traffic lights are centred in it */
+  --at-panel-w: 240px;
+  --at-sidebar-w: 320px; /* left sidebar default; resizable 260–520, remembered */
+
+  /* Motion. The built-in easings are too weak: ease-out for things entering or leaving, in-out for things
+     that move on screen, drawer for the sidebar. Animate opacity, translate/scale and filter; name properties, never `all`. */
+  --at-ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --at-ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+  --at-ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
+  --at-ease-icon: cubic-bezier(0.2, 0, 0, 1);   /* icon swaps (copy → check) */
+  --at-ease-sine: cubic-bezier(0.37, 0, 0.63, 1); /* loops: the agent's breathing dot */
+  --at-pulse: at-pulse 1.6s var(--at-ease-sine) infinite;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --at-bg: #1e1e1e;
+    --at-panel: #262626;
+    --at-canvas: #161616;
+    --at-border: rgba(255, 255, 255, 0.1);
+    --at-text: #f5f5f7;
+    --at-text-2: #98989d;
+    --at-text-3: #5a5a5f;
+    --at-accent: #0a84ff;        /* macOS systemBlue (dark) */
+    --at-agent: #ff9f0a;         /* macOS systemOrange (dark): 7.4:1 vs #262626 */
+    --at-on-agent: #1d1d1f;      /* 8.2:1 on #ff9f0a */
+    --at-guide: #ff4d6d;         /* smart guides (dark) */
+    --at-on-guide: #1d1d1f;      /* 6.3:1 on #ff4d6d */
+    --at-danger: #ff6961;
+    --at-hover: rgba(255, 255, 255, 0.08);
+    --at-active: rgba(255, 255, 255, 0.14);
+    --at-toast-bg: #3a3a3c;
+    --at-toast-fg: #f5f5f7;
+    --at-shadow-float: 0 0 0 1px oklch(1 0 0 / 0.08), 0 8px 24px oklch(0 0 0 / 0.5);
+    --at-artboard-shadow: 0 0 0 1px rgba(255, 255, 255, 0.08), 0 2px 12px rgba(0, 0, 0, 0.5);
+  }
+}
+* { box-sizing: border-box; }
+html, body, #root { height: 100%; margin: 0; }
+body {
+  font: var(--at-type-body);
+  color: var(--at-text);
+  background: var(--at-bg);
+  -webkit-font-smoothing: antialiased;
+  -webkit-user-select: none;
+  user-select: none;
+  overflow: hidden;
+}
+.at-app { display: flex; flex-direction: column; height: 100%; }
+/* One bar in the window's title bar: document | tools | status + menus. Empty space drags the window. */
+.at-toolbar {
+  height: var(--at-toolbar-h); flex: none;
+  display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: 12px;
+  padding: 0 10px 0 14px;
+  border-bottom: 1px solid var(--at-border);
+  background: var(--at-panel);
+}
+.at-toolbar__start { min-width: 0; display: flex; align-items: center; gap: 6px; }
+.at-undoredo { display: flex; gap: 0; margin-right: 6px; }
+/* While the sidebar is hidden, a dot on its toggle says an agent is working. */
+.at-sidebarbtn { position: relative; }
+.at-sidebarbtn::after {
+  content: ''; position: absolute; top: 4px; right: 4px; width: 6px; height: 6px; border-radius: 50%; pointer-events: none;
+  background: var(--at-agent); box-shadow: 0 0 0 2px var(--at-panel);
+  opacity: 0; transition: opacity 150ms var(--at-ease-out);
+}
+.at-sidebarbtn.is-working::after { opacity: 1; }
+.at-toolbar__end { justify-self: end; display: flex; align-items: center; gap: 4px; }
+.at-doctitle { min-width: 0; display: flex; align-items: baseline; gap: 6px; white-space: nowrap; }
+.at-doctitle__name { overflow: hidden; text-overflow: ellipsis; font: var(--at-type-title); }
+.at-doctitle__state { flex: none; color: var(--at-text-2); }
+/* Tools: a segmented control (outer radius 8 = inner 6 + 2 inset). */
+.at-tools { display: flex; align-items: center; gap: 2px; padding: 2px; border-radius: 8px; background: var(--at-bg); }
+.at-tool {
+  width: 30px; height: 24px; display: inline-grid; place-items: center;
+  border: 0; border-radius: var(--at-radius-m); background: transparent; color: var(--at-text-2); cursor: default;
+}
+@media (hover: hover) { .at-tool:not(:disabled):hover { color: var(--at-text); background: var(--at-hover); } }
+.at-tool.is-active { color: var(--at-text); background: var(--at-panel); box-shadow: 0 0 0 0.5px oklch(0 0 0 / 0.08), 0 1px 2px oklch(0 0 0 / 0.1); }
+@media (hover: hover) { .at-tool.is-active:hover { color: var(--at-text); background: var(--at-panel); box-shadow: 0 0 0 0.5px oklch(0 0 0 / 0.08), 0 1px 2px oklch(0 0 0 / 0.1); } }
+.at-tool:disabled, .at-tool.is-active:disabled { color: var(--at-text-3); }
+/* The New artboard menu hangs off the Frame tool. It sits flush against it, so it never paints a background
+   (a fill there showed as a sliver tucked under the active Frame tile); hover and open state darken the glyph. */
+.at-tool--chevron { width: 16px; margin-left: -2px; }
+.at-tool--chevron[aria-expanded="true"] { color: var(--at-text); background: transparent; }
+@media (hover: hover) { .at-tool--chevron:not(:disabled):hover { color: var(--at-text); background: transparent; } }
+.at-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.at-btn {
+  font: inherit; color: var(--at-text);
+  height: 24px; padding: 0 8px; border-radius: var(--at-radius-m);
+  border: 0; background: transparent; cursor: default;
+}
+@media (hover: hover) { .at-btn:hover:not(:disabled) { background: var(--at-hover); } }
+.at-btn:active:not(:disabled) { background: var(--at-active); }
+.at-btn:disabled { color: var(--at-text-3); }
+.at-btn--icon { width: 26px; padding: 0; display: inline-grid; place-items: center; }
+@media (hover: hover) { .at-btn--icon:not(:disabled):hover { color: var(--at-text); } }
+.at-btn--withicon { display: inline-flex; align-items: center; gap: 5px; padding: 0 8px 0 6px; }
+.at-zoom { min-width: 52px; font-variant-numeric: tabular-nums; }
+.at-body { flex: 1; display: flex; min-height: 0; position: relative; }
+.at-panel { width: var(--at-panel-w); background: var(--at-panel); flex: none; }
+.at-panel--left { position: relative; width: var(--at-sidebar-w); border-right: 1px solid var(--at-border); }
+.at-panel__resizer { position: absolute; top: 0; right: -3px; bottom: 0; width: 6px; cursor: col-resize; z-index: 5; }
+.at-panel__resizer.is-dragging { background: color-mix(in srgb, var(--at-accent) 35%, transparent); }
+@media (hover: hover) { .at-panel__resizer:hover { background: color-mix(in srgb, var(--at-accent) 35%, transparent); } }
+/* Floats over the canvas's right edge (see InspectorOverlay): selecting never resizes the canvas. */
+.at-panel--right { position: absolute; top: 0; right: 0; bottom: var(--at-timeline-h, 0px); z-index: 30; border-left: 1px solid var(--at-border); box-shadow: -10px 0 24px -16px oklch(0 0 0 / 0.18); }
+.at-canvas { flex: 1; position: relative; overflow: hidden; background: var(--at-canvas); touch-action: none; }
+.at-canvas--pan-ready { cursor: grab; }
+.at-canvas--pan-active { cursor: grabbing; }
+.at-world { position: absolute; left: 0; top: 0; width: 0; height: 0; transform-origin: 0 0; }
+.at-artboard { position: absolute; }
+/* Artboards of other pages stay mounted (agents measure them) but are invisible and inert. */
+.at-artboard--offpage, .at-artboard--offpage * { visibility: hidden; pointer-events: none !important; }
+/* One line, never wider than its artboard (so a row of slides at low zoom never overlaps): the size wraps out of
+   sight first (flex-wrap + one-line height), then the name gets an ellipsis. The full text is in the title. */
+.at-artboard__label {
+  position: absolute; left: 0; bottom: 100%; max-width: 100%;
+  display: flex; flex-wrap: wrap; align-items: baseline; column-gap: 0.4em;
+  height: 1.2em; overflow: hidden;
+  padding-bottom: calc(6px / var(--at-zoom, 1));
+  font-size: calc(11px / var(--at-zoom, 1)); line-height: 1.2;
+  color: var(--at-text-2); white-space: nowrap; pointer-events: none;
+}
+.at-artboard__name { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.at-artboard__size { flex: none; opacity: 0.6; }
+/* Fix-level design findings (src/inspect): a quiet count, no colour shout, no motion; the tooltip lists them. */
+.at-artboard__fixes { flex: none; color: var(--at-text-2); border-bottom: calc(1px / var(--at-zoom, 1)) dotted currentColor; }
+.at-artboard__frame {
+  display: block; border: 0; background: #fff;
+  box-shadow: var(--at-artboard-shadow);
+  pointer-events: none; /* the editor does all hit-testing */
+}
+.at-canvas__empty { position: absolute; inset: 0; display: grid; place-items: center; color: var(--at-text-2); }
+/* "Back to content" (BackToContent.tsx): top centre of the visible canvas (the inspector's inset excluded), clear of the toasts at the bottom. */
+.at-recenter {
+  position: absolute; top: 12px; left: calc((100% - var(--at-recenter-inset, 0px)) / 2); translate: -50% 0; z-index: 5;
+  display: inline-flex; align-items: center; gap: 8px; height: 28px; padding: 0 6px 0 12px;
+  border: 1px solid transparent; border-radius: var(--at-radius-l); background: var(--at-panel); color: var(--at-text); box-shadow: var(--at-shadow-float);
+  font: var(--at-type-body); font-weight: 500; cursor: default;
+}
+@media (hover: hover) { .at-recenter:hover { background: color-mix(in srgb, var(--at-panel), var(--at-text) 4%); } }
+.at-recenter:focus-visible { outline: 2px solid var(--at-accent); outline-offset: 2px; }
+.at-recenter__key { font: var(--at-type-small); color: var(--at-text-2); padding: 1px 5px; border-radius: var(--at-radius-s); background: var(--at-hover); }
+/* Opacity runs for everyone; the 6px rise joins it only without the reduced-motion preference. */
+.at-recenter { transition-property: opacity; transition-duration: 160ms; transition-timing-function: var(--at-ease-out); }
+@starting-style { .at-recenter { opacity: 0; } }
+@media (prefers-reduced-motion: no-preference) {
+  .at-recenter { transition-property: opacity, translate; }
+  @starting-style { .at-recenter { translate: -50% -6px; } }
+}
+.at-error { color: var(--at-danger); }
+
+.at-lock {
+  position: absolute; pointer-events: none;
+  outline: calc(2px / var(--at-zoom, 1)) solid var(--at-agent);
+  outline-offset: calc(-1px / var(--at-zoom, 1));
+  background: color-mix(in srgb, var(--at-agent) 6%, transparent);
+  /* The agent-gold edge glow is part of the box, so it shows and hides with the box's opacity (opacity only: no layout, no paint cost per frame). */
+  box-shadow: inset 0 0 calc(18px / var(--at-zoom, 1)) color-mix(in srgb, var(--at-agent) 32%, transparent);
+  transition: opacity 200ms var(--at-ease-out);
+}
+@starting-style { .at-lock { opacity: 0; } }
+/* After end_edit (LockOverlay keeps the box for the exit): shorter than the enter. */
+.at-lock.is-leaving { opacity: 0; transition-duration: 150ms; }
+/* A generation's placeholder frame is replaced by its image: the cover stays until it has faded, so the image shows through, not a gap. */
+.at-lock.at-lock--landed { outline: none; box-shadow: none; background: linear-gradient(135deg, #ececf1 0%, #dcdce4 100%); transition-duration: 200ms; }
+.at-lock__badge {
+  position: absolute; right: 0; top: 0;
+  margin: calc(4px / var(--at-zoom, 1));
+  display: flex; align-items: center; gap: calc(5px / var(--at-zoom, 1));
+  padding: calc(2px / var(--at-zoom, 1)) calc(7px / var(--at-zoom, 1));
+  border-radius: calc(var(--at-radius-m) / var(--at-zoom, 1));
+  font-size: calc(11px / var(--at-zoom, 1)); font-weight: 500; white-space: nowrap;
+  color: var(--at-on-agent); background: var(--at-agent);
+}
+.at-lock__dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; animation: var(--at-pulse); }
+.at-lock__badge .at-lock__dot { width: calc(6px / var(--at-zoom, 1)); height: calc(6px / var(--at-zoom, 1)); }
+/* The agent's breathing: a slow sine on opacity, shared by the badge dot, the tab dot and running steps. */
+@keyframes at-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+/* Generating: a slow diagonal shimmer (gold at 8%) across the placeholder, behind the badge. */
+.at-lock__fx { position: absolute; inset: 0; overflow: hidden; pointer-events: none; }
+@media (prefers-reduced-motion: no-preference) {
+  .at-lock__fx::before {
+    content: ''; position: absolute; inset: 0;
+    background: linear-gradient(115deg, transparent 30%, color-mix(in srgb, var(--at-agent) 8%, transparent) 50%, transparent 70%);
+    animation: at-shimmer 1.6s linear infinite;
+  }
+}
+@keyframes at-shimmer { from { transform: translateX(-100%); } to { transform: translateX(100%); } }
+@media (prefers-reduced-motion: reduce) {
+  .at-lock__dot, .at-step--running .at-step__mark { animation: none; }
+}
+
+/* ---------- Agent focus: the reveal outline of a written chunk, the writing indicator, the presence chip ----------
+   Overlays in the world layer (like .at-lock): never part of an artboard. Motion tokens live in render/reveal.ts (REVEAL). */
+
+/* A chunk's boxes: the outline fades in (160 ms) before the content starts, holds to 520 ms, then decays (600 ms). One keyframe set
+   instead of three animations; the eased segments are set per keyframe. */
+.at-build {
+  position: absolute; pointer-events: none; box-sizing: border-box;
+  outline: calc(1px / var(--at-zoom, 1)) solid var(--at-agent);
+  outline-offset: calc(-1px / var(--at-zoom, 1));
+  opacity: 0;
+  animation: at-build 1120ms linear both;
+}
+/* Layers the agent only edited: one short pulse, no content animation. */
+.at-build--edit { animation: at-build-pulse 400ms linear both; }
+@keyframes at-build {
+  0% { opacity: 0; animation-timing-function: var(--at-ease-out); }
+  14.2857% { opacity: 0.85; }
+  46.4286% { opacity: 0.85; animation-timing-function: var(--at-ease-out); }
+  100% { opacity: 0; }
+}
+@keyframes at-build-pulse {
+  0% { opacity: 0; animation-timing-function: var(--at-ease-out); }
+  30% { opacity: 0.7; animation-timing-function: var(--at-ease-out); }
+  100% { opacity: 0; }
+}
+
+/* While a write is still streaming, the layers its ghost has drawn are outlined in the same agent colour: a box fades in when its layer
+   appears, the layer being written is a touch stronger. At the commit the chunk takes over from this opacity (--held) and only decays. */
+.at-build--ghost {
+  opacity: 0.6;
+  animation: at-ghost-in 160ms var(--at-ease-out) backwards;
+  transition: opacity 100ms var(--at-ease-out);
+}
+.at-build--ghost.is-open { opacity: 0.9; }
+/* A write that was stopped or replaced: the boxes leave with the ghost (render/ghost.ts, GHOST.abortFade). Opacity only, so it stays under reduced motion. */
+.at-build--ghost.is-fading { opacity: 0; transition: opacity 150ms ease-out; }
+@keyframes at-ghost-in { from { opacity: 0; } }
+.at-build--held { animation: at-build-held 720ms linear both; }
+@keyframes at-build-held {
+  0% { opacity: 0.6; }
+  25% { opacity: 0.6; animation-timing-function: var(--at-ease-out); }
+  100% { opacity: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .at-build--ghost { animation: none; transition: none; }
+  .at-build--ghost.is-fading { transition: opacity 150ms ease-out; }
+}
+
+/* A lock is a quiet edge: the agent's work is shown where it happens (writing indicator), not by a frame around the whole artboard. */
+.at-lock--quiet {
+  outline-width: calc(1px / var(--at-zoom, 1));
+  outline-offset: calc(-0.5px / var(--at-zoom, 1));
+  outline-color: color-mix(in srgb, var(--at-agent) 55%, transparent);
+  background: color-mix(in srgb, var(--at-agent) 3%, transparent);
+  box-shadow: inset 0 0 calc(10px / var(--at-zoom, 1)) color-mix(in srgb, var(--at-agent) 20%, transparent);
+}
+
+/* Writing indicator: a thin outline on the region the agent is writing into or just wrote, and a ticker at its top edge. */
+.at-writing { position: absolute; pointer-events: none; transition: opacity 160ms var(--at-ease-out); }
+@starting-style { .at-writing { opacity: 0; } }
+.at-writing.is-leaving { opacity: 0; transition-duration: 100ms; }
+.at-writing--outlined { outline: calc(1px / var(--at-zoom, 1)) solid color-mix(in srgb, var(--at-agent) 60%, transparent); }
+.at-writing__ticker {
+  position: absolute; right: 0; bottom: 100%;
+  margin-bottom: calc(4px / var(--at-zoom, 1));
+  display: flex; align-items: center; gap: calc(6px / var(--at-zoom, 1));
+  padding: calc(2px / var(--at-zoom, 1)) calc(7px / var(--at-zoom, 1)) calc(2px / var(--at-zoom, 1)) calc(6px / var(--at-zoom, 1));
+  border-radius: calc(var(--at-radius-m) / var(--at-zoom, 1));
+  font-size: calc(11px / var(--at-zoom, 1)); font-weight: 500; white-space: nowrap;
+  color: var(--at-on-agent); background: var(--at-agent);
+}
+.at-writing--inside .at-writing__ticker { bottom: auto; top: 0; margin: calc(4px / var(--at-zoom, 1)); }
+/* Three bars, our own mark: level-meter breathing, 900 ms, phase-offset 120 ms. */
+.at-writing__bars, .at-chip__bars { display: flex; align-items: center; gap: calc(2px / var(--at-zoom, 1)); height: calc(10px / var(--at-zoom, 1)); }
+.at-chip__bars { gap: 2px; height: 10px; }
+.at-writing__bars i, .at-chip__bars i { display: block; width: calc(2px / var(--at-zoom, 1)); height: 100%; border-radius: 1px; background: currentColor; transform: scaleY(0.65); }
+.at-chip__bars i { width: 2px; }
+.at-writing__bars i:nth-child(1), .at-chip__bars i:nth-child(1) { transform: scaleY(0.4); }
+.at-writing__bars i:nth-child(3), .at-chip__bars i:nth-child(3) { transform: scaleY(1); }
+@media (prefers-reduced-motion: no-preference) {
+  .at-writing__bars i, .at-chip__bars i { animation: at-bar 900ms var(--at-ease-in-out) infinite; }
+  .at-writing__bars i:nth-child(2), .at-chip__bars i:nth-child(2) { animation-delay: 120ms; }
+  .at-writing__bars i:nth-child(3), .at-chip__bars i:nth-child(3) { animation-delay: 240ms; }
+}
+@keyframes at-bar { 0%, 100% { transform: scaleY(0.3); } 50% { transform: scaleY(1); } }
+
+/* Presence chip in the toolbar: the agent's colour and name while it works. Enters with width 0 → auto (grid fr), opacity and scale .6 → 1
+   over 400 ms; leaves the same way. Reduced motion: opacity only. */
+.at-chip { display: grid; grid-template-columns: 1fr; opacity: 0; transition: opacity 400ms ease; flex: none; }
+.at-chip[data-state="open"] { opacity: 1; }
+@starting-style { .at-chip[data-state="open"] { opacity: 0; } }
+.at-chip__inner { min-width: 0; overflow: hidden; display: flex; align-items: center; gap: 6px; padding: 2px; transform-origin: left center; }
+.at-chip__disc { flex: none; width: 18px; height: 18px; display: grid; place-items: center; border-radius: 50%; background: var(--at-agent); color: var(--at-on-agent); }
+.at-chip__name { font: var(--at-type-small); font-weight: 500; color: var(--at-text); white-space: nowrap; padding-right: 4px; }
+@media (prefers-reduced-motion: no-preference) {
+  .at-chip { grid-template-columns: 0fr; transition: opacity 400ms ease, grid-template-columns 400ms ease; }
+  .at-chip[data-state="open"] { grid-template-columns: 1fr; }
+  @starting-style { .at-chip[data-state="open"] { grid-template-columns: 0fr; } }
+  .at-chip__inner { transform: scale(0.6); transition: transform 400ms ease; }
+  .at-chip[data-state="open"] .at-chip__inner { transform: scale(1); }
+  @starting-style { .at-chip[data-state="open"] .at-chip__inner { transform: scale(0.6); } }
+}
+
+/* ---------- Phase 3: editing UI ---------- */
+.at-canvas--create:not(.at-canvas--pan-ready, .at-canvas--pan-active) { cursor: crosshair; }
+.at-btn.is-active:not(:disabled) { background: var(--at-accent); color: #fff; }
+.at-panel { display: flex; flex-direction: column; overflow: hidden; }
+.at-panel__title {
+  display: flex; align-items: center; gap: 6px;
+  height: 32px; padding: 0 10px; flex: none;
+  font: var(--at-type-title); border-bottom: 1px solid var(--at-border);
+}
+.at-empty { padding: 12px 10px; color: var(--at-text-2); }
+.at-section .at-empty { padding: 0; }
+.at-layers__list, .at-inspector__body, .at-tokens, .at-tl__strip, .at-bars__rows, .at-icode, .at-icode__errors { overscroll-behavior: contain; }
+
+/* Overlay (world space; divide by zoom for constant screen size) */
+.at-hover, .at-selection, .at-drop-line, .at-creation, .at-handle, .at-size-label { position: absolute; pointer-events: none; }
+.at-hover { outline: calc(1px / var(--at-zoom, 1)) solid var(--at-accent); }
+.at-selection { outline: calc(1.5px / var(--at-zoom, 1)) solid var(--at-accent); }
+.at-selection--editing { outline-style: dashed; }
+/* Link glyph: top-right corner of a hovered or selected linked layer; constant screen size. */
+.at-linkglyph {
+  position: absolute; pointer-events: none;
+  width: calc(16px / var(--at-zoom, 1)); height: calc(16px / var(--at-zoom, 1));
+  transform: translate(calc(-100% - 3px / var(--at-zoom, 1)), calc(3px / var(--at-zoom, 1)));
+  display: grid; place-items: center; padding: calc(3px / var(--at-zoom, 1));
+  box-sizing: border-box; border-radius: calc(var(--at-radius-s) / var(--at-zoom, 1));
+  background: var(--at-accent); color: #fff;
+}
+.at-linkglyph .at-icon { width: 100%; height: 100%; }
+.at-linkglyph.is-missing { background: var(--at-danger); }
+.at-drop-line { background: var(--at-accent); }
+.at-creation { outline: calc(1px / var(--at-zoom, 1)) solid var(--at-accent); background: color-mix(in srgb, var(--at-accent) 10%, transparent); }
+.at-handle {
+  pointer-events: auto;
+  width: calc(8px / var(--at-zoom, 1)); height: calc(8px / var(--at-zoom, 1));
+  margin: calc(-4px / var(--at-zoom, 1)) 0 0 calc(-4px / var(--at-zoom, 1));
+  background: #fff; border: calc(1px / var(--at-zoom, 1)) solid var(--at-accent);
+  border-radius: calc(var(--at-radius-xs) / var(--at-zoom, 1));
+}
+.at-handle--n, .at-handle--s { cursor: ns-resize; }
+.at-handle--e, .at-handle--w { cursor: ew-resize; }
+.at-handle--ne, .at-handle--sw { cursor: nesw-resize; }
+.at-handle--nw, .at-handle--se { cursor: nwse-resize; }
+.at-size-label {
+  transform: translate(-50%, calc(6px / var(--at-zoom, 1)));
+  padding: calc(1px / var(--at-zoom, 1)) calc(5px / var(--at-zoom, 1));
+  border-radius: calc(var(--at-radius-s) / var(--at-zoom, 1));
+  font-size: calc(11px / var(--at-zoom, 1)); white-space: nowrap;
+  background: var(--at-accent); color: #fff; font-variant-numeric: tabular-nums;
+}
+.at-artboard__label { pointer-events: auto; cursor: default; }
+/* Smart guides (drag/resize snapping) and the marquee. Pink-red so they never read as selection (blue) or agent (orange). */
+.at-guides { position: absolute; left: 0; top: 0; width: 0; height: 0; pointer-events: none; }
+.at-guide { position: absolute; pointer-events: none; --at-g: calc(1px / var(--at-zoom, 1)); }
+.at-guide--line.at-guide--v { width: 0; border-left: var(--at-g) solid var(--at-guide); margin-left: calc(-0.5px / var(--at-zoom, 1)); }
+.at-guide--line.at-guide--h { height: 0; border-top: var(--at-g) solid var(--at-guide); margin-top: calc(-0.5px / var(--at-zoom, 1)); }
+.at-guide--gap.at-guide--h { height: 0; border-top: var(--at-g) solid var(--at-guide); margin-top: calc(-0.5px / var(--at-zoom, 1)); }
+.at-guide--gap.at-guide--v { width: 0; border-left: var(--at-g) solid var(--at-guide); margin-left: calc(-0.5px / var(--at-zoom, 1)); }
+.at-guide--gap::before, .at-guide--gap::after { content: ''; position: absolute; }
+.at-guide--gap.at-guide--h::before, .at-guide--gap.at-guide--h::after { top: calc(-4px / var(--at-zoom, 1)); height: calc(7px / var(--at-zoom, 1)); border-left: var(--at-g) solid var(--at-guide); }
+.at-guide--gap.at-guide--h::before { left: 0; }
+.at-guide--gap.at-guide--h::after { right: 0; }
+.at-guide--gap.at-guide--v::before, .at-guide--gap.at-guide--v::after { left: calc(-4px / var(--at-zoom, 1)); width: calc(7px / var(--at-zoom, 1)); border-top: var(--at-g) solid var(--at-guide); }
+.at-guide--gap.at-guide--v::before { top: 0; }
+.at-guide--gap.at-guide--v::after { bottom: 0; }
+.at-guide__label {
+  position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+  padding: calc(1px / var(--at-zoom, 1)) calc(4px / var(--at-zoom, 1)); border-radius: calc(var(--at-radius-xs) / var(--at-zoom, 1));
+  font-size: calc(11px / var(--at-zoom, 1)); line-height: 1.25; white-space: nowrap; font-variant-numeric: tabular-nums;
+  background: var(--at-guide); color: var(--at-on-guide);
+}
+.at-marquee { position: absolute; pointer-events: none; outline: calc(1px / var(--at-zoom, 1)) solid var(--at-accent); background: color-mix(in srgb, var(--at-accent) 8%, transparent); }
+
+/* Layers */
+.at-layers { display: flex; flex-direction: column; min-height: 0; flex: 1; }
+.at-layers__list { overflow: auto; flex: 1; padding: 4px 0; }
+.at-layer {
+  position: relative; display: flex; align-items: center; gap: 4px;
+  height: 24px; margin: 0 6px; padding-right: 4px; border-radius: var(--at-radius-m); white-space: nowrap;
+}
+@media (hover: hover) { .at-layer:hover { background: var(--at-hover); } }
+.at-layer.is-selected { background: color-mix(in srgb, var(--at-accent) 18%, transparent); }
+.at-layer.is-hidden .at-layer__name { opacity: 0.45; }
+.at-layer.drop-inside { outline: 1.5px solid var(--at-accent); outline-offset: -1.5px; }
+.at-layer.drop-before::before, .at-layer.drop-after::after {
+  content: ''; position: absolute; left: 0; right: 0; height: 2px; background: var(--at-accent);
+}
+.at-layer.drop-before::before { top: -1px; }
+.at-layer.drop-after::after { bottom: -1px; }
+.at-layer__twisty { display: grid; place-items: center; width: 14px; height: 14px; padding: 0; border: 0; background: none; color: var(--at-text-2); }
+.at-layer__icon { display: grid; place-items: center; width: 14px; color: var(--at-text-2); }
+.at-icon { display: block; flex: none; }
+.at-icon * { vector-effect: non-scaling-stroke; }
+.at-layer__twisty[aria-expanded="true"] .at-icon { rotate: 90deg; }
+.at-layer__name { flex: 1; overflow: hidden; text-overflow: ellipsis; }
+.at-layer__rename { flex: 1; font: inherit; height: 20px; padding: 0 4px; border: 1px solid var(--at-accent); border-radius: var(--at-radius-s); background: var(--at-panel); color: var(--at-text); }
+.at-layer__agent { flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--at-agent); }
+.at-layer__actions { display: inline-flex; gap: 2px; }
+.at-layer__btn { position: absolute; right: 4px; opacity: 0; pointer-events: none; display: inline-grid; place-items: center; width: 18px; height: 18px; border: 0; border-radius: var(--at-radius-s); background: none; padding: 0; color: var(--at-text-2); }
+/* The buttons appear on hover, on keyboard focus (the row or one of its buttons is :focus-visible; a mouse click on a row is not) and while on.
+   Idle ones are out of the flow, transparent and unclickable instead of display:none, so Tab can still land on them (then :has(:focus-visible) shows them). */
+.at-layer:hover .at-layer__btn, .at-layer:focus-visible .at-layer__btn, .at-layer:has(:focus-visible) .at-layer__btn, .at-layer__btn.is-on { position: static; opacity: 1; pointer-events: auto; }
+.at-layer:focus-visible, .at-layer__btn:focus-visible, .at-layer__twisty:focus-visible { outline: 2px solid var(--at-accent); outline-offset: -2px; }
+.at-layer__btn.is-on { color: var(--at-text); }
+
+/* Pages (top of the Layers tab) */
+.at-pages { flex: none; padding: 6px 0 4px; border-bottom: 1px solid var(--at-border); }
+.at-pages__head { display: flex; align-items: center; justify-content: space-between; margin: 0 6px; padding: 0 4px 0 2px; height: 22px; }
+.at-pages__toggle { display: inline-flex; align-items: center; gap: 4px; padding: 0; border: 0; background: none; font: var(--at-type-small-strong); color: var(--at-text-2); }
+.at-pages__toggle[aria-expanded="true"] .at-icon { rotate: 90deg; }
+.at-pages__add { display: inline-grid; }
+@media (hover: hover) { .at-pages__add:hover { background: var(--at-hover); color: var(--at-text); } }
+.at-pages__list { max-height: 152px; overflow: auto; overscroll-behavior: contain; padding: 2px 0; }
+.at-page {
+  position: relative; display: flex; align-items: center; gap: 4px;
+  height: 24px; margin: 0 6px; padding: 0 8px; border-radius: var(--at-radius-m); white-space: nowrap;
+}
+@media (hover: hover) { .at-page:hover { background: var(--at-hover); } }
+.at-page.is-current { background: color-mix(in srgb, var(--at-accent) 18%, transparent); }
+.at-page.drop-before::before, .at-page.drop-after::after { content: ''; position: absolute; left: 0; right: 0; height: 2px; background: var(--at-accent); }
+.at-page.drop-before::before { top: -1px; }
+.at-page.drop-after::after { bottom: -1px; }
+.at-page__name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.at-page__kind { flex: none; margin-left: 6px; padding: 0 5px; border-radius: 4px; font: var(--at-type-small); font-size: 10px; letter-spacing: 0.03em; text-transform: uppercase; color: var(--at-text-2); background: var(--at-bg); }
+.at-page__count { flex: none; font: var(--at-type-small); font-variant-numeric: tabular-nums; color: var(--at-text-2); opacity: 0; }
+.at-page:hover .at-page__count { opacity: 1; }
+/* radius = the buttons' 6 + the 8px inset */
+.at-pages__confirm { margin: 4px 6px 2px; padding: 8px; border-radius: calc(var(--at-radius-m) + 8px); background: var(--at-bg); box-shadow: inset 0 0 0 1px var(--at-border); }
+.at-pages__confirm p { margin: 0 0 8px; font: var(--at-type-small); color: var(--at-text); white-space: normal; }
+.at-pages__confirm-actions { display: flex; justify-content: flex-end; gap: 4px; }
+
+/* Inspector */
+/* Inspector: compact and quiet. 24px fields with the label inside, two to a row; sections collapse to a header while unset. */
+.at-panel--right { --at-panel-w: 260px; }
+.at-inspector { display: flex; flex-direction: column; min-height: 0; flex: 1; }
+.at-inspector__head { display: flex; align-items: center; gap: 6px; height: 36px; padding: 0 8px 0 6px; flex: none; border-bottom: 1px solid var(--at-border); }
+.at-inspector[data-editing-state] .at-inspector__head { box-shadow: inset 0 -2px 0 var(--at-accent); }
+.at-inspector__name { flex: 1; min-width: 0; height: 24px; padding: 0 6px; font: var(--at-type-title); color: var(--at-text); text-overflow: ellipsis; border: 1px solid transparent; background: transparent; border-radius: var(--at-radius-s); }
+.at-inspector__name--static { display: flex; align-items: center; white-space: nowrap; }
+@media (hover: hover) { input.at-inspector__name:hover:not(:focus) { background: var(--at-hover); } }
+.at-inspector__name:focus { outline: none; background: var(--at-bg); border-color: var(--at-accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--at-accent) 25%, transparent); }
+.at-inspector__kind { flex: none; display: inline-flex; align-items: center; height: 18px; padding: 0 6px; font: var(--at-type-small); color: var(--at-text-2); white-space: nowrap; background: var(--at-bg); border-radius: var(--at-radius-s); }
+.at-inspector__states { position: relative; flex: none; height: 22px; padding: 0 7px; font: var(--at-type-small); color: var(--at-text-2); border: 0; border-radius: var(--at-radius-s); background: transparent; cursor: default; }
+@media (hover: hover) { .at-inspector__states:hover:not(:disabled) { background: var(--at-hover); color: var(--at-text); } }
+.at-inspector__states.is-on { background: var(--at-bg); color: var(--at-text); }
+.at-inspector__states:disabled { color: var(--at-text); }
+.at-inspector__dot { display: inline-block; width: 5px; height: 5px; margin-left: 4px; vertical-align: 1px; border-radius: 50%; background: var(--at-accent); }
+.at-inspector__body { border: 0; margin: 0; padding: 0; overflow-x: hidden; overflow-y: auto; flex: 1; min-width: 0; }
+.at-inspector__body:disabled { opacity: 0.5; }
+
+.at-isec { padding: 6px 10px 10px; border-bottom: 1px solid var(--at-border); }
+.at-isec.is-empty { padding-bottom: 0; }
+.at-isec__head { display: flex; align-items: center; gap: 6px; height: 22px; }
+.at-isec.is-empty .at-isec__head { height: 28px; }
+.at-isec.is-empty .at-isec__title { color: var(--at-text-2); }
+.at-isec__title { flex: 1; margin: 0; font: var(--at-type-small-strong); color: var(--at-text); }
+.at-isec__meta { font: var(--at-type-small); color: var(--at-text-2); font-variant-numeric: tabular-nums; }
+.at-isec__status.is-error { color: var(--at-danger); }
+.at-isec__add { display: flex; margin-right: -4px; }
+.at-isec__add .at-ibtn { width: 22px; height: 22px; }
+.at-isec__body { display: flex; flex-direction: column; gap: 4px; padding-top: 4px; }
+.at-isec__body > .at-hint { padding: 2px 0; }
+/* Sections collapse to their header on a grid-template-rows 0fr/1fr transition (no measuring in JS); the header and the section's own
+   padding follow on the same curve, and the content fades in 60ms after the height starts. Never animated while the selection changes (data-instant). */
+.at-isec__collapse { display: grid; grid-template-rows: 1fr; }
+/* The clip hides the content while the row is short; its padding keeps field focus rings from being cut at the edges. */
+.at-isec__clip { min-height: 0; overflow: hidden; padding: 0 4px 4px; margin: 0 -4px -4px; }
+.at-isub { display: flex; align-items: center; justify-content: space-between; height: 22px; margin-top: 4px; font: var(--at-type-small-strong); color: var(--at-text-2); }
+.at-isub .at-ibtn { width: 20px; height: 20px; margin-right: -2px; }
+.at-igrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px 6px; }
+.at-ialignbar { display: flex; align-items: center; justify-content: space-between; padding: 6px 10px; border-bottom: 1px solid var(--at-border); }
+.at-ialignbar__sep { flex: none; width: 1px; height: 14px; background: var(--at-border); }
+.at-irow { display: flex; align-items: center; gap: 4px; min-width: 0; }
+.at-irow > .at-ifld { flex: 1; }
+.at-irow--split > .at-ifld { flex: 1 1 0; }
+.at-icluster { display: flex; flex: none; gap: 4px; }
+.at-icluster .at-iseg { width: 92px; }
+
+/* Field: label inside, value right of it. */
+.at-ifld { position: relative; display: flex; align-items: center; min-width: 0; height: 24px; background: var(--at-bg); border: 1px solid transparent; border-radius: var(--at-radius-s); }
+.at-ifld--span { grid-column: 1 / -1; }
+@media (hover: hover) { .at-ifld:hover:not(:focus-within) { background: color-mix(in srgb, var(--at-text) 6%, var(--at-bg)); } }
+.at-ifld:focus-within { border-color: var(--at-accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--at-accent) 25%, transparent); }
+.at-ifld__label { flex: none; padding-left: 7px; font: var(--at-type-small); color: var(--at-text-2); white-space: nowrap; }
+.at-ifld__label--icon { display: grid; place-items: center; width: 22px; padding: 0; }
+.at-iinput { flex: 1; min-width: 0; width: 100%; height: 100%; padding: 0 6px; font: var(--at-type-small); font-variant-numeric: tabular-nums; color: var(--at-text); text-overflow: ellipsis; border: 0; outline: none; background: transparent; }
+.at-ifld__label + .at-iinput { padding-left: 5px; }
+.at-iinput::placeholder { color: var(--at-text-3); }
+.at-iinput:disabled { color: var(--at-text-3); }
+.at-ifld--select .at-iinput { -webkit-appearance: none; appearance: none; padding-right: 18px; cursor: default; }
+.at-ifld--select::after {
+  content: ''; position: absolute; right: 6px; top: 50%; width: 8px; height: 8px; margin-top: -4px; pointer-events: none; background: var(--at-text-2);
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 8 8'%3E%3Cpath d='m1.5 3 2.5 2.5L6.5 3' fill='none' stroke='black' stroke-width='1.2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / contain no-repeat;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 8 8'%3E%3Cpath d='m1.5 3 2.5 2.5L6.5 3' fill='none' stroke='black' stroke-width='1.2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / contain no-repeat;
+}
+.at-ifld.is-unset .at-iinput { color: var(--at-text-2); }
+.at-ifld .at-ibtn { width: 20px; height: 20px; margin-right: 1px; }
+.at-popover .at-ifld { background: var(--at-panel); }
+
+.at-ibtn { flex: none; display: grid; place-items: center; width: 24px; height: 24px; padding: 0; color: var(--at-text-2); border: 0; border-radius: var(--at-radius-s); background: transparent; cursor: default; }
+@media (hover: hover) { .at-ibtn:hover:not(:disabled) { background: var(--at-hover); color: var(--at-text); } }
+.at-ibtn:disabled { color: var(--at-text-3); }
+.at-ibtn[aria-expanded="true"], .at-ibtn[aria-pressed="true"] { background: var(--at-hover); color: var(--at-text); }
+.at-ibtn--field { background: var(--at-bg); }
+.at-ibtn--field[aria-pressed="true"] { background: var(--at-accent); color: #fff; }
+
+/* Segmented icon control (outer radius 4 = inner 2 + 2 inset). */
+.at-iseg { display: flex; gap: 1px; height: 24px; padding: 2px; background: var(--at-bg); border-radius: var(--at-radius-s); }
+.at-iseg__item { position: relative; flex: 1; min-width: 0; display: grid; place-items: center; height: 20px; padding: 0 4px; font: var(--at-type-small); color: var(--at-text-2); border: 0; border-radius: var(--at-radius-xs); background: transparent; cursor: default; }
+@media (hover: hover) { .at-iseg__item:hover:not(.is-active) { background: var(--at-hover); color: var(--at-text); } }
+.at-iseg__item.is-active { color: var(--at-text); background: var(--at-panel); box-shadow: 0 0 0 0.5px oklch(0 0 0 / 0.08), 0 1px 2px oklch(0 0 0 / 0.1); }
+.at-iseg__item:focus-visible, .at-ialign__cell:focus-visible, .at-ibtn:focus-visible, .at-inspector__states:focus-visible { outline: 2px solid var(--at-accent); outline-offset: -2px; }
+.at-iseg__dot { position: absolute; top: 3px; right: 3px; width: 4px; height: 4px; border-radius: 50%; background: var(--at-accent); }
+.at-iseg--text { display: grid; grid-template-columns: repeat(4, 1fr); }
+.at-iseg--text:has(.at-iseg__item--wide) { height: auto; }
+.at-iseg--text .at-iseg__item--wide { grid-column: 1 / -1; }
+
+/* States switch + the "editing this state" bar */
+.at-istates { display: flex; flex-direction: column; gap: 6px; padding: 8px 10px; border-bottom: 1px solid var(--at-border); }
+.at-istate-chip { display: flex; align-items: center; gap: 6px; padding: 3px 4px 3px 8px; border-radius: var(--at-radius-m); font: var(--at-type-small); color: var(--at-text); background: color-mix(in srgb, var(--at-accent) 14%, transparent); }
+.at-istate-chip > span { flex: 1; }
+.at-istate-chip .at-btn { height: 20px; padding: 0 6px; font: var(--at-type-small); }
+
+/* Colour row: swatch + value + opacity */
+.at-icolor { flex: 1; }
+.at-iswatch { position: relative; flex: none; width: 16px; height: 16px; margin-left: 4px; border-radius: var(--at-radius-xs); background: conic-gradient(#c8c8c8 25%, #fff 0 50%, #c8c8c8 0 75%, #fff 0) 0 0 / 8px 8px; outline: 1px solid oklch(0 0 0 / 0.14); outline-offset: -1px; }
+.at-iswatch::after { content: ''; position: absolute; inset: 0; border-radius: inherit; background: var(--at-swatch, transparent); box-shadow: inset 0 0 0 1px oklch(0 0 0 / 0.12); }
+.at-iswatch.is-mixed::after { background: linear-gradient(135deg, transparent 44%, var(--at-text-3) 44% 56%, transparent 56%); }
+.at-iswatch__input { position: absolute; inset: 0; z-index: 1; width: 100%; height: 100%; padding: 0; opacity: 0; border: 0; cursor: default; }
+.at-icolor .at-iswatch + .at-iinput { padding-left: 6px; }
+.at-icolor__alpha { flex: none; width: 46px; padding: 0 7px 0 0; text-align: right; }
+
+/* Flex alignment: 3x3 grid next to gap / align / justify */
+.at-iflexrow { display: flex; gap: 6px; }
+.at-iflexrow__fields { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.at-ialign { flex: none; display: grid; grid-template: repeat(3, 1fr) / repeat(3, 1fr); width: 80px; height: 80px; padding: 2px; background: var(--at-bg); border-radius: var(--at-radius-s); }
+.at-ialign__cell { position: relative; padding: 0; border: 0; border-radius: var(--at-radius-xs); background: transparent; cursor: default; }
+.at-ialign__cell::before { content: ''; position: absolute; left: 50%; top: 50%; width: 4px; height: 4px; margin: -2px 0 0 -2px; border-radius: 50%; background: var(--at-text-3); }
+@media (hover: hover) { .at-ialign__cell:hover::before { background: var(--at-text-2); } }
+.at-ialign__cell.is-active::before { width: 8px; height: 8px; margin: -4px 0 0 -4px; background: var(--at-accent); }
+
+/* Code layer */
+.at-ichips { display: flex; flex-wrap: wrap; gap: 4px; }
+.at-ichip { display: inline-flex; align-items: center; height: 20px; padding: 0 8px; font: var(--at-type-small); color: var(--at-text-2); border-radius: 10px; background: var(--at-bg); cursor: default; }
+@media (hover: hover) { .at-ichip:hover { color: var(--at-text); } }
+.at-ichip.is-on { color: var(--at-accent); background: color-mix(in srgb, var(--at-accent) 12%, transparent); }
+.at-ichip:has(:focus-visible) { outline: 2px solid var(--at-accent); outline-offset: -2px; }
+.at-icode { display: block; width: 100%; min-height: 160px; padding: 6px 8px; resize: vertical; font: 11px/1.45 var(--at-font-mono); tab-size: 2; white-space: pre; color: var(--at-text); background: var(--at-bg); border: 1px solid transparent; border-radius: var(--at-radius-s); }
+.at-icode:focus { outline: none; border-color: var(--at-accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--at-accent) 25%, transparent); }
+.at-icode__errors { max-height: 160px; margin: 0; padding: 6px 8px; overflow: auto; white-space: pre-wrap; font: 11px/1.4 var(--at-font-mono); color: var(--at-danger); background: color-mix(in srgb, var(--at-danger) 10%, transparent); border-radius: var(--at-radius-m); }
+.at-ibg { display: flex; flex-direction: column; gap: 4px; }
+.at-input:focus, .at-layer__rename:focus { outline: none; border-color: var(--at-accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--at-accent) 25%, transparent); }
+.at-banner { margin: 8px; padding: 8px 10px; border-radius: var(--at-radius-m); background: color-mix(in srgb, var(--at-agent) 15%, transparent); color: var(--at-text); }
+.at-section { padding: 8px 10px 10px; border-bottom: 1px solid var(--at-border); }
+.at-section__title { display: flex; justify-content: space-between; margin: 0 0 6px; font: var(--at-type-small-strong); color: var(--at-text-2); }
+.at-section__count { font-weight: 400; font-variant-numeric: tabular-nums; }
+.at-row { display: flex; gap: 6px; margin-top: 4px; align-items: flex-end; }
+.at-field { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0; }
+.at-field--wide { flex: 2; }
+.at-field--color { flex: none; }
+.at-field__label { font: var(--at-type-small); color: var(--at-text-2); }
+.at-input {
+  width: 100%; height: 22px; padding: 0 6px; font: var(--at-type-small);
+  color: var(--at-text); background: var(--at-bg); border: 1px solid transparent; border-radius: var(--at-radius-s);
+}
+.at-input::placeholder { color: var(--at-text-3); }
+
+/* Toasts */
+.at-toasts { position: fixed; left: 50%; bottom: 36px; transform: translateX(-50%); display: flex; flex-direction: column; gap: 6px; align-items: center; pointer-events: none; z-index: 10; }
+.at-toast { pointer-events: auto; padding: 7px 12px; border: 1px solid transparent; border-radius: var(--at-radius-l); background: var(--at-toast-bg); color: var(--at-toast-fg); box-shadow: var(--at-shadow-float); max-width: 520px; }
+.at-toast[data-leaving] { pointer-events: none; }
+.at-toast--agent { background: var(--at-agent); color: var(--at-on-agent); }
+.at-toast--warn { display: flex; align-items: center; gap: 8px; }
+.at-toast--warn::before { content: ''; flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--at-danger); }
+.at-toast { transition: opacity 200ms ease-out; }
+@starting-style { .at-toast { opacity: 0; } }
+/* Leaving (Toasts.tsx keeps the node for the exit): shorter than the enter. */
+.at-toast[data-leaving] { opacity: 0; transition-duration: 150ms; }
+@media (prefers-reduced-motion: no-preference) {
+  .at-toast { transition-property: opacity, translate; transition-duration: 200ms; transition-timing-function: var(--at-ease-out); }
+  @starting-style { .at-toast { translate: 0 8px; } }
+  .at-toast[data-leaving] { translate: 0 -4px; transition-duration: 150ms; }
+}
+
+/* ---------- Phase 4: tokens, tabs ---------- */
+.at-tabs { display: flex; gap: 2px; height: 32px; align-items: center; padding: 0 6px; flex: none; border-bottom: 1px solid var(--at-border); }
+.at-tab { font: var(--at-type-body); font-weight: 500; color: var(--at-text-2); background: none; border: 0; padding: 3px 8px; border-radius: var(--at-radius-m); }
+.at-tab.is-active { color: var(--at-text); background: var(--at-hover); }
+@media (hover: hover) { .at-tab:not(.is-active):hover { color: var(--at-text); } }
+.at-tab { display: inline-flex; align-items: center; gap: 5px; }
+.at-tab__dot { position: relative; width: 6px; height: 6px; transition: opacity 150ms var(--at-ease-out); }
+@starting-style { .at-tab__dot { opacity: 0; } }
+.at-tab__dot[data-state="closed"] { opacity: 0; }
+/* The breathing is on the inner disc so it does not fight the fade of the dot itself. */
+.at-tab__dot::before { content: ''; position: absolute; inset: 0; border-radius: 50%; background: var(--at-agent); }
+@media (prefers-reduced-motion: no-preference) {
+  .at-tab__dot::before { animation: var(--at-pulse); }
+}
+.at-tabs__spacer { flex: 1; }
+.at-subtabs { display: flex; gap: 2px; padding: 8px 10px 0; flex: none; }
+.at-subtab { font: var(--at-type-small); font-weight: 500; color: var(--at-text-2); background: none; border: 0; padding: 3px 8px; border-radius: var(--at-radius-m); }
+.at-subtab.is-active { color: var(--at-text); background: var(--at-hover); }
+@media (hover: hover) { .at-subtab:not(.is-active):hover { color: var(--at-text); } }
+.at-tokens { overflow: auto; flex: 1; }
+.at-token { display: flex; align-items: center; gap: 8px; height: 26px; padding: 0 4px; border-radius: var(--at-radius-m); cursor: default; }
+@media (hover: hover) { .at-token:hover { background: var(--at-hover); } }
+.at-token__swatch { position: relative; width: 18px; height: 18px; border-radius: var(--at-radius-xs); box-shadow: inset 0 0 0 1px var(--at-border); flex: none; overflow: hidden; }
+.at-token__swatch input { position: absolute; inset: 0; opacity: 0; width: 100%; height: 100%; cursor: pointer; }
+.at-token__sample { width: 18px; text-align: center; flex: none; }
+.at-token__value { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.at-token__count { color: var(--at-text-2); font: var(--at-type-small); font-variant-numeric: tabular-nums; }
+.at-token-chips { display: flex; flex-wrap: wrap; gap: 4px; }
+.at-chip { font: var(--at-type-small); color: var(--at-text); background: var(--at-bg); border: 0; border-radius: var(--at-radius-s); padding: 2px 6px; }
+@media (hover: hover) { .at-chip:hover { background: var(--at-hover); } }
+.at-token-chips .at-chip { display: inline-flex; align-items: baseline; gap: 4px; max-width: 100%; min-width: 0; }
+.at-chip__label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Theme gallery (Assets > Styles). The previews are the themes themselves: their tokens sit on the stage, so nothing here styles them. */
+.at-themes__list { display: flex; flex-direction: column; gap: 10px; margin-top: 8px; }
+/* radius = the stage's 6 + the 6px inset */
+.at-theme { display: flex; flex-direction: column; gap: 6px; padding: 6px; border-radius: calc(var(--at-radius-m) + 6px); background: var(--at-bg); box-shadow: inset 0 0 0 1px var(--at-border); }
+.at-theme.is-current { box-shadow: inset 0 0 0 2px var(--at-accent); }
+.at-theme__stage { box-sizing: border-box; display: flex; align-items: center; height: 148px; padding: 14px; overflow: hidden; border-radius: var(--at-radius-m); line-height: 1.5; isolation: isolate; }
+.at-theme__stage *, .at-theme__stage *::before, .at-theme__stage *::after { box-sizing: border-box; }
+.at-theme__meta { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.at-theme__name { font: var(--at-type-title); color: var(--at-text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.at-theme__spacer { flex: 1; }
+.at-theme__scheme { flex: none; width: 8px; height: 8px; border-radius: 50%; box-shadow: inset 0 0 0 1px var(--at-text-2); }
+.at-theme__scheme--dark { background: var(--at-text-2); }
+.at-theme__badge { flex: none; padding: 1px 6px; border-radius: 9px; font: var(--at-type-small); font-variant-numeric: tabular-nums; cursor: default; }
+.at-theme__badge--ok { color: var(--at-text); background: color-mix(in srgb, #2f9e5b 18%, transparent); }
+.at-theme__badge--bad { color: var(--at-danger); background: color-mix(in srgb, var(--at-danger) 14%, transparent); }
+.at-theme__hint { font: var(--at-type-small); color: var(--at-text-2); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.at-theme__actions { display: flex; align-items: center; gap: 6px; }
+.at-theme__current { font: var(--at-type-small-strong); color: var(--at-accent); }
+.at-theme-current { display: flex; flex-direction: column; gap: 6px; padding: 8px; border-radius: var(--at-radius-l); background: var(--at-bg); box-shadow: inset 0 0 0 1px var(--at-border); }
+.at-theme-custom > summary { font: var(--at-type-small); color: var(--at-text-2); cursor: default; padding: 2px 0; }
+.at-theme-custom[open] > summary { color: var(--at-text); }
+.at-theme-custom__rows { margin: 4px 0; }
+.at-theme__reset-gap { flex: none; width: 26px; }
+
+/* Press feedback: pointer presses only; disabled controls and keyboard actions stay still. 0.96 over 150ms everywhere. */
+@media (prefers-reduced-motion: no-preference) {
+  .at-btn, .at-tool, button.at-chip, .at-chip__main, .at-chip__x, .at-composer__attach, .at-composer__stop, .at-picker__trigger { transition-property: scale; transition-duration: 150ms; transition-timing-function: ease-out; }
+  .at-btn:not(:disabled):active, .at-tool:not(:disabled):active, button.at-chip:not(:disabled):active, .at-chip__main:not(:disabled):active, .at-chip__x:not(:disabled):active,
+  .at-composer__attach:not(:disabled):active, .at-composer__stop:not(:disabled):active, .at-picker__trigger:not(:disabled):active { scale: 0.96; }
+}
+
+/* ---------- Agent sidebar ---------- */
+:root {
+  --at-image-outline: oklch(0 0 0 / 0.1);
+}
+@media (prefers-color-scheme: dark) {
+  :root { --at-image-outline: oklch(1 0 0 / 0.1); }
+}
+.at-btn.is-on { background: var(--at-hover); }
+.at-agent { display: flex; flex-direction: column; min-height: 0; flex: 1; }
+
+.at-agent__messages {
+  flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain;
+  display: flex; flex-direction: column; gap: 10px;
+  padding: 12px;
+  -webkit-user-select: text; user-select: text;
+}
+.at-agent__hint { margin: 0; color: var(--at-text-2); }
+/* Empty state: heading and text are one group (10px apart); suggestions are a second group (20px below). */
+.at-agent__intro { margin: auto 0; display: flex; flex-direction: column; gap: 10px; color: var(--at-text-2); line-height: 1.5; }
+.at-agent__intro p { margin: 0; }
+.at-agent__intro code { font: var(--at-type-small); font-family: var(--at-font-mono); color: var(--at-text); -webkit-user-select: all; user-select: all; }
+.at-agent__heading { margin: 0; font: 400 30px/34px var(--at-font-display); letter-spacing: -0.01em; color: var(--at-text); text-wrap: balance; }
+/* Quiet rows: the fill shows on hover only, and the row is pulled out by its padding so its text lines up with the heading. */
+.at-agent__suggestions { display: flex; flex-direction: column; gap: 2px; margin: 10px -8px 0; }
+.at-agent__suggestion {
+  font: inherit; text-align: left; color: var(--at-text);
+  padding: 6px 8px; border-radius: var(--at-radius-m); border: 0;
+  background: transparent;
+  transition: background-color 150ms ease;
+}
+@media (hover: hover) { .at-agent__suggestion:hover:not(:disabled) { background: var(--at-hover); } }
+.at-agent__suggestion:disabled { color: var(--at-text-3); }
+.at-agent__primary {
+  align-self: flex-start; font: inherit; font-weight: 500;
+  height: 28px; padding: 0 12px; border: 0; border-radius: var(--at-radius-m);
+  color: #fff; background: var(--at-accent);
+}
+.at-agent__primary:disabled { opacity: 0.6; }
+
+.at-msg { display: flex; flex-direction: column; gap: 4px; line-height: 1.5; }
+.at-msg p { margin: 0; }
+.at-msg p + p { margin-top: 6px; }
+.at-msg code { font: var(--at-type-small); font-family: var(--at-font-mono); padding: 0 3px; border-radius: var(--at-radius-xs); background: var(--at-bg); }
+.at-msg--user { align-items: flex-end; }
+.at-msg__bubble {
+  max-width: 90%; padding: 6px 10px; border-radius: var(--at-radius-l);
+  background: var(--at-bg); color: var(--at-text);
+  white-space: pre-wrap; overflow-wrap: anywhere;
+}
+.at-msg__context { font: var(--at-type-small); color: var(--at-text-2); }
+.at-msg__context::before { content: 'With '; }
+.at-msg--assistant { overflow-wrap: anywhere; }
+
+.at-step { display: grid; grid-template-columns: 12px 1fr; column-gap: 6px; row-gap: 6px; align-items: baseline; color: var(--at-text-2); font: var(--at-type-small); }
+.at-step + .at-step { margin-top: -6px; }
+.at-step__mark { width: 6px; height: 6px; border-radius: 50%; background: var(--at-text-3); justify-self: center; transform: translateY(-1px); }
+.at-step--running .at-step__mark { background: var(--at-agent); animation: var(--at-pulse); }
+.at-step--error .at-step__mark { background: var(--at-danger); }
+.at-step--edit { color: var(--at-text); font-weight: 500; }
+.at-step__label { min-width: 0; overflow-wrap: anywhere; }
+.at-step__error { display: block; color: var(--at-danger); font-weight: 400; }
+.at-step__time { margin-left: 6px; color: var(--at-text-3); font-variant-numeric: tabular-nums; font-weight: 400; }
+.at-step__shot {
+  grid-column: 2; display: block; max-width: 100%; max-height: 160px; width: auto;
+  border-radius: var(--at-radius-m); outline: 1px solid var(--at-image-outline); outline-offset: -1px;
+}
+
+.at-notice { display: flex; flex-direction: column; gap: 8px; padding: 8px 10px; border-radius: var(--at-radius-m); line-height: 1.5; }
+.at-notice p { margin: 0; }
+.at-notice--info { color: var(--at-text-2); background: var(--at-bg); }
+.at-notice--error { color: var(--at-text); background: color-mix(in srgb, var(--at-danger) 12%, transparent); }
+
+.at-working { display: flex; align-items: center; gap: 6px; color: var(--at-agent); font: var(--at-type-small); font-weight: 500; }
+.at-working__time { color: var(--at-text-2); font-variant-numeric: tabular-nums; font-weight: 400; }
+
+.at-composer {
+  flex: none; margin: 0 8px 8px; padding: 6px;
+  border: 1px solid var(--at-border); border-radius: calc(var(--at-radius-m) + 7px); /* inner send button radius + padding + border */
+  background: var(--at-panel);
+}
+.at-composer:focus-within { border-color: color-mix(in srgb, var(--at-accent) 60%, var(--at-border)); }
+.at-composer__input {
+  display: block; width: 100%; max-height: 160px; resize: none;
+  font: var(--at-type-body); line-height: 1.45; color: var(--at-text);
+  padding: 4px 6px; border: 0; background: transparent; outline: none;
+}
+.at-composer__input::placeholder { color: var(--at-text-3); }
+.at-composer__bar { display: flex; align-items: center; gap: 2px; margin-top: 4px; }
+.at-composer__spacer { flex: 1; }
+.at-composer__context {
+  display: block; max-width: 100%; margin: 2px 6px 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font: var(--at-type-small); color: var(--at-text-2);
+}
+.at-composer__context::before { content: ''; display: inline-block; width: 6px; height: 6px; margin-right: 6px; border-radius: var(--at-radius-xs); background: var(--at-accent); vertical-align: 1px; }
+
+/* Attachments: chips above the input (composer) and above the bubble (sent), the drop target, the previews. Only the composer's chips
+   animate (the standard enter: opacity + scale 0.96 from the popover family, 160ms); removal and everything else is instant. */
+.at-agent { position: relative; }
+.at-agent__drop {
+  position: absolute; inset: 6px; z-index: 5; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; padding: 16px; text-align: center;
+  border: 2px dashed var(--at-accent); border-radius: var(--at-radius-l); pointer-events: none;
+  color: var(--at-text); background: color-mix(in srgb, var(--at-panel) 88%, var(--at-accent));
+}
+.at-agent__drop small { color: var(--at-text-2); font: var(--at-type-small); }
+.at-agent.is-dragover .at-composer { border-color: var(--at-accent); }
+.at-composer__attach {
+  flex: none; width: 26px; height: 26px; display: inline-grid; place-items: center; border: 0; border-radius: var(--at-radius-m);
+  background: transparent; color: var(--at-text-2); cursor: default;
+}
+@media (hover: hover) { .at-composer__attach:hover:not(:disabled) { background: var(--at-hover); color: var(--at-text); } }
+.at-composer__attach:disabled { color: var(--at-text-3); }
+.at-chips { display: flex; flex-wrap: wrap; gap: 4px; padding: 2px 2px 6px; min-width: 0; }
+.at-chip {
+  position: relative; display: inline-flex; align-items: center; max-width: 100%; min-width: 0;
+  border: 1px solid var(--at-border); border-radius: var(--at-radius-m); background: var(--at-bg); font: var(--at-type-small); color: var(--at-text);
+}
+.at-chip__main {
+  display: inline-flex; align-items: center; gap: 6px; min-width: 0; height: 26px; padding: 0 6px 0 3px;
+  border: 0; border-radius: calc(var(--at-radius-m) - 1px); background: transparent; color: inherit; font: inherit; text-align: left; cursor: default; /* the chip's radius less its 1px border */
+}
+@media (hover: hover) { .at-chip__main:hover:not(:disabled) { background: var(--at-hover); } }
+.at-chip__main:disabled { color: var(--at-text-2); }
+.at-chip__thumb { flex: none; width: 20px; height: 20px; border-radius: 3px; object-fit: cover; background: var(--at-panel); outline: 1px solid var(--at-image-outline); outline-offset: -1px; }
+.at-chip__icon { flex: none; display: inline-grid; place-items: center; width: 20px; height: 20px; color: var(--at-text-2); }
+.at-chip__name { min-width: 0; max-width: 130px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.at-chip__meta { flex: none; color: var(--at-text-2); font-variant-numeric: tabular-nums; }
+.at-chip__act { height: 26px; padding: 0 6px; border: 0; background: transparent; color: var(--at-text-2); font: inherit; cursor: default; }
+@media (hover: hover) { .at-chip__act:hover { color: var(--at-text); text-decoration: underline; } }
+.at-chip__x {
+  flex: none; width: 20px; height: 20px; margin-right: 3px; display: inline-grid; place-items: center; border: 0; border-radius: var(--at-radius-s);
+  background: transparent; color: var(--at-text-2); cursor: default;
+}
+@media (hover: hover) { .at-chip__x:hover { background: var(--at-active); color: var(--at-text); } }
+.at-chip--error { flex-wrap: wrap; flex: 1 0 100%; border-color: color-mix(in srgb, var(--at-danger) 55%, var(--at-border)); }
+.at-chip--error .at-chip__icon { color: var(--at-danger); }
+.at-chip__error { flex: 1 0 100%; margin: 0; padding: 0 8px 6px; color: var(--at-danger); overflow-wrap: anywhere; }
+.at-chips--sent { justify-content: flex-end; align-items: flex-start; max-width: 90%; padding: 0; }
+.at-chip--tile { border-radius: var(--at-radius-m); overflow: hidden; }
+.at-chip--tile .at-chip__main { height: auto; padding: 0; }
+.at-chip--tile .at-chip__thumb { width: 64px; height: 64px; border-radius: 0; }
+@media (prefers-reduced-motion: no-preference) {
+  .at-chip--enter { transition-property: opacity, scale; transition-duration: 160ms; transition-timing-function: var(--at-ease-out); }
+  @starting-style { .at-chip--enter { opacity: 0; scale: 0.96; } }
+}
+@media (prefers-reduced-motion: reduce) {
+  .at-chip--enter { transition: opacity 120ms ease-out; }
+  @starting-style { .at-chip--enter { opacity: 0; } }
+}
+.at-modal--lightbox { background: rgba(0, 0, 0, 0.62); }
+.at-lightbox { display: flex; flex-direction: column; align-items: center; gap: 8px; max-width: 100%; max-height: 100%; outline: none; }
+.at-lightbox__img {
+  display: block; max-width: min(92vw, 1400px); max-height: calc(100vh - 96px); object-fit: contain; border-radius: var(--at-radius-m); box-shadow: var(--at-shadow-float);
+  background: repeating-conic-gradient(#8884 0% 25%, transparent 0% 50%) 50% / 16px 16px;
+}
+.at-lightbox__caption { margin: 0; color: #fff; font: var(--at-type-small); text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5); }
+.at-dialog--wide { width: min(720px, 100%); }
+.at-attach__title { display: flex; align-items: baseline; gap: 8px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.at-attach__count { color: var(--at-text-2); font: var(--at-type-small); font-variant-numeric: tabular-nums; }
+.at-attach__text {
+  flex: 1; min-height: 0; max-height: 60vh; margin: 0; padding: 12px; overflow: auto; overscroll-behavior: contain;
+  font: var(--at-type-small); font-family: var(--at-font-mono); line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; outline: none;
+}
+.at-attach__more { margin: 0; padding: 6px 12px 10px; color: var(--at-text-2); font: var(--at-type-small); border-top: 1px solid var(--at-border); }
+
+.at-agent__actions { display: flex; align-items: center; gap: 6px; }
+.at-agent__actions .at-agent__primary { align-self: auto; }
+
+/* First-run setup (agent/SetupFlow.tsx): three steps, the command to run, a quiet "waiting" line. */
+.at-setup__steps { list-style: none; margin: 2px 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.at-setup__step { display: flex; align-items: center; gap: 8px; color: var(--at-text-2); }
+.at-setup__step--current { color: var(--at-text); font-weight: 500; }
+.at-setup__marker {
+  display: inline-grid; place-items: center; flex: none; width: 18px; height: 18px; border-radius: 50%;
+  font: var(--at-type-small); font-variant-numeric: tabular-nums; box-shadow: inset 0 0 0 1px var(--at-border);
+}
+.at-setup__step--current .at-setup__marker { color: #fff; background: var(--at-accent); box-shadow: none; }
+.at-setup__step--done .at-setup__marker { color: var(--at-accent); box-shadow: inset 0 0 0 1px var(--at-accent); }
+.at-setup__marker .at-icon { stroke-width: 2; }
+.at-setup__cmd {
+  display: flex; align-items: center; gap: 6px; padding: 6px 6px 6px 10px; border-radius: calc(var(--at-radius-m) + 6px); /* the Copy button's 6 + the 6px inset */
+  background: var(--at-bg); box-shadow: inset 0 0 0 1px var(--at-border);
+}
+.at-setup__cmd code { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.at-setup__cmd .at-btn { flex: none; }
+.at-setup__wait { display: flex; align-items: center; gap: 8px; }
+.at-setup__pulse { flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--at-agent); }
+.at-setup__error { color: var(--at-danger); }
+.at-setup__link { font: inherit; padding: 0; border: 0; background: none; color: var(--at-accent); text-decoration: underline; text-underline-offset: 2px; }
+.at-setup__badge { display: inline-grid; place-items: center; width: 28px; height: 28px; border-radius: 50%; color: #fff; background: var(--at-accent); }
+.at-setup__badge .at-icon { stroke-width: 2; }
+@media (prefers-reduced-motion: no-preference) {
+  .at-setup__pulse { animation: at-setup-pulse 1.4s var(--at-ease-sine) infinite; }
+  @keyframes at-setup-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.25; } }
+}
+
+/* Model + reasoning pickers in the composer bar */
+.at-picker { position: relative; min-width: 0; }
+.at-picker__trigger {
+  max-width: min(140px, 100%); height: 24px; padding: 0 6px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font: var(--at-type-small); color: var(--at-text-2);
+  background: transparent; border: 0; border-radius: var(--at-radius-m);
+}
+.at-picker__trigger[aria-expanded="true"] { background: var(--at-hover); color: var(--at-text); }
+@media (hover: hover) { .at-picker__trigger:hover:not(:disabled) { background: var(--at-hover); color: var(--at-text); } }
+.at-picker__trigger:disabled { color: var(--at-text-3); }
+.at-picker__trigger--select { max-width: min(110px, 100%); }
+.at-picker__popover {
+  position: absolute; left: 0; bottom: calc(100% + 6px); z-index: 20;
+  width: 280px; padding: 3px; /* 3 + the 1px border = the 4px inset the options' radius 6 is concentric with */
+  display: flex; flex-direction: column;
+  border: 1px solid transparent; border-radius: var(--at-radius-l);
+  background: var(--at-panel); box-shadow: var(--at-shadow-float);
+}
+.at-picker__search {
+  height: 26px; margin-bottom: 4px; padding: 0 8px;
+  font: var(--at-type-body); color: var(--at-text);
+  background: var(--at-bg); border: 1px solid transparent; border-radius: var(--at-radius-m); outline: none;
+}
+.at-picker__search:focus { border-color: var(--at-accent); }
+.at-picker__list { max-height: 320px; overflow-y: auto; overscroll-behavior: contain; }
+.at-picker__group { padding: 6px 8px 2px; font: var(--at-type-small-strong); color: var(--at-text-2); }
+.at-picker__empty { margin: 0; padding: 8px; font: var(--at-type-small); color: var(--at-text-2); }
+.at-picker__option {
+  display: flex; align-items: baseline; gap: 8px; width: 100%; height: 26px; padding: 0 8px;
+  font: var(--at-type-body); color: var(--at-text); text-align: left;
+  background: transparent; border: 0; border-radius: var(--at-radius-m);
+}
+.at-picker__option.is-active { background: var(--at-hover); }
+.at-picker__option[aria-selected="true"] { color: var(--at-accent); font-weight: 500; }
+.at-picker__name { flex: none; }
+.at-picker__id { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: var(--at-type-small); color: var(--at-text-2); text-align: right; }
+.at-composer__send {
+  font: inherit; font-weight: 500;
+  height: 26px; padding: 0 12px; border: 0; border-radius: var(--at-radius-m);
+  color: #fff; background: var(--at-accent);
+}
+.at-composer__send:disabled { color: var(--at-text-3); background: var(--at-bg); }
+.at-composer__stop {
+  flex: none; width: 26px; height: 26px; margin-right: 4px; display: inline-grid; place-items: center; border: 0; border-radius: var(--at-radius-m);
+  background: var(--at-bg); color: var(--at-text); cursor: default;
+}
+@media (hover: hover) { .at-composer__stop:hover:not(:disabled) { background: var(--at-hover); } }
+.at-composer__stop:disabled { color: var(--at-text-3); }
+/* Queued and steering messages above the input: flat rows, a tone step apart from the composer; no motion but the standard enter (.at-chip--enter). */
+.at-queue { display: flex; flex-direction: column; gap: 2px; padding: 2px 2px 6px; }
+.at-queue__row { display: grid; grid-template-columns: 52px minmax(0, 1fr) auto auto auto; align-items: start; column-gap: 6px; padding: 3px 3px 3px 8px; border-radius: var(--at-radius-m); background: var(--at-bg); font: var(--at-type-small); }
+.at-queue__label { padding-top: 1px; color: var(--at-text-2); }
+.at-queue__text {
+  min-width: 0; color: var(--at-text); overflow-wrap: anywhere; white-space: pre-line;
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden;
+}
+.at-queue__files { display: inline-flex; align-items: center; gap: 2px; height: 18px; color: var(--at-text-2); font-variant-numeric: tabular-nums; }
+.at-queue__act { height: 18px; padding: 0 4px; border: 0; border-radius: var(--at-radius-s); background: transparent; color: var(--at-text-2); font: inherit; cursor: default; white-space: nowrap; }
+@media (hover: hover) { .at-queue__act:hover:not(:disabled) { background: var(--at-hover); color: var(--at-text); } }
+.at-queue__act:disabled { color: var(--at-text-3); }
+.at-queue__row .at-chip__x { margin-right: 0; }
+.at-msg__tag { font: var(--at-type-small); color: var(--at-text-2); }
+
+@media (prefers-reduced-motion: no-preference) {
+  /* The sidebar's own buttons are not .at-btn, so they get the same press feedback here. */
+  .at-agent__primary, .at-composer__send, .at-agent__suggestion { transition: scale 150ms ease-out, background-color 150ms ease; }
+  .at-agent__primary:active:not(:disabled), .at-composer__send:active:not(:disabled), .at-agent__suggestion:active:not(:disabled) { scale: 0.96; }
+  /* New chat entries settle in; streaming text updates in place and does not animate. */
+  .at-msg, .at-step, .at-notice {
+    transition: opacity 200ms var(--at-ease-out), translate 200ms var(--at-ease-out);
+    @starting-style { opacity: 0; translate: 0 4px; }
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .at-msg, .at-step, .at-notice {
+    transition: opacity 150ms ease;
+    @starting-style { opacity: 0; }
+  }
+}
+/* Entries that are already there when the panel mounts (the sidebar is reopened, the app starts with a chat) do not replay their enter:
+   AgentPanel sets data-restoring for the first two frames. */
+.at-agent[data-restoring] :is(.at-msg, .at-step, .at-notice, .at-chip--enter, .at-ask, .at-answer) { transition: none; }
+
+/* ---------- Motion: Preview mode, state switcher, keyframes ---------- */
+.at-canvas--interact .at-artboard__frame { pointer-events: auto; }
+.at-canvas--interact .at-artboard__label { pointer-events: none; }
+.at-canvas--interact.at-canvas--pan-ready .at-artboard__frame,
+.at-canvas--interact.at-canvas--pan-active .at-artboard__frame { pointer-events: none; }
+.at-keyframes__editor { padding: 2px 4px 6px; }
+.at-keyframes__offset { flex: none; width: 52px; }
+.at-keyframes__item .at-token .at-btn { flex: none; }
+
+/* ---------- Assets: panel, prompt box, inspector image section, providers dialog ---------- */
+.at-lock--generating { outline-style: dashed; }
+.at-btn--bordered { box-shadow: inset 0 0 0 1px var(--at-border); }
+.at-btn--primary { background: var(--at-accent); color: #fff; }
+@media (hover: hover) { .at-btn--primary:hover:not(:disabled) { background: color-mix(in srgb, var(--at-accent) 86%, #000); } }
+.at-btn--primary:disabled { background: var(--at-hover); color: var(--at-text-3); }
+.at-btn--danger { color: var(--at-danger); }
+.at-hint { display: block; margin: 0; font: var(--at-type-small); color: var(--at-text-2); overflow-wrap: anywhere; }
+.at-hint--error { color: var(--at-danger); }
+.at-section__subtitle { margin: 8px 0 2px; font: var(--at-type-small-strong); color: var(--at-text-2); }
+
+.at-tabpanel { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+.at-tabpanel[hidden] { display: none; }
+.at-assets { display: flex; flex-direction: column; flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+.at-assets.is-dragover { outline: 2px dashed var(--at-accent); outline-offset: -4px; background: color-mix(in srgb, var(--at-accent) 6%, transparent); }
+.at-assets__bar { display: flex; align-items: center; gap: 6px; padding: 8px 10px 4px; }
+.at-assets__count { flex: 1; margin: 0; }
+.at-assets .at-empty { padding: 4px 10px 12px; }
+.at-assets__grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; padding: 4px 10px 10px; }
+.at-assets__grid--compact { grid-template-columns: repeat(3, minmax(0, 1fr)); padding: 0 0 6px; gap: 6px; }
+
+.at-thumb {
+  display: block; width: 100%; height: 100%; object-fit: contain;
+  background: conic-gradient(rgba(128, 128, 128, 0.22) 25%, transparent 0 50%, rgba(128, 128, 128, 0.22) 0 75%, transparent 0) 0 0 / 12px 12px;
+}
+.at-asset {
+  display: flex; flex-direction: column; gap: 3px; min-width: 0; padding: 4px; text-align: left;
+  font: var(--at-type-small); color: var(--at-text); background: transparent; border: 0; border-radius: var(--at-radius-m);
+}
+@media (hover: hover) { .at-asset:hover { background: var(--at-hover); } }
+.at-asset.is-selected { background: color-mix(in srgb, var(--at-accent) 18%, transparent); }
+.at-asset__frame { position: relative; display: block; aspect-ratio: 1; overflow: hidden; border-radius: var(--at-radius-s); outline: 1px solid var(--at-image-outline); outline-offset: -1px; }
+.at-asset__frame .at-thumb { object-fit: cover; }
+.at-asset__kind, .at-asset__used {
+  position: absolute; top: 4px; padding: 0 5px; border-radius: var(--at-radius-s);
+  font: var(--at-type-small); color: #fff; background: rgba(0, 0, 0, 0.62);
+}
+.at-asset__kind { left: 4px; }
+.at-asset__used { right: 4px; font-variant-numeric: tabular-nums; }
+.at-asset__title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.at-asset__meta { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--at-text-2); }
+
+.at-promptbox { display: flex; flex-direction: column; gap: 6px; flex: none; }
+.at-prompt {
+  display: block; width: 100%; min-height: 56px; padding: 6px; resize: vertical;
+  font: var(--at-type-body); color: var(--at-text); background: var(--at-bg); border: 1px solid transparent; border-radius: var(--at-radius-s);
+}
+.at-prompt::placeholder { color: var(--at-text-3); }
+.at-prompt:focus { outline: none; border-color: var(--at-accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--at-accent) 25%, transparent); }
+.at-modelselect { display: flex; flex-direction: column; gap: 4px; }
+.at-promptbox .at-row { margin-top: 0; }
+.at-promptbox__actions { display: flex; gap: 6px; margin-top: 2px; }
+.at-promptbox__actions .at-btn--primary { flex: 1; }
+
+.at-jobstatus { display: flex; align-items: center; gap: 6px; padding: 6px 8px; border-radius: var(--at-radius-m); font: var(--at-type-small); color: var(--at-text); background: color-mix(in srgb, var(--at-agent) 14%, transparent); }
+.at-jobstatus__dot { flex: none; color: var(--at-agent); }
+.at-jobstatus__text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; overflow-wrap: anywhere; }
+.at-jobstatus__time { flex: none; color: var(--at-text-2); font-variant-numeric: tabular-nums; }
+.at-jobstatus--note { align-items: flex-start; background: var(--at-bg); }
+
+.at-assetdetail { display: flex; flex-direction: column; gap: 8px; flex: none; border-bottom: 0; }
+.at-assetdetail__preview { height: auto; max-height: 180px; border-radius: var(--at-radius-s); outline: 1px solid var(--at-image-outline); outline-offset: -1px; }
+.at-assetdetail__title { margin: 0; overflow-wrap: anywhere; -webkit-user-select: text; user-select: text; }
+.at-assetdetail__meta { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 2px 8px; margin: 0; font: var(--at-type-small); }
+.at-assetdetail__meta dt { color: var(--at-text-2); }
+.at-assetdetail__meta dd { margin: 0; overflow-wrap: anywhere; display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 4px; -webkit-user-select: text; user-select: text; }
+.at-assetdetail__actions { display: flex; flex-direction: column; gap: 4px; }
+.at-assetdetail__actions .at-btn { text-align: left; }
+.at-assetdetail__edit { display: flex; flex-direction: column; gap: 6px; }
+.at-assetdetail__delete { display: flex; align-items: center; gap: 6px; font: var(--at-type-small); }
+.at-assetdetail__delete span { flex: 1; }
+
+.at-currentimage { display: flex; align-items: center; gap: 8px; min-height: 28px; }
+.at-currentimage__thumb { flex: none; width: 28px; height: 28px; object-fit: cover; border-radius: var(--at-radius-s); outline: 1px solid var(--at-image-outline); outline-offset: -1px; }
+.at-currentimage__thumb--empty { display: grid; place-items: center; color: var(--at-text-3); background: var(--at-bg); outline: 0; }
+.at-currentimage__text { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+.at-currentimage__title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: var(--at-type-small); }
+.at-currentimage__title--muted { color: var(--at-text-2); }
+.at-currentimage .at-btn { height: 22px; padding: 0 6px; font: var(--at-type-small); }
+.at-popover { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; padding: 8px; border-radius: calc(var(--at-radius-s) + 8px); background: var(--at-bg); } /* the fields' 4 + the 8px inset */
+.at-popover .at-input, .at-popover .at-prompt { background: var(--at-panel); }
+.at-popover .at-row { margin-top: 0; }
+.at-popover .at-asset { padding: 2px; }
+
+/* Providers dialog */
+.at-modal { position: fixed; inset: 0; z-index: 9; display: grid; place-items: center; padding: 16px; background: rgba(0, 0, 0, 0.28); }
+.at-dialog {
+  display: flex; flex-direction: column; width: min(480px, 100%); max-height: calc(100vh - 48px);
+  color: var(--at-text); background: var(--at-panel); border: 1px solid transparent; border-radius: var(--at-radius-l); box-shadow: var(--at-shadow-float);
+  outline: none; -webkit-user-select: text; user-select: text;
+}
+.at-dialog__head { display: flex; align-items: center; gap: 6px; padding: 10px 12px; border-bottom: 1px solid var(--at-border); }
+.at-dialog__title { flex: 1; margin: 0; font: var(--at-type-title); }
+.at-dialog__body { display: flex; flex-direction: column; gap: 10px; padding: 12px; overflow-y: auto; overscroll-behavior: contain; }
+.at-provider { display: flex; flex-direction: column; gap: 6px; padding: 10px; border-radius: calc(var(--at-radius-s) + 10px); background: var(--at-bg); } /* the fields' 4 + the 10px inset */
+.at-provider__head { display: flex; align-items: center; gap: 6px; }
+.at-provider__status { color: var(--at-text-2); font: var(--at-type-small); }
+.at-provider__count { margin-left: auto; color: var(--at-text-2); font: var(--at-type-small); font-variant-numeric: tabular-nums; }
+.at-provider__detail, .at-provider__setup { margin: 0; overflow-wrap: anywhere; }
+.at-provider__setup { color: var(--at-text-2); }
+.at-provider__key { display: flex; flex-direction: column; gap: 6px; }
+.at-provider__buttons { display: flex; gap: 6px; }
+.at-provider__key .at-input { background: var(--at-panel); height: 26px; }
+.at-provider__default .at-input { height: 26px; }
+.at-dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--at-text-3); }
+.at-dot--ready { background: #30a14e; }
+.at-dot--needs_setup { background: var(--at-agent); }
+.at-dot--unavailable { background: var(--at-danger); }
+/* Modal and dialog: opacity everywhere; the 0.96 scale joins it without the reduced-motion preference. They stay centred (not anchored to a trigger). */
+.at-modal { transition: opacity 150ms ease-out; }
+@starting-style { .at-modal { opacity: 0; } }
+@media (prefers-reduced-motion: no-preference) {
+  .at-modal, .at-dialog { transition-property: opacity, scale; transition-duration: 200ms; transition-timing-function: var(--at-ease-out); }
+  @starting-style { .at-dialog { opacity: 0; scale: 0.96; } }
+}
+
+/* Context menu (assets tiles, canvas) */
+.at-contextmenu {
+  position: fixed; z-index: 30; min-width: 190px; max-width: 280px; padding: 3px; outline: none; /* 3 + the 1px border = 4px: the items' radius 6 is concentric with 10 */
+  border: 1px solid transparent; border-radius: var(--at-radius-l); background: var(--at-panel); box-shadow: var(--at-shadow-float);
+}
+.at-contextmenu__sep { height: 1px; margin: 4px 6px; background: var(--at-border); }
+.at-contextmenu__item {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 1px; width: 100%; min-height: 26px; padding: 5px 8px; justify-content: center;
+  font: var(--at-type-body); color: var(--at-text); text-align: left; background: transparent; border: 0; border-radius: var(--at-radius-m);
+}
+.at-contextmenu__item:focus-visible { background: var(--at-hover); outline: none; }
+@media (hover: hover) { .at-contextmenu__item:hover:not([aria-disabled]) { background: var(--at-hover); outline: none; } }
+.at-contextmenu__item.is-danger { color: var(--at-danger); }
+.at-contextmenu__item[aria-disabled] { color: var(--at-text-3); }
+.at-contextmenu__reason { font: var(--at-type-small); color: var(--at-text-2); overflow-wrap: anywhere; }
+.at-contextmenu__label { display: flex; align-items: baseline; justify-content: space-between; gap: 20px; width: 100%; }
+.at-contextmenu__check { display: inline-block; width: 14px; }
+.at-contextmenu__shortcut { font: var(--at-type-small); color: var(--at-text-2); font-variant-numeric: tabular-nums; }
+/* (enter and exit of menus and popovers: see "Motion" at the end) */
+.at-check { display: flex; align-items: center; gap: 6px; font: var(--at-type-small); color: var(--at-text-2); }
+.at-check input { margin: 0; }
+
+/* ---------- File export popover (Toolbar > Export > Export…) ---------- */
+.at-export { position: fixed; z-index: 40; width: 316px; padding: 9px; display: flex; flex-direction: column; gap: 8px; border: 1px solid transparent; border-radius: var(--at-radius-l); background: var(--at-panel); box-shadow: var(--at-shadow-float); outline: none; transform-origin: top right; }
+.at-export__title { font: var(--at-type-title); }
+.at-export__row { display: grid; grid-template-columns: 44px minmax(0, 1fr); align-items: center; gap: 8px; }
+.at-export__label { font: var(--at-type-small); color: var(--at-text-2); }
+.at-export__seg { display: grid; }
+.at-export__deck { display: flex; flex-direction: column; gap: 6px; }
+.at-export__seg .at-iseg__item { white-space: nowrap; padding: 0 2px; }
+.at-export__seg .at-iseg__item:disabled { color: var(--at-text-3); background: transparent; }
+.at-export__seg .at-iseg__item.is-active:disabled { background: var(--at-panel); }
+.at-check.is-disabled { color: var(--at-text-3); }
+.at-export__summary { color: var(--at-text); }
+.at-export__go { height: 28px; }
+.at-export__progress { display: flex; flex-direction: column; gap: 6px; }
+.at-export__bar { height: 4px; border-radius: 2px; background: var(--at-hover); overflow: hidden; }
+.at-export__fill { height: 100%; border-radius: 2px; background: var(--at-accent); }
+.at-export__fill.is-indeterminate { width: 40%; }
+.at-export__status { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.at-export__status .at-hint { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@media (prefers-reduced-motion: no-preference) {
+  .at-export__fill { transition: width 200ms var(--at-ease-out); }
+  .at-export__fill.is-indeterminate { animation: at-export-slide 1.1s ease-in-out infinite alternate; }
+}
+@keyframes at-export-slide { from { transform: translateX(0); } to { transform: translateX(150%); } }
+
+/* Hand off to an agent: the export popover's shell with a status line (a dot: grey = not connected, agent colour = connected, pulsing = working). */
+.at-handoff { width: 340px; }
+.at-handoff__status { display: flex; align-items: flex-start; gap: 6px; color: var(--at-text); }
+.at-handoff__dot { flex: none; width: 6px; height: 6px; margin-top: 5px; border-radius: 50%; background: var(--at-text-3); transition: background-color 150ms ease-out; }
+.at-handoff__status[data-live] .at-handoff__dot { background: var(--at-agent); }
+.at-handoff__copy { display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
+@media (prefers-reduced-motion: no-preference) {
+  .at-handoff__status[data-live="working"] .at-handoff__dot { animation: var(--at-pulse); }
+}
+
+/* ---------- Motion ----------
+   Frequency decides. Nothing animates on selection, tool or tab switches, keyboard actions, canvas pan and zoom, undo/redo or page
+   switches; motion goes where a state changes occasionally, and where the agent's work becomes visible.
+   Tokens are at the top (--at-ease-*). Movement, scale and blur sit under prefers-reduced-motion: no-preference; the reduce branch keeps an
+   opacity fade. Exits are shorter than enters. Properties are always named, never `all`. */
+
+/* Pages: the disclosure chevron turns (layer twisties stay instant: used constantly). */
+@media (prefers-reduced-motion: no-preference) {
+  .at-pages__toggle .at-icon { transition: rotate 150ms var(--at-ease-out); }
+}
+
+/* Menus, popovers, the export popover, the color picker, the text format bar and the timeline's transition popover: opacity + scale from 0.96 out
+   of the trigger's side (transform-origin: set per surface), 160ms. Exit: 100ms opacity only (useExitGhost). */
+.at-picker__popover { transform-origin: bottom left; }
+.at-tfbar { transform-origin: bottom center; }
+.at-tfbar[data-below] { transform-origin: top center; }
+@media (prefers-reduced-motion: no-preference) {
+  .at-contextmenu, .at-export, .at-picker__popover, .at-cpick, .at-tfbar, .at-tl-chip__pop { transition-property: opacity, scale; transition-duration: 160ms; transition-timing-function: var(--at-ease-out); }
+  @starting-style { .at-contextmenu, .at-export, .at-picker__popover, .at-cpick, .at-tfbar, .at-tl-chip__pop { opacity: 0; scale: 0.96; } }
+}
+@media (prefers-reduced-motion: reduce) {
+  .at-contextmenu, .at-export, .at-picker__popover, .at-cpick, .at-tfbar, .at-tl-chip__pop { transition: opacity 120ms ease-out; }
+  @starting-style { .at-contextmenu, .at-export, .at-picker__popover, .at-cpick, .at-tfbar, .at-tl-chip__pop { opacity: 0; } }
+}
+.at-ghost { pointer-events: none; }
+
+/* Inspector sections: height on grid-template-rows 0fr → 1fr (200ms, ease-in-out), content opacity at +60ms. Header height and the section's
+   bottom padding follow on the same curve so nothing jumps. data-instant (the selection or undo/redo changed what the sections hold) turns it off. */
+@media (prefers-reduced-motion: no-preference) {
+  .at-isec { transition: padding-bottom 200ms var(--at-ease-in-out); }
+  .at-isec__head { transition: height 200ms var(--at-ease-in-out); }
+  .at-isec__collapse { transition: grid-template-rows 200ms var(--at-ease-in-out); }
+  .at-isec__collapse[data-state="closed"] { grid-template-rows: 0fr; }
+  @starting-style { .at-isec__collapse { grid-template-rows: 0fr; } }
+  .at-isec__body { transition: opacity 140ms ease-out 60ms; }
+  @starting-style { .at-isec__body { opacity: 0; } }
+  .at-isec__collapse[data-state="closed"] .at-isec__body { opacity: 0; transition-duration: 100ms; transition-delay: 0ms; }
+  .at-isec[data-instant], .at-isec[data-instant] .at-isec__head, .at-isec__collapse[data-instant], .at-isec__collapse[data-instant] .at-isec__body { transition: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .at-isec__body { transition: opacity 150ms ease-out; }
+  @starting-style { .at-isec__body { opacity: 0; } }
+  .at-isec__collapse[data-state="closed"] .at-isec__body { opacity: 0; }
+  .at-isec__collapse[data-instant] .at-isec__body { transition: none; }
+}
+
+/* Sidebar (⌃⌘S): the width slides on the drawer curve, 220ms; the canvas follows. The panel inside keeps its width, so its content never reflows.
+   Declared only once the app has mounted (data-armed) so a window that opens with the sidebar shown does not slide it in, and off while dragging
+   the resizer. Reduced motion: the panel fades and the width changes when it has gone. */
+.at-sidebar { flex: none; display: flex; width: var(--at-sidebar-w); overflow: hidden; }
+@media (prefers-reduced-motion: no-preference) {
+  .at-sidebar[data-armed] { transition: width 220ms var(--at-ease-drawer); }
+  .at-sidebar[data-armed][data-state="closed"] { width: 0; }
+  @starting-style { .at-sidebar[data-armed] { width: 0; } }
+  .at-sidebar[data-resizing] { transition: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .at-sidebar[data-armed] .at-panel--left { transition: opacity 150ms ease-out; }
+  .at-sidebar[data-armed][data-state="closed"] .at-panel--left { opacity: 0; }
+  @starting-style { .at-sidebar[data-armed] .at-panel--left { opacity: 0; } }
+}
+
+/* A status label that changes (the Working pill): old and new crossfade in one cell, with a 2px blur when movement is allowed. */
+.at-xfade { display: inline-grid; }
+.at-xfade__layer { grid-area: 1 / 1; transition: opacity 150ms ease-out; }
+@starting-style { .at-xfade__layer { opacity: 0; } }
+.at-xfade__layer[data-leaving] { opacity: 0; }
+@media (prefers-reduced-motion: no-preference) {
+  .at-xfade__layer { transition-property: opacity, filter; transition-timing-function: var(--at-ease-out); }
+  @starting-style { .at-xfade__layer { filter: blur(2px); } }
+  .at-xfade__layer[data-leaving] { filter: blur(2px); }
+}
+
+/* The caret at the end of streaming text: blinks 1 → 0.2 over 1s; steady under reduced motion. */
+.at-caret { display: inline-block; width: 2px; height: 1.05em; margin-left: 2px; vertical-align: text-bottom; border-radius: 1px; background: var(--at-agent); }
+@media (prefers-reduced-motion: no-preference) {
+  .at-caret { animation: at-caret 1s var(--at-ease-sine) infinite; }
+}
+@keyframes at-caret { 0%, 100% { opacity: 1; } 50% { opacity: 0.2; } }
+
+/* Icon swap on an occasional state change (copy → check): both icons stay in the DOM; scale 0.25 → 1, opacity, 4px blur → 0, 300ms. */
+.at-swap { display: inline-grid; place-items: center; }
+.at-swap > * { grid-area: 1 / 1; display: grid; place-items: center; transition: opacity 300ms var(--at-ease-icon); }
+.at-swap__b, .at-swap[data-on="true"] .at-swap__a { opacity: 0; }
+.at-swap[data-on="true"] .at-swap__b { opacity: 1; }
+@media (prefers-reduced-motion: no-preference) {
+  .at-swap > * { transition-property: opacity, scale, filter; }
+  .at-swap__b, .at-swap[data-on="true"] .at-swap__a { scale: 0.25; filter: blur(4px); }
+  .at-swap[data-on="true"] .at-swap__b { scale: 1; filter: blur(0px); }
+}
+
+/* ---------- Preview ---------- */
+/* The canvas area (right of the sidebar) is the stage: one screen, the floating bar. The toolbar stays (its editing tools are disabled);
+   the inspector is gone (App). */
+.at-stage { flex: 1; min-width: 0; position: relative; display: flex; flex-direction: column; } /* the canvas fills it; the video timeline sits under it */
+/* The lock overlay layer: in Preview it takes the screen's transform (Canvas), so the agent's glow lines up with the screen. */
+.at-lockworld { position: absolute; left: 0; top: 0; width: 0; height: 0; transform-origin: 0 0; pointer-events: none; }
+.at-canvas--present .at-artboard__label { display: none; }
+.at-canvas--present .at-artboard { transform-origin: 0 0; }
+.at-canvas--present .at-artboard--hidden { visibility: hidden; opacity: 0; pointer-events: none; }
+.at-canvas--present .at-artboard--shown { visibility: visible; opacity: 1; }
+.at-canvas--present .at-artboard--leaving { visibility: visible; opacity: 0; pointer-events: none; }
+.at-canvas--present .at-artboard--leaving .at-artboard__frame { pointer-events: none; }
+/* Link navigation: the screen that leaves and the one that arrives crossfade over 150 ms (opacity only). Reduced motion switches instantly. */
+@media (prefers-reduced-motion: no-preference) {
+  .at-canvas--present .at-artboard { transition: opacity var(--at-present-ms, 150ms) var(--at-ease-out); }
+  /* A deck slide change is played by the View Transition (present/transitions.ts), or by the fade above where there is none. */
+  .at-canvas--deck .at-artboard--shown { transition-duration: 0ms; }
+}
+.at-presentbar {
+  position: absolute; left: 50%; bottom: 18px; z-index: 40; translate: -50% 0;
+  display: flex; align-items: center; gap: 2px; max-width: calc(100% - 24px); padding: 4px 6px;
+  border-radius: 10px; border: 1px solid var(--at-border);
+  background: color-mix(in srgb, var(--at-panel) 90%, transparent);
+  -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px);
+  box-shadow: 0 6px 24px -6px oklch(0 0 0 / 0.28), 0 1px 3px oklch(0 0 0 / 0.12);
+  opacity: 0; pointer-events: none; transition: opacity 150ms var(--at-ease-out);
+  white-space: nowrap; user-select: none;
+}
+.at-presentbar[data-visible] { opacity: 1; pointer-events: auto; transition-duration: 200ms; }
+.at-presentbar__name { display: flex; flex-direction: column; align-items: flex-start; padding: 0 8px; min-width: 0; line-height: 1.2; }
+.at-presentbar__title { max-width: 220px; overflow: hidden; text-overflow: ellipsis; font-weight: 500; }
+.at-presentbar__size { color: var(--at-text-2); font-size: 11px; font-variant-numeric: tabular-nums; }
+.at-presentbar__sep { width: 1px; height: 18px; margin: 0 4px; background: var(--at-border); }
+.at-presentbar__seg { display: flex; gap: 1px; padding: 1px; border-radius: 7px; background: var(--at-bg); margin-right: 2px; }
+.at-presentbar__seg .at-btn { height: 22px; padding: 0 8px; color: var(--at-text-2); }
+.at-presentbar__seg .at-btn[aria-pressed="true"] { color: var(--at-text); background: var(--at-panel); box-shadow: 0 0 0 0.5px oklch(0 0 0 / 0.08), 0 1px 2px oklch(0 0 0 / 0.1); }
+.at-presentbar__exit { margin-left: 2px; }
+.at-presentbar__exit kbd { font: inherit; font-size: 11px; color: var(--at-text-2); padding: 0 4px; border-radius: 4px; background: var(--at-bg); }
+/* Toasts ride above the floating bar while presenting. */
+.at-app--present .at-toasts { bottom: 84px; }
+
+/* Deck Present: the presenter console takes the right side of the stage; the canvas letterboxes the slide in what is left. */
+.at-console {
+  position: absolute; top: 0; right: 0; bottom: 0; z-index: 30; box-sizing: border-box;
+  width: clamp(280px, 30%, 420px); padding: 16px 16px 12px; display: flex; flex-direction: column; gap: 8px;
+  background: var(--at-panel); border-left: 1px solid var(--at-border); color: var(--at-text); overflow: hidden;
+}
+.at-console__head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.at-console__count { font-size: 15px; color: var(--at-text-2); font-variant-numeric: tabular-nums; }
+.at-console__count strong { font-size: 28px; font-weight: 600; color: var(--at-text); }
+.at-console__digits { color: var(--at-accent, var(--at-text)); }
+.at-console__timer { font-size: 22px; font-variant-numeric: tabular-nums; color: var(--at-text); }
+.at-console__name { font-size: 12px; color: var(--at-text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.at-console__blank { font-size: 12px; padding: 6px 8px; border-radius: 6px; background: var(--at-bg); color: var(--at-text-2); }
+.at-console__label { margin-top: 6px; font-size: 11px; letter-spacing: 0.04em; text-transform: uppercase; color: var(--at-text-2); }
+.at-console__thumb { position: relative; width: 100%; overflow: hidden; border-radius: 6px; background: #000; border: 1px solid var(--at-border); }
+.at-console__thumb iframe { position: absolute; left: 0; top: 0; border: 0; transform-origin: 0 0; pointer-events: none; background: #fff; }
+.at-console__end { display: grid; place-items: center; aspect-ratio: 16 / 9; border-radius: 6px; border: 1px dashed var(--at-border); color: var(--at-text-2); font-size: 13px; }
+.at-console__notes {
+  flex: 1; min-height: 80px; resize: none; padding: 8px 10px; border-radius: 6px; border: 1px solid var(--at-border);
+  background: var(--at-bg); color: var(--at-text); font: inherit; font-size: 17px; line-height: 1.45;
+}
+.at-console__notes:focus-visible { outline: 2px solid var(--at-accent, currentColor); outline-offset: -1px; }
+.at-console__foot { font-size: 11px; color: var(--at-text-2); }
+
+/* Inspector: slide notes. */
+.at-itextarea { display: block; width: 100%; box-sizing: border-box; margin-top: 6px; padding: 6px 8px; resize: vertical; min-height: 72px; font: var(--at-type-small); line-height: 1.45; color: var(--at-text); border: 1px solid var(--at-border); border-radius: 6px; background: var(--at-bg); outline: none; }
+.at-itextarea:focus-visible { border-color: var(--at-accent); }
+.at-layer__slide { flex: none; min-width: 16px; margin-right: 4px; font: var(--at-type-small); font-variant-numeric: tabular-nums; text-align: right; color: var(--at-text-2); }
+/* While a slide transition runs, the presenter console and the floating bar are lifted out of the page snapshot with their own
+   names, so they stay above the sliding stage instead of being painted under its snapshot. */
+html[data-ocelot-slide] .at-console { view-transition-name: ocelot-console; }
+html[data-ocelot-slide] .at-presentbar { view-transition-name: ocelot-presentbar; }
+
+/* ---------- Agent questions (agent/QuestionCard.tsx): the card above the composer, the answered row, the dots ---------- */
+/* One quiet panel: a border and a tone step, no shadow (it rests in the column). Colour carries meaning only: the agent's dot, the selection. */
+.at-ask {
+  flex: none; display: flex; flex-direction: column; min-height: 0; max-height: 66%;
+  margin: 0 8px 8px; border: 1px solid var(--at-border); border-radius: calc(var(--at-radius-m) + 7px); background: var(--at-panel); outline: none; /* the answer rows' 6 + the 6px inset + the border (= the composer) */
+}
+.at-ask:focus-within { border-color: color-mix(in srgb, var(--at-accent) 60%, var(--at-border)); }
+.at-ask__head { flex: none; display: flex; align-items: center; gap: 6px; padding: 10px 12px 2px; font: var(--at-type-small); color: var(--at-text-2); }
+.at-ask__dot { flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--at-agent); }
+.at-ask__agent { font-weight: 500; color: var(--at-text); }
+.at-ask__more { margin-left: auto; }
+.at-ask__body {
+  flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain;
+  display: flex; flex-direction: column; gap: 10px; padding: 4px 6px 6px;
+  -webkit-user-select: text; user-select: text;
+}
+.at-ask__q { min-width: 0; margin: 0; padding: 0; border: 0; }
+.at-ask__legend { padding: 6px 8px 4px; font: var(--at-type-body); font-weight: 500; line-height: 18px; color: var(--at-text); text-wrap: pretty; }
+.at-ask__chip { display: inline-block; margin-right: 6px; padding: 0 6px; border-radius: var(--at-radius-s); font: var(--at-type-small); font-weight: 500; color: var(--at-text-2); background: var(--at-hover); vertical-align: 1px; }
+.at-ask__opt { position: relative; display: flex; align-items: flex-start; gap: 8px; padding: 6px 8px; border-radius: var(--at-radius-m); line-height: 16px; cursor: default; }
+@media (hover: hover) { .at-ask__opt:hover { background: var(--at-hover); } }
+.at-ask__opt[data-selected] { background: color-mix(in srgb, var(--at-accent) 10%, transparent); }
+.at-ask__opt input[type="radio"], .at-ask__opt input[type="checkbox"] { position: absolute; width: 1px; height: 1px; margin: 0; opacity: 0; pointer-events: none; }
+.at-ask__otherpick { display: flex; flex: none; }
+.at-ask__mark {
+  flex: none; position: relative; width: 14px; height: 14px; margin-top: 1px; border-radius: 50%;
+  border: 1px solid color-mix(in srgb, var(--at-text) 38%, transparent); background: transparent;
+}
+.at-ask__mark[data-kind="checkbox"] { border-radius: var(--at-radius-s); }
+input:checked + .at-ask__mark { border-color: var(--at-accent); background: var(--at-accent); }
+input[type="radio"]:checked + .at-ask__mark { box-shadow: inset 0 0 0 3px var(--at-panel); }
+input[type="checkbox"]:checked + .at-ask__mark::after {
+  content: ''; position: absolute; left: 4px; top: 1px; width: 4px; height: 8px; border: solid #fff; border-width: 0 1.5px 1.5px 0; rotate: 45deg;
+}
+input:focus-visible + .at-ask__mark { outline: 2px solid color-mix(in srgb, var(--at-accent) 60%, transparent); outline-offset: 2px; }
+.at-ask__optbody { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.at-ask__label { font: var(--at-type-body); color: var(--at-text); overflow-wrap: anywhere; }
+.at-ask__rec { margin-left: 6px; padding: 0 5px; border-radius: var(--at-radius-s); font: var(--at-type-small); color: var(--at-text-2); background: var(--at-hover); white-space: nowrap; }
+.at-ask__desc { font: var(--at-type-small); color: var(--at-text-2); overflow-wrap: anywhere; }
+.at-ask__key { flex: none; min-width: 16px; height: 16px; padding: 0 4px; border-radius: var(--at-radius-s); font: var(--at-type-small); font-variant-numeric: tabular-nums; text-align: center; line-height: 16px; color: var(--at-text-2); background: var(--at-hover); }
+.at-ask__opt--other { align-items: center; }
+.at-ask__opt--other .at-ask__mark { margin-top: 0; }
+.at-ask__input {
+  flex: 1; min-width: 0; height: 24px; padding: 0 8px; border: 1px solid transparent; border-radius: var(--at-radius-s); outline: none;
+  font: var(--at-type-body); color: var(--at-text); background: var(--at-bg); -webkit-user-select: text; user-select: text;
+}
+.at-ask__input::placeholder { color: var(--at-text-2); }
+.at-ask__input:focus-visible { border-color: color-mix(in srgb, var(--at-accent) 60%, var(--at-border)); }
+.at-ask__foot { flex: none; display: flex; align-items: center; justify-content: flex-end; gap: 8px; padding: 8px 12px 10px; }
+.at-ask__hint { margin-right: auto; font: var(--at-type-small); color: var(--at-text-2); }
+.at-ask__skip { flex: none; height: 28px; padding: 0 8px; border: 0; border-radius: var(--at-radius-m); font: inherit; white-space: nowrap; color: var(--at-text-2); background: transparent; }
+@media (hover: hover) { .at-ask__skip:hover { color: var(--at-text); background: var(--at-hover); } }
+.at-ask__foot .at-agent__primary { align-self: auto; flex: none; white-space: nowrap; }
+
+/* The answered question in the transcript: what was asked (quiet), what the person said (ink). */
+.at-answer { display: flex; flex-direction: column; gap: 4px; padding: 8px 10px; border-radius: var(--at-radius-m); background: var(--at-bg); font: var(--at-type-small); color: var(--at-text-2); }
+.at-answer__who { display: flex; align-items: center; gap: 6px; }
+.at-answer__pair { display: flex; flex-direction: column; gap: 1px; overflow-wrap: anywhere; }
+.at-answer__a { font: var(--at-type-body); font-weight: 500; color: var(--at-text); overflow-wrap: anywhere; }
+
+/* Waiting for the person is not work: the dot is a hollow ring that holds still. */
+.at-working--waiting { color: var(--at-text-2); }
+.at-working--waiting .at-lock__dot { background: transparent; box-shadow: inset 0 0 0 1.5px currentColor; animation: none; }
+/* Tab and sidebar-toggle dots for a waiting question: solid and still (a working agent pulses). */
+.at-tab__dot.at-tab__dot--ask::before { animation: none; }
+.at-sidebarbtn.is-asking::after { opacity: 1; top: 3px; right: 3px; width: 8px; height: 8px; }
+
+/* A toast with a button ("<Agent> asks a question" · Answer). */
+.at-toast--action { display: flex; align-items: center; gap: 12px; padding-right: 6px; }
+.at-toast__action {
+  flex: none; height: 24px; padding: 0 10px; border: 0; border-radius: var(--at-radius-m); font: inherit; font-weight: 500;
+  color: inherit; background: color-mix(in srgb, currentColor 18%, transparent); pointer-events: auto;
+}
+@media (hover: hover) { .at-toast__action:hover { background: color-mix(in srgb, currentColor 28%, transparent); } }
+
+/* Enter: opacity and a 4px rise (the same as chat entries); exit: opacity only, shorter. Reduced motion keeps the fades. */
+.at-ask { transition: opacity 150ms ease; }
+@starting-style { .at-ask { opacity: 0; } }
+.at-ask[data-state="closed"] { opacity: 0; }
+.at-answer { transition: opacity 150ms ease; }
+@starting-style { .at-answer { opacity: 0; } }
+@media (prefers-reduced-motion: no-preference) {
+  .at-ask { transition-property: opacity, translate; transition-duration: 200ms; transition-timing-function: var(--at-ease-out); }
+  @starting-style { .at-ask { translate: 0 4px; } }
+  .at-ask[data-state="closed"] { transition-duration: 150ms; }
+  .at-answer { transition-property: opacity, translate; transition-duration: 200ms; transition-timing-function: var(--at-ease-out); }
+  @starting-style { .at-answer { translate: 0 4px; } }
+  .at-ask__skip { transition: scale 150ms ease-out, background-color 150ms ease, color 150ms ease; }
+  .at-ask__skip:not(:disabled):active { scale: 0.96; }
+  .at-toast__action { transition: scale 150ms ease-out, background-color 150ms ease; }
+  .at-toast__action:not(:disabled):active { scale: 0.96; }
+}
+
+/* ---------- Tooltip (app/tooltip.ts): one fixed element; controls opt in with data-tip ---------- */
+/* In: opacity + scale 0.97, 125ms strong ease-out, out of the trigger's edge (transform-origin is set per show). Out: faster, 80ms.
+   data-instant (the next tip while one is open, keyboard focus) turns the enter off. Reduced motion keeps only the opacity. */
+.at-tip {
+  position: fixed; left: 0; top: 0; z-index: 60; max-width: 260px; padding: 4px 8px; display: flex; align-items: baseline; gap: 8px;
+  border-radius: var(--at-radius-m); background: var(--at-toast-bg); color: var(--at-toast-fg); box-shadow: var(--at-shadow-float);
+  font: var(--at-type-small); white-space: pre-line; overflow-wrap: anywhere; pointer-events: none;
+  opacity: 0; visibility: hidden; transition: opacity 80ms ease-out, visibility 0s 80ms;
+}
+.at-tip[data-open] { opacity: 1; visibility: visible; transition: opacity 125ms var(--at-ease-out); }
+.at-tip__keys { font: inherit; opacity: 0.6; white-space: nowrap; }
+.at-tip__keys[hidden] { display: none; }
+@media (prefers-reduced-motion: no-preference) {
+  .at-tip { scale: 0.97; transition-property: opacity, scale, visibility; transition-duration: 80ms, 80ms, 0s; transition-delay: 0s, 0s, 80ms; transition-timing-function: ease-out; }
+  .at-tip[data-open] { scale: 1; transition-property: opacity, scale; transition-duration: 125ms; transition-delay: 0s; transition-timing-function: var(--at-ease-out); }
+}
+.at-tip[data-open][data-instant] { transition: none; }
+/* A disabled control receives no pointer events in some engines; its tip (usually the reason) is found through its parent. */
+[data-tip]:disabled { pointer-events: none; }

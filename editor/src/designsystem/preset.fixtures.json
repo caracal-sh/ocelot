@@ -1,0 +1,2018 @@
+{
+ "shadcn": "4.23.0",
+ "decoded": [
+  {
+   "code": "bLr1eZigS",
+   "version": "b",
+   "values": {
+    "menuColor": "default",
+    "menuAccent": "subtle",
+    "radius": "default",
+    "font": "inter",
+    "iconLibrary": "lucide",
+    "theme": "blue",
+    "baseColor": "neutral",
+    "style": "nova",
+    "chartColor": "cyan",
+    "fontHeading": "inter"
+   },
+   "derived": []
+  },
+  {
+   "code": "b1fLe4ZluL",
+   "version": "b",
+   "values": {
+    "menuColor": "inverted",
+    "menuAccent": "bold",
+    "radius": "none",
+    "font": "noto-sans",
+    "iconLibrary": "hugeicons",
+    "theme": "cyan",
+    "baseColor": "stone",
+    "style": "vega",
+    "chartColor": "lime",
+    "fontHeading": "roboto"
+   },
+   "derived": []
+  },
+  {
+   "code": "b2uTG8vU4Q",
+   "version": "b",
+   "values": {
+    "menuColor": "default-translucent",
+    "menuAccent": "subtle",
+    "radius": "small",
+    "font": "nunito-sans",
+    "iconLibrary": "tabler",
+    "theme": "zinc",
+    "baseColor": "zinc",
+    "style": "maia",
+    "chartColor": "zinc",
+    "fontHeading": "outfit"
+   },
+   "derived": []
+  },
+  {
+   "code": "b4D1oNbdpD",
+   "version": "b",
+   "values": {
+    "menuColor": "inverted-translucent",
+    "menuAccent": "bold",
+    "radius": "medium",
+    "font": "figtree",
+    "iconLibrary": "phosphor",
+    "theme": "fuchsia",
+    "baseColor": "mauve",
+    "style": "lyra",
+    "chartColor": "amber",
+    "fontHeading": "lora"
+   },
+   "derived": []
+  },
+  {
+   "code": "b5WWQnbh2m",
+   "version": "b",
+   "values": {
+    "menuColor": "default",
+    "menuAccent": "subtle",
+    "radius": "large",
+    "font": "roboto",
+    "iconLibrary": "remixicon",
+    "theme": "green",
+    "baseColor": "olive",
+    "style": "mira",
+    "chartColor": "green",
+    "fontHeading": "roboto-slab"
+   },
+   "derived": []
+  },
+  {
+   "code": "b6spGlznxp",
+   "version": "b",
+   "values": {
+    "menuColor": "inverted",
+    "menuAccent": "bold",
+    "radius": "default",
+    "font": "raleway",
+    "iconLibrary": "lucide",
+    "theme": "mist",
+    "baseColor": "mist",
+    "style": "luma",
+    "chartColor": "mist",
+    "fontHeading": "montserrat"
+   },
+   "derived": []
+  },
+  {
+   "code": "b89VfdaQ9y",
+   "version": "b",
+   "values": {
+    "menuColor": "default-translucent",
+    "menuAccent": "subtle",
+    "radius": "none",
+    "font": "dm-sans",
+    "iconLibrary": "hugeicons",
+    "theme": "lime",
+    "baseColor": "taupe",
+    "style": "sera",
+    "chartColor": "violet",
+    "fontHeading": "eb-garamond"
+   },
+   "derived": []
+  },
+  {
+   "code": "bgBNkqO0B",
+   "version": "b",
+   "values": {
+    "menuColor": "inverted-translucent",
+    "menuAccent": "bold",
+    "radius": "small",
+    "font": "public-sans",
+    "iconLibrary": "tabler",
+    "theme": "orange",
+    "baseColor": "neutral",
+    "style": "rhea",
+    "chartColor": "emerald",
+    "fontHeading": "noto-sans"
+   },
+   "derived": []
+  },
+  {
+   "code": "b1wCeGpHTE",
+   "version": "b",
+   "values": {
+    "menuColor": "default",
+    "menuAccent": "subtle",
+    "radius": "medium",
+    "font": "outfit",
+    "iconLibrary": "phosphor",
+    "theme": "stone",
+    "baseColor": "stone",
+    "style": "nova",
+    "chartColor": "stone",
+    "fontHeading": "raleway"
+   },
+   "derived": []
+  },
+  {
+   "code": "b3J8CZYeDZ",
+   "version": "b",
+   "values": {
+    "menuColor": "inverted",
+    "menuAccent": "bold",
+    "radius": "large",
+    "font": "jetbrains-mono",
+    "iconLibrary": "remixicon",
+    "theme": "purple",
+    "baseColor": "zinc",
+    "style": "vega",
+    "chartColor": "sky",
+    "fontHeading": "jetbrains-mono"
+   },
+   "derived": []
+  },
+  {
+   "code": "b4XJkSZ5aE",
+   "version": "b",
+   "values": {
+    "menuColor": "default-translucent",
+    "menuAccent": "subtle",
+    "radius": "default",
+    "font": "geist",
+    "iconLibrary": "lucide",
+    "theme": "red",
+    "baseColor": "mauve",
+    "style": "maia",
+    "chartColor": "blue",
+    "fontHeading": "merriweather"
+   },
+   "derived": []
+  },
+  {
+   "code": "b5uYettbMh",
+   "version": "b",
+   "values": {
+    "menuColor": "inverted-translucent",
+    "menuAccent": "bold",
+    "radius": "none",
+    "font": "geist-mono",
+    "iconLibrary": "hugeicons",
+    "theme": "olive",
+    "baseColor": "olive",
+    "style": "lyra",
+    "chartColor": "olive",
+    "fontHeading": "oxanium"
+   },
+   "derived": []
+  },
+  {
+   "code": "b7AIzIZC1g",
+   "version": "b",
+   "values": {
+    "menuColor": "default",
+    "menuAccent": "subtle",
+    "radius": "small",
+    "font": "lora",
+    "iconLibrary": "tabler",
+    "theme": "sky",
+    "baseColor": "mist",
+    "style": "mira",
+    "chartColor": "red",
+    "fontHeading": "ibm-plex-sans"
+   },
+   "derived": []
+  },
+  {
+   "code": "b8TnbiZFFZ",
+   "version": "b",
+   "values": {
+    "menuColor": "inverted",
+    "menuAccent": "bold",
+    "radius": "medium",
+    "font": "merriweather",
+    "iconLibrary": "phosphor",
+    "theme": "teal",
+    "baseColor": "taupe",
+    "style": "luma",
+    "chartColor": "yellow",
+    "fontHeading": "instrument-serif"
+   },
+   "derived": []
+  },
+  {
+   "code": "bxySQ0v6A",
+   "version": "b",
+   "values": {
+    "menuColor": "default-translucent",
+    "menuAccent": "subtle",
+    "radius": "large",
+    "font": "playfair-display",
+    "iconLibrary": "remixicon",
+    "theme": "neutral",
+    "baseColor": "neutral",
+    "style": "sera",
+    "chartColor": "neutral",
+    "fontHeading": "nunito-sans"
+   },
+   "derived": []
+  },
+  {
+   "code": "b2JxwFnsz5",
+   "version": "b",
+   "values": {
+    "menuColor": "inverted-translucent",
+    "menuAccent": "bold",
+    "radius": "default",
+    "font": "noto-serif",
+    "iconLibrary": "lucide",
+    "theme": "yellow",
+    "baseColor": "stone",
+    "style": "rhea",
+    "chartColor": "pink",
+    "fontHeading": "dm-sans"
+   },
+   "derived": []
+  },
+  {
+   "code": "b3dQ8ZgulU",
+   "version": "b",
+   "values": {
+    "menuColor": "default",
+    "menuAccent": "subtle",
+    "radius": "none",
+    "font": "roboto-slab",
+    "iconLibrary": "hugeicons",
+    "theme": "amber",
+    "baseColor": "zinc",
+    "style": "nova",
+    "chartColor": "teal",
+    "fontHeading": "geist"
+   },
+   "derived": []
+  },
+  {
+   "code": "b4wI31nOlV",
+   "version": "b",
+   "values": {
+    "menuColor": "inverted",
+    "menuAccent": "bold",
+    "radius": "small",
+    "font": "oxanium",
+    "iconLibrary": "tabler",
+    "theme": "mauve",
+    "baseColor": "mauve",
+    "style": "vega",
+    "chartColor": "mauve",
+    "fontHeading": "playfair-display"
+   },
+   "derived": []
+  },
+  {
+   "code": "b6B6IsimgM",
+   "version": "b",
+   "values": {
+    "menuColor": "default-translucent",
+    "menuAccent": "subtle",
+    "radius": "medium",
+    "font": "manrope",
+    "iconLibrary": "phosphor",
+    "theme": "cyan",
+    "baseColor": "olive",
+    "style": "maia",
+    "chartColor": "lime",
+    "fontHeading": "manrope"
+   },
+   "derived": []
+  },
+  {
+   "code": "b7UavIipuF",
+   "version": "b",
+   "values": {
+    "menuColor": "inverted-translucent",
+    "menuAccent": "bold",
+    "radius": "large",
+    "font": "space-grotesk",
+    "iconLibrary": "remixicon",
+    "theme": "emerald",
+    "baseColor": "mist",
+    "style": "lyra",
+    "chartColor": "rose",
+    "fontHeading": "source-sans-3"
+   },
+   "derived": []
+  },
+  {
+   "code": "b7Vp9sPOC",
+   "version": "b",
+   "values": {
+    "menuColor": "default",
+    "menuAccent": "subtle",
+    "radius": "default",
+    "font": "montserrat",
+    "iconLibrary": "lucide",
+    "theme": "taupe",
+    "baseColor": "taupe",
+    "style": "mira",
+    "chartColor": "taupe",
+    "fontHeading": "inherit"
+   },
+   "derived": []
+  },
+  {
+   "code": "b1KlFpxTdh",
+   "version": "b",
+   "values": {
+    "menuColor": "inverted",
+    "menuAccent": "bold",
+    "radius": "none",
+    "font": "ibm-plex-sans",
+    "iconLibrary": "hugeicons",
+    "theme": "green",
+    "baseColor": "neutral",
+    "style": "luma",
+    "chartColor": "green",
+    "fontHeading": "figtree"
+   },
+   "derived": []
+  },
+  {
+   "code": "b2eFsFxWrK",
+   "version": "b",
+   "values": {
+    "menuColor": "default-translucent",
+    "menuAccent": "subtle",
+    "radius": "small",
+    "font": "source-sans-3",
+    "iconLibrary": "tabler",
+    "theme": "indigo",
+    "baseColor": "stone",
+    "style": "sera",
+    "chartColor": "purple",
+    "fontHeading": "public-sans"
+   },
+   "derived": []
+  },
+  {
+   "code": "b3sRPoGd3r",
+   "version": "b",
+   "values": {
+    "menuColor": "inverted-translucent",
+    "menuAccent": "bold",
+    "radius": "medium",
+    "font": "instrument-sans",
+    "iconLibrary": "phosphor",
+    "theme": "zinc",
+    "baseColor": "zinc",
+    "style": "rhea",
+    "chartColor": "zinc",
+    "fontHeading": "geist-mono"
+   },
+   "derived": []
+  },
+  {
+   "code": "b5BtcXhYY4",
+   "version": "b",
+   "values": {
+    "menuColor": "default",
+    "menuAccent": "subtle",
+    "radius": "large",
+    "font": "eb-garamond",
+    "iconLibrary": "remixicon",
+    "theme": "orange",
+    "baseColor": "mauve",
+    "style": "nova",
+    "chartColor": "emerald",
+    "fontHeading": "noto-serif"
+   },
+   "derived": []
+  },
+  {
+   "code": "b6VOExgERd",
+   "version": "b",
+   "values": {
+    "menuColor": "inverted",
+    "menuAccent": "bold",
+    "radius": "default",
+    "font": "instrument-serif",
+    "iconLibrary": "lucide",
+    "theme": "pink",
+    "baseColor": "olive",
+    "style": "vega",
+    "chartColor": "orange",
+    "fontHeading": "space-grotesk"
+   },
+   "derived": []
+  },
+  {
+   "code": "b7ql0Q2znW",
+   "version": "b",
+   "values": {
+    "menuColor": "default-translucent",
+    "menuAccent": "subtle",
+    "radius": "none",
+    "font": "inter",
+    "iconLibrary": "hugeicons",
+    "theme": "mist",
+    "baseColor": "mist",
+    "style": "maia",
+    "chartColor": "mist",
+    "fontHeading": "instrument-sans"
+   },
+   "derived": []
+  },
+  {
+   "code": "bLYbqGlB5",
+   "version": "b",
+   "values": {
+    "menuColor": "inverted-translucent",
+    "menuAccent": "bold",
+    "radius": "small",
+    "font": "noto-sans",
+    "iconLibrary": "tabler",
+    "theme": "red",
+    "baseColor": "taupe",
+    "style": "lyra",
+    "chartColor": "blue",
+    "fontHeading": "inter"
+   },
+   "derived": []
+  },
+  {
+   "code": "b1f3BuwBnc",
+   "version": "b",
+   "values": {
+    "menuColor": "default",
+    "menuAccent": "subtle",
+    "radius": "medium",
+    "font": "nunito-sans",
+    "iconLibrary": "phosphor",
+    "theme": "rose",
+    "baseColor": "neutral",
+    "style": "mira",
+    "chartColor": "indigo",
+    "fontHeading": "roboto"
+   },
+   "derived": []
+  },
+  {
+   "code": "b2uAnwAJXF",
+   "version": "b",
+   "values": {
+    "menuColor": "inverted",
+    "menuAccent": "bold",
+    "radius": "large",
+    "font": "figtree",
+    "iconLibrary": "remixicon",
+    "theme": "stone",
+    "baseColor": "stone",
+    "style": "luma",
+    "chartColor": "stone",
+    "fontHeading": "outfit"
+   },
+   "derived": []
+  },
+  {
+   "code": "bsUyyO",
+   "version": "b",
+   "values": {
+    "menuColor": "default",
+    "menuAccent": "subtle",
+    "radius": "default",
+    "font": "inter",
+    "iconLibrary": "lucide",
+    "theme": "neutral",
+    "baseColor": "gray",
+    "style": "nova",
+    "chartColor": "neutral",
+    "fontHeading": "inherit"
+   },
+   "derived": []
+  },
+  {
+   "code": "bJN35Juy",
+   "version": "b",
+   "values": {
+    "menuColor": "default",
+    "menuAccent": "subtle",
+    "radius": "default",
+    "font": "inter",
+    "iconLibrary": "lucide",
+    "theme": "stone",
+    "baseColor": "gray",
+    "style": "nova",
+    "chartColor": "stone",
+    "fontHeading": "inherit"
+   },
+   "derived": []
+  },
+  {
+   "code": "bcjDferY",
+   "version": "b",
+   "values": {
+    "menuColor": "default",
+    "menuAccent": "subtle",
+    "radius": "default",
+    "font": "inter",
+    "iconLibrary": "lucide",
+    "theme": "zinc",
+    "baseColor": "gray",
+    "style": "nova",
+    "chartColor": "zinc",
+    "fontHeading": "inherit"
+   },
+   "derived": []
+  },
+  {
+   "code": "bw5OFzo8",
+   "version": "b",
+   "values": {
+    "menuColor": "default",
+    "menuAccent": "subtle",
+    "radius": "default",
+    "font": "inter",
+    "iconLibrary": "lucide",
+    "theme": "gray",
+    "baseColor": "gray",
+    "style": "nova",
+    "chartColor": "gray",
+    "fontHeading": "inherit"
+   },
+   "derived": []
+  },
+  {
+   "code": "b1FRYqKki",
+   "version": "b",
+   "values": {
+    "menuColor": "default",
+    "menuAccent": "subtle",
+    "radius": "default",
+    "font": "inter",
+    "iconLibrary": "lucide",
+    "theme": "amber",
+    "baseColor": "gray",
+    "style": "nova",
+    "chartColor": "amber",
+    "fontHeading": "inherit"
+   },
+   "derived": []
+  },
+  {
+   "code": "b1YnjQfhI",
+   "version": "b",
+   "values": {
+    "menuColor": "default",
+    "menuAccent": "subtle",
+    "radius": "default",
+    "font": "inter",
+    "iconLibrary": "lucide",
+    "theme": "blue",
+    "baseColor": "gray",
+    "style": "nova",
+    "chartColor": "blue",
+    "fontHeading": "inherit"
+   },
+   "derived": []
+  },
+  {
+   "code": "b1s9u10ds",
+   "version": "b",
+   "values": {
+    "menuColor": "default",
+    "menuAccent": "subtle",
+    "radius": "default",
+    "font": "inter",
+    "iconLibrary": "lucide",
+    "theme": "cyan",
+    "baseColor": "gray",
+    "style": "nova",
+    "chartColor": "cyan",
+    "fontHeading": "inherit"
+   },
+   "derived": []
+  },
+  {
+   "code": "b2BW4bLaS",
+   "version": "b",
+   "values": {
+    "menuColor": "default",
+    "menuAccent": "subtle",
+    "radius": "default",
+    "font": "inter",
+    "iconLibrary": "lucide",
+    "theme": "emerald",
+    "baseColor": "gray",
+    "style": "nova",
+    "chartColor": "emerald",
+    "fontHeading": "inherit"
+   },
+   "derived": []
+  },
+  {
+   "code": "b2UsFBgX2",
+   "version": "b",
+   "values": {
+    "menuColor": "default",
+    "menuAccent": "subtle",
+    "radius": "default",
+    "font": "inter",
+    "iconLibrary": "lucide",
+    "theme": "fuchsia",
+    "baseColor": "gray",
+    "style": "nova",
+    "chartColor": "fuchsia",
+    "fontHeading": "inherit"
+   },
+   "derived": []
+  },
+  {
+   "code": "b2oEPm1Tc",
+   "version": "b",
+   "values": {
+    "menuColor": "default",
+    "menuAccent": "subtle",
+    "radius": "default",
+    "font": "inter",
+    "iconLibrary": "lucide",
+    "theme": "green",
+    "baseColor": "gray",
+    "style": "nova",
+    "chartColor": "green",
+    "fontHeading": "inherit"
+   },
+   "derived": []
+  },
+  {
+   "code": "b37aaMMQC",
+   "version": "b",
+   "values": {
+    "menuColor": "default",
+    "menuAccent": "subtle",
+    "radius": "default",
+    "font": "inter",
+    "iconLibrary": "lucide",
+    "theme": "indigo",
+    "baseColor": "gray",
+    "style": "nova",
+    "chartColor": "indigo",
+    "fontHeading": "inherit"
+   },
+   "derived": []
+  },
+  {
+   "code": "b3QwkwhMm",
+   "version": "b",
+   "values": {
+    "menuColor": "default",
+    "menuAccent": "subtle",
+    "radius": "default",
+    "font": "inter",
+    "iconLibrary": "lucide",
+    "theme": "lime",
+    "baseColor": "gray",
+    "style": "nova",
+    "chartColor": "lime",
+    "fontHeading": "inherit"
+   },
+   "derived": []
+  },
+  {
+   "code": "b3kIvX2JM",
+   "version": "b",
+   "values": {
+    "menuColor": "default",
+    "menuAccent": "subtle",
+    "radius": "default",
+    "font": "inter",
+    "iconLibrary": "lucide",
+    "theme": "orange",
+    "baseColor": "gray",
+    "style": "nova",
+    "chartColor": "orange",
+    "fontHeading": "inherit"
+   },
+   "derived": []
+  },
+  {
+   "code": "b43f67NFw",
+   "version": "b",
+   "values": {
+    "menuColor": "default",
+    "menuAccent": "subtle",
+    "radius": "default",
+    "font": "inter",
+    "iconLibrary": "lucide",
+    "theme": "pink",
+    "baseColor": "gray",
+    "style": "nova",
+    "chartColor": "pink",
+    "fontHeading": "inherit"
+   },
+   "derived": []
+  },
+  {
+   "code": "b4N1GhiCW",
+   "version": "b",
+   "values": {
+    "menuColor": "default",
+    "menuAccent": "subtle",
+    "radius": "default",
+    "font": "inter",
+    "iconLibrary": "lucide",
+    "theme": "purple",
+    "baseColor": "gray",
+    "style": "nova",
+    "chartColor": "purple",
+    "fontHeading": "inherit"
+   },
+   "derived": []
+  },
+  {
+   "code": "b4gNRI396",
+   "version": "b",
+   "values": {
+    "menuColor": "default",
+    "menuAccent": "subtle",
+    "radius": "default",
+    "font": "inter",
+    "iconLibrary": "lucide",
+    "theme": "red",
+    "baseColor": "gray",
+    "style": "nova",
+    "chartColor": "red",
+    "fontHeading": "inherit"
+   },
+   "derived": []
+  },
+  {
+   "code": "b4zjbsO5g",
+   "version": "b",
+   "values": {
+    "menuColor": "default",
+    "menuAccent": "subtle",
+    "radius": "default",
+    "font": "inter",
+    "iconLibrary": "lucide",
+    "theme": "rose",
+    "baseColor": "gray",
+    "style": "nova",
+    "chartColor": "rose",
+    "fontHeading": "inherit"
+   },
+   "derived": []
+  },
+  {
+   "code": "b5J5mSj2G",
+   "version": "b",
+   "values": {
+    "menuColor": "default",
+    "menuAccent": "subtle",
+    "radius": "default",
+    "font": "inter",
+    "iconLibrary": "lucide",
+    "theme": "sky",
+    "baseColor": "gray",
+    "style": "nova",
+    "chartColor": "sky",
+    "fontHeading": "inherit"
+   },
+   "derived": []
+  },
+  {
+   "code": "b5cRx33yq",
+   "version": "b",
+   "values": {
+    "menuColor": "default",
+    "menuAccent": "subtle",
+    "radius": "default",
+    "font": "inter",
+    "iconLibrary": "lucide",
+    "theme": "teal",
+    "baseColor": "gray",
+    "style": "nova",
+    "chartColor": "teal",
+    "fontHeading": "inherit"
+   },
+   "derived": []
+  },
+  {
+   "code": "b5vo7dOvQ",
+   "version": "b",
+   "values": {
+    "menuColor": "default",
+    "menuAccent": "subtle",
+    "radius": "default",
+    "font": "inter",
+    "iconLibrary": "lucide",
+    "theme": "violet",
+    "baseColor": "gray",
+    "style": "nova",
+    "chartColor": "violet",
+    "fontHeading": "inherit"
+   },
+   "derived": []
+  },
+  {
+   "code": "b6FAIDjs0",
+   "version": "b",
+   "values": {
+    "menuColor": "default",
+    "menuAccent": "subtle",
+    "radius": "default",
+    "font": "inter",
+    "iconLibrary": "lucide",
+    "theme": "yellow",
+    "baseColor": "gray",
+    "style": "nova",
+    "chartColor": "yellow",
+    "fontHeading": "inherit"
+   },
+   "derived": []
+  },
+  {
+   "code": "b6YWSo4oa",
+   "version": "b",
+   "values": {
+    "menuColor": "default",
+    "menuAccent": "subtle",
+    "radius": "default",
+    "font": "inter",
+    "iconLibrary": "lucide",
+    "theme": "mauve",
+    "baseColor": "gray",
+    "style": "nova",
+    "chartColor": "mauve",
+    "fontHeading": "inherit"
+   },
+   "derived": []
+  },
+  {
+   "code": "b6rsdOPlA",
+   "version": "b",
+   "values": {
+    "menuColor": "default",
+    "menuAccent": "subtle",
+    "radius": "default",
+    "font": "inter",
+    "iconLibrary": "lucide",
+    "theme": "olive",
+    "baseColor": "gray",
+    "style": "nova",
+    "chartColor": "olive",
+    "fontHeading": "inherit"
+   },
+   "derived": []
+  },
+  {
+   "code": "b7BEnykhk",
+   "version": "b",
+   "values": {
+    "menuColor": "default",
+    "menuAccent": "subtle",
+    "radius": "default",
+    "font": "inter",
+    "iconLibrary": "lucide",
+    "theme": "mist",
+    "baseColor": "gray",
+    "style": "nova",
+    "chartColor": "mist",
+    "fontHeading": "inherit"
+   },
+   "derived": []
+  },
+  {
+   "code": "b7UayZ5eK",
+   "version": "b",
+   "values": {
+    "menuColor": "default",
+    "menuAccent": "subtle",
+    "radius": "default",
+    "font": "inter",
+    "iconLibrary": "lucide",
+    "theme": "taupe",
+    "baseColor": "gray",
+    "style": "nova",
+    "chartColor": "taupe",
+    "fontHeading": "inherit"
+   },
+   "derived": []
+  },
+  {
+   "code": "b1AfJIW",
+   "version": "b",
+   "values": {
+    "menuColor": "default",
+    "menuAccent": "subtle",
+    "radius": "default",
+    "font": "inter",
+    "iconLibrary": "lucide",
+    "theme": "neutral",
+    "baseColor": "mauve",
+    "style": "nova",
+    "chartColor": "neutral",
+    "fontHeading": "inherit"
+   },
+   "derived": []
+  },
+  {
+   "code": "bJNKy372",
+   "version": "b",
+   "values": {
+    "menuColor": "default",
+    "menuAccent": "subtle",
+    "radius": "default",
+    "font": "inter",
+    "iconLibrary": "lucide",
+    "theme": "neutral",
+    "baseColor": "mauve",
+    "style": "nova",
+    "chartColor": "stone",
+    "fontHeading": "inherit"
+   },
+   "derived": []
+  },
+  {
+   "code": "bck5bRZo",
+   "version": "b",
+   "values": {
+    "menuColor": "default",
+    "menuAccent": "subtle",
+    "radius": "default",
+    "font": "inter",
+    "iconLibrary": "lucide",
+    "theme": "neutral",
+    "baseColor": "mist",
+    "style": "nova",
+    "chartColor": "zinc",
+    "fontHeading": "inherit"
+   },
+   "derived": []
+  },
+  {
+   "code": "bw55Es5o",
+   "version": "b",
+   "values": {
+    "menuColor": "default",
+    "menuAccent": "subtle",
+    "radius": "default",
+    "font": "inter",
+    "iconLibrary": "lucide",
+    "theme": "neutral",
+    "baseColor": "zinc",
+    "style": "nova",
+    "chartColor": "gray",
+    "fontHeading": "inherit"
+   },
+   "derived": []
+  },
+  {
+   "code": "b1FRFXbuK",
+   "version": "b",
+   "values": {
+    "menuColor": "default",
+    "menuAccent": "subtle",
+    "radius": "default",
+    "font": "inter",
+    "iconLibrary": "lucide",
+    "theme": "neutral",
+    "baseColor": "zinc",
+    "style": "nova",
+    "chartColor": "amber",
+    "fontHeading": "inherit"
+   },
+   "derived": []
+  },
+  {
+   "code": "b1YmpVh4a",
+   "version": "b",
+   "values": {
+    "menuColor": "default",
+    "menuAccent": "subtle",
+    "radius": "default",
+    "font": "inter",
+    "iconLibrary": "lucide",
+    "theme": "neutral",
+    "baseColor": "neutral",
+    "style": "nova",
+    "chartColor": "blue",
+    "fontHeading": "inherit"
+   },
+   "derived": []
+  },
+  {
+   "code": "b1s9HylDE",
+   "version": "b",
+   "values": {
+    "menuColor": "default",
+    "menuAccent": "subtle",
+    "radius": "default",
+    "font": "inter",
+    "iconLibrary": "lucide",
+    "theme": "neutral",
+    "baseColor": "stone",
+    "style": "nova",
+    "chartColor": "cyan",
+    "fontHeading": "inherit"
+   },
+   "derived": []
+  },
+  {
+   "code": "b2BVA7Ahc",
+   "version": "b",
+   "values": {
+    "menuColor": "default",
+    "menuAccent": "subtle",
+    "radius": "default",
+    "font": "inter",
+    "iconLibrary": "lucide",
+    "theme": "neutral",
+    "baseColor": "neutral",
+    "style": "nova",
+    "chartColor": "emerald",
+    "fontHeading": "inherit"
+   },
+   "derived": []
+  },
+  {
+   "code": "b2UtNaCn2",
+   "version": "b",
+   "values": {
+    "menuColor": "default",
+    "menuAccent": "subtle",
+    "radius": "default",
+    "font": "inter",
+    "iconLibrary": "lucide",
+    "theme": "neutral",
+    "baseColor": "taupe",
+    "style": "nova",
+    "chartColor": "fuchsia",
+    "fontHeading": "inherit"
+   },
+   "derived": []
+  },
+  {
+   "code": "b2oE53Iyu",
+   "version": "b",
+   "values": {
+    "menuColor": "default",
+    "menuAccent": "subtle",
+    "radius": "default",
+    "font": "inter",
+    "iconLibrary": "lucide",
+    "theme": "neutral",
+    "baseColor": "zinc",
+    "style": "nova",
+    "chartColor": "green",
+    "fontHeading": "inherit"
+   },
+   "derived": []
+  },
+  {
+   "code": "b37Zf1O9A",
+   "version": "b",
+   "values": {
+    "menuColor": "default",
+    "menuAccent": "subtle",
+    "radius": "default",
+    "font": "inter",
+    "iconLibrary": "lucide",
+    "theme": "neutral",
+    "baseColor": "neutral",
+    "style": "nova",
+    "chartColor": "indigo",
+    "fontHeading": "inherit"
+   },
+   "derived": []
+  },
+  {
+   "code": "b3QxI9laK",
+   "version": "b",
+   "values": {
+    "menuColor": "default",
+    "menuAccent": "subtle",
+    "radius": "default",
+    "font": "inter",
+    "iconLibrary": "lucide",
+    "theme": "neutral",
+    "baseColor": "olive",
+    "style": "nova",
+    "chartColor": "lime",
+    "fontHeading": "inherit"
+   },
+   "derived": []
+  },
+  {
+   "code": "b3kIZxWQS",
+   "version": "b",
+   "values": {
+    "menuColor": "default",
+    "menuAccent": "subtle",
+    "radius": "default",
+    "font": "inter",
+    "iconLibrary": "lucide",
+    "theme": "neutral",
+    "baseColor": "zinc",
+    "style": "nova",
+    "chartColor": "orange",
+    "fontHeading": "inherit"
+   },
+   "derived": []
+  },
+  {
+   "code": "b43fclFDM",
+   "version": "b",
+   "values": {
+    "menuColor": "default",
+    "menuAccent": "subtle",
+    "radius": "default",
+    "font": "inter",
+    "iconLibrary": "lucide",
+    "theme": "neutral",
+    "baseColor": "olive",
+    "style": "nova",
+    "chartColor": "pink",
+    "fontHeading": "inherit"
+   },
+   "derived": []
+  },
+  {
+   "code": "b4N25EJM0",
+   "version": "b",
+   "values": {
+    "menuColor": "default",
+    "menuAccent": "subtle",
+    "radius": "default",
+    "font": "inter",
+    "iconLibrary": "lucide",
+    "theme": "neutral",
+    "baseColor": "mist",
+    "style": "nova",
+    "chartColor": "purple",
+    "fontHeading": "inherit"
+   },
+   "derived": []
+  },
+  {
+   "code": "b4gNfCOWG",
+   "version": "b",
+   "values": {
+    "menuColor": "default",
+    "menuAccent": "subtle",
+    "radius": "default",
+    "font": "inter",
+    "iconLibrary": "lucide",
+    "theme": "neutral",
+    "baseColor": "mauve",
+    "style": "nova",
+    "chartColor": "red",
+    "fontHeading": "inherit"
+   },
+   "derived": []
+  },
+  {
+   "code": "b4zix09MO",
+   "version": "b",
+   "values": {
+    "menuColor": "default",
+    "menuAccent": "subtle",
+    "radius": "default",
+    "font": "inter",
+    "iconLibrary": "lucide",
+    "theme": "neutral",
+    "baseColor": "stone",
+    "style": "nova",
+    "chartColor": "rose",
+    "fontHeading": "inherit"
+   },
+   "derived": []
+  },
+  {
+   "code": "b5J57ItAu",
+   "version": "b",
+   "values": {
+    "menuColor": "default",
+    "menuAccent": "subtle",
+    "radius": "default",
+    "font": "inter",
+    "iconLibrary": "lucide",
+    "theme": "neutral",
+    "baseColor": "stone",
+    "style": "nova",
+    "chartColor": "sky",
+    "fontHeading": "inherit"
+   },
+   "derived": []
+  },
+  {
+   "code": "b5cSA6bxo",
+   "version": "b",
+   "values": {
+    "menuColor": "default",
+    "menuAccent": "subtle",
+    "radius": "default",
+    "font": "inter",
+    "iconLibrary": "lucide",
+    "theme": "neutral",
+    "baseColor": "mauve",
+    "style": "nova",
+    "chartColor": "teal",
+    "fontHeading": "inherit"
+   },
+   "derived": []
+  },
+  {
+   "code": "b5voKPLmK",
+   "version": "b",
+   "values": {
+    "menuColor": "default",
+    "menuAccent": "subtle",
+    "radius": "default",
+    "font": "inter",
+    "iconLibrary": "lucide",
+    "theme": "neutral",
+    "baseColor": "mauve",
+    "style": "nova",
+    "chartColor": "violet",
+    "fontHeading": "inherit"
+   },
+   "derived": []
+  },
+  {
+   "code": "b6FB52kF6",
+   "version": "b",
+   "values": {
+    "menuColor": "default",
+    "menuAccent": "subtle",
+    "radius": "default",
+    "font": "inter",
+    "iconLibrary": "lucide",
+    "theme": "neutral",
+    "baseColor": "mist",
+    "style": "nova",
+    "chartColor": "yellow",
+    "fontHeading": "inherit"
+   },
+   "derived": []
+  },
+  {
+   "code": "b6YVULW6q",
+   "version": "b",
+   "values": {
+    "menuColor": "default",
+    "menuAccent": "subtle",
+    "radius": "default",
+    "font": "inter",
+    "iconLibrary": "lucide",
+    "theme": "neutral",
+    "baseColor": "neutral",
+    "style": "nova",
+    "chartColor": "mauve",
+    "fontHeading": "inherit"
+   },
+   "derived": []
+  },
+  {
+   "code": "b6rspJZDs",
+   "version": "b",
+   "values": {
+    "menuColor": "default",
+    "menuAccent": "subtle",
+    "radius": "default",
+    "font": "inter",
+    "iconLibrary": "lucide",
+    "theme": "neutral",
+    "baseColor": "mauve",
+    "style": "nova",
+    "chartColor": "olive",
+    "fontHeading": "inherit"
+   },
+   "derived": []
+  },
+  {
+   "code": "b7BE77K40",
+   "version": "b",
+   "values": {
+    "menuColor": "default",
+    "menuAccent": "subtle",
+    "radius": "default",
+    "font": "inter",
+    "iconLibrary": "lucide",
+    "theme": "neutral",
+    "baseColor": "stone",
+    "style": "nova",
+    "chartColor": "mist",
+    "fontHeading": "inherit"
+   },
+   "derived": []
+  },
+  {
+   "code": "b7UZzFjYO",
+   "version": "b",
+   "values": {
+    "menuColor": "default",
+    "menuAccent": "subtle",
+    "radius": "default",
+    "font": "inter",
+    "iconLibrary": "lucide",
+    "theme": "neutral",
+    "baseColor": "neutral",
+    "style": "nova",
+    "chartColor": "taupe",
+    "fontHeading": "inherit"
+   },
+   "derived": []
+  },
+  {
+   "code": "b7kVEdMhbf",
+   "version": "b",
+   "values": {
+    "menuColor": "inverted-translucent",
+    "menuAccent": "bold",
+    "radius": "small",
+    "font": "playfair-display",
+    "iconLibrary": "phosphor",
+    "theme": "cyan",
+    "baseColor": "gray",
+    "style": "nova",
+    "chartColor": "gray",
+    "fontHeading": "instrument-sans"
+   },
+   "derived": []
+  },
+  {
+   "code": "bLsFFYsC3",
+   "version": "b",
+   "values": {
+    "menuColor": "inverted-translucent",
+    "menuAccent": "subtle",
+    "radius": "medium",
+    "font": "dm-sans",
+    "iconLibrary": "tabler",
+    "theme": "blue",
+    "baseColor": "zinc",
+    "style": "mira",
+    "chartColor": "cyan",
+    "fontHeading": "inter"
+   },
+   "derived": []
+  },
+  {
+   "code": "b4Gmip1NPn",
+   "version": "b",
+   "values": {
+    "menuColor": "inverted-translucent",
+    "menuAccent": "subtle",
+    "radius": "none",
+    "font": "eb-garamond",
+    "iconLibrary": "hugeicons",
+    "theme": "olive",
+    "baseColor": "taupe",
+    "style": "luma",
+    "chartColor": "rose",
+    "fontHeading": "lora"
+   },
+   "derived": []
+  },
+  {
+   "code": "biz1UxQHS",
+   "version": "b",
+   "values": {
+    "menuColor": "default-translucent",
+    "menuAccent": "bold",
+    "radius": "medium",
+    "font": "nunito-sans",
+    "iconLibrary": "tabler",
+    "theme": "lime",
+    "baseColor": "mist",
+    "style": "luma",
+    "chartColor": "rose",
+    "fontHeading": "noto-sans"
+   },
+   "derived": []
+  },
+  {
+   "code": "b3bGmAjqBN",
+   "version": "b",
+   "values": {
+    "menuColor": "inverted",
+    "menuAccent": "bold",
+    "radius": "none",
+    "font": "oxanium",
+    "iconLibrary": "hugeicons",
+    "theme": "indigo",
+    "baseColor": "taupe",
+    "style": "rhea",
+    "chartColor": "lime",
+    "fontHeading": "geist"
+   },
+   "derived": []
+  },
+  {
+   "code": "b4DKqgpbj7",
+   "version": "b",
+   "values": {
+    "menuColor": "inverted",
+    "menuAccent": "bold",
+    "radius": "small",
+    "font": "instrument-sans",
+    "iconLibrary": "hugeicons",
+    "theme": "mist",
+    "baseColor": "neutral",
+    "style": "maia",
+    "chartColor": "blue",
+    "fontHeading": "lora"
+   },
+   "derived": []
+  },
+  {
+   "code": "bhPunFaxG",
+   "version": "b",
+   "values": {
+    "menuColor": "default-translucent",
+    "menuAccent": "subtle",
+    "radius": "none",
+    "font": "public-sans",
+    "iconLibrary": "remixicon",
+    "theme": "olive",
+    "baseColor": "zinc",
+    "style": "mira",
+    "chartColor": "lime",
+    "fontHeading": "noto-sans"
+   },
+   "derived": []
+  },
+  {
+   "code": "b3Yk5TYNje",
+   "version": "b",
+   "values": {
+    "menuColor": "default-translucent",
+    "menuAccent": "bold",
+    "radius": "default",
+    "font": "oxanium",
+    "iconLibrary": "lucide",
+    "theme": "rose",
+    "baseColor": "mauve",
+    "style": "vega",
+    "chartColor": "gray",
+    "fontHeading": "geist"
+   },
+   "derived": []
+  },
+  {
+   "code": "b794SETVli",
+   "version": "b",
+   "values": {
+    "menuColor": "default-translucent",
+    "menuAccent": "subtle",
+    "radius": "default",
+    "font": "oxanium",
+    "iconLibrary": "remixicon",
+    "theme": "stone",
+    "baseColor": "mauve",
+    "style": "rhea",
+    "chartColor": "lime",
+    "fontHeading": "ibm-plex-sans"
+   },
+   "derived": []
+  },
+  {
+   "code": "b3skC1k74L",
+   "version": "b",
+   "values": {
+    "menuColor": "inverted",
+    "menuAccent": "bold",
+    "radius": "medium",
+    "font": "figtree",
+    "iconLibrary": "lucide",
+    "theme": "olive",
+    "baseColor": "taupe",
+    "style": "luma",
+    "chartColor": "gray",
+    "fontHeading": "geist-mono"
+   },
+   "derived": []
+  },
+  {
+   "code": "b76E6esOzC",
+   "version": "b",
+   "values": {
+    "menuColor": "default-translucent",
+    "menuAccent": "subtle",
+    "radius": "medium",
+    "font": "dm-sans",
+    "iconLibrary": "tabler",
+    "theme": "rose",
+    "baseColor": "stone",
+    "style": "nova",
+    "chartColor": "zinc",
+    "fontHeading": "ibm-plex-sans"
+   },
+   "derived": []
+  },
+  {
+   "code": "b3ty567Rnn",
+   "version": "b",
+   "values": {
+    "menuColor": "inverted-translucent",
+    "menuAccent": "subtle",
+    "radius": "small",
+    "font": "roboto",
+    "iconLibrary": "phosphor",
+    "theme": "cyan",
+    "baseColor": "stone",
+    "style": "nova",
+    "chartColor": "emerald",
+    "fontHeading": "geist-mono"
+   },
+   "derived": []
+  },
+  {
+   "code": "b4rJDQr8rp",
+   "version": "b",
+   "values": {
+    "menuColor": "inverted",
+    "menuAccent": "subtle",
+    "radius": "medium",
+    "font": "noto-sans",
+    "iconLibrary": "tabler",
+    "theme": "rose",
+    "baseColor": "neutral",
+    "style": "mira",
+    "chartColor": "blue",
+    "fontHeading": "playfair-display"
+   },
+   "derived": []
+  },
+  {
+   "code": "b5qCFTVvPW",
+   "version": "b",
+   "values": {
+    "menuColor": "default-translucent",
+    "menuAccent": "bold",
+    "radius": "default",
+    "font": "space-grotesk",
+    "iconLibrary": "lucide",
+    "theme": "teal",
+    "baseColor": "gray",
+    "style": "luma",
+    "chartColor": "fuchsia",
+    "fontHeading": "oxanium"
+   },
+   "derived": []
+  },
+  {
+   "code": "b3G0KRSLkw",
+   "version": "b",
+   "values": {
+    "menuColor": "default-translucent",
+    "menuAccent": "subtle",
+    "radius": "default",
+    "font": "space-grotesk",
+    "iconLibrary": "lucide",
+    "theme": "orange",
+    "baseColor": "gray",
+    "style": "nova",
+    "chartColor": "emerald",
+    "fontHeading": "jetbrains-mono"
+   },
+   "derived": []
+  },
+  {
+   "code": "b76rjT5GUr",
+   "version": "b",
+   "values": {
+    "menuColor": "inverted",
+    "menuAccent": "subtle",
+    "radius": "default",
+    "font": "inter",
+    "iconLibrary": "hugeicons",
+    "theme": "neutral",
+    "baseColor": "zinc",
+    "style": "lyra",
+    "chartColor": "amber",
+    "fontHeading": "ibm-plex-sans"
+   },
+   "derived": []
+  },
+  {
+   "code": "b11imGschv",
+   "version": "b",
+   "values": {
+    "menuColor": "inverted-translucent",
+    "menuAccent": "bold",
+    "radius": "default",
+    "font": "public-sans",
+    "iconLibrary": "phosphor",
+    "theme": "olive",
+    "baseColor": "mist",
+    "style": "sera",
+    "chartColor": "orange",
+    "fontHeading": "nunito-sans"
+   },
+   "derived": []
+  },
+  {
+   "code": "b1csIoC2vg",
+   "version": "b",
+   "values": {
+    "menuColor": "default",
+    "menuAccent": "subtle",
+    "radius": "default",
+    "font": "jetbrains-mono",
+    "iconLibrary": "lucide",
+    "theme": "fuchsia",
+    "baseColor": "zinc",
+    "style": "sera",
+    "chartColor": "gray",
+    "fontHeading": "roboto"
+   },
+   "derived": []
+  },
+  {
+   "code": "b3eN6lfLaK",
+   "version": "b",
+   "values": {
+    "menuColor": "default",
+    "menuAccent": "bold",
+    "radius": "medium",
+    "font": "noto-sans",
+    "iconLibrary": "hugeicons",
+    "theme": "green",
+    "baseColor": "neutral",
+    "style": "lyra",
+    "chartColor": "mauve",
+    "fontHeading": "geist"
+   },
+   "derived": []
+  },
+  {
+   "code": "b37aHdRhL",
+   "version": "b",
+   "values": {
+    "menuColor": "inverted-translucent",
+    "menuAccent": "subtle",
+    "radius": "small",
+    "font": "playfair-display",
+    "iconLibrary": "tabler",
+    "theme": "fuchsia",
+    "baseColor": "zinc",
+    "style": "nova",
+    "chartColor": "indigo",
+    "fontHeading": "inherit"
+   },
+   "derived": []
+  },
+  {
+   "code": "b0",
+   "version": "b",
+   "values": {
+    "menuColor": "default",
+    "menuAccent": "subtle",
+    "radius": "default",
+    "font": "inter",
+    "iconLibrary": "lucide",
+    "theme": "neutral",
+    "baseColor": "neutral",
+    "style": "nova",
+    "chartColor": "neutral",
+    "fontHeading": "inherit"
+   },
+   "derived": []
+  },
+  {
+   "code": "b2fA",
+   "version": "b",
+   "values": {
+    "menuColor": "default",
+    "menuAccent": "subtle",
+    "radius": "default",
+    "font": "geist",
+    "iconLibrary": "lucide",
+    "theme": "neutral",
+    "baseColor": "neutral",
+    "style": "nova",
+    "chartColor": "neutral",
+    "fontHeading": "inherit"
+   },
+   "derived": []
+  },
+  {
+   "code": "b8V3duo56p",
+   "version": "b",
+   "values": {
+    "menuColor": "inverted-translucent",
+    "menuAccent": "bold",
+    "radius": "large",
+    "font": "instrument-serif",
+    "iconLibrary": "remixicon",
+    "theme": "taupe",
+    "baseColor": "taupe",
+    "style": "rhea",
+    "chartColor": "taupe",
+    "fontHeading": "instrument-serif"
+   },
+   "derived": []
+  },
+  {
+   "code": "a0",
+   "version": "a",
+   "values": {
+    "menuColor": "default",
+    "menuAccent": "subtle",
+    "radius": "default",
+    "font": "inter",
+    "iconLibrary": "lucide",
+    "theme": "neutral",
+    "baseColor": "neutral",
+    "style": "nova",
+    "fontHeading": "inherit",
+    "chartColor": "blue"
+   },
+   "derived": [
+    "chartColor"
+   ]
+  },
+  {
+   "code": "aJ4FaLx",
+   "version": "a",
+   "values": {
+    "menuColor": "inverted",
+    "menuAccent": "bold",
+    "radius": "none",
+    "font": "nunito-sans",
+    "iconLibrary": "hugeicons",
+    "theme": "blue",
+    "baseColor": "stone",
+    "style": "vega",
+    "fontHeading": "inherit",
+    "chartColor": "blue"
+   },
+   "derived": [
+    "chartColor"
+   ]
+  },
+  {
+   "code": "ac6ENf8",
+   "version": "a",
+   "values": {
+    "menuColor": "default-translucent",
+    "menuAccent": "subtle",
+    "radius": "small",
+    "font": "roboto",
+    "iconLibrary": "tabler",
+    "theme": "zinc",
+    "baseColor": "zinc",
+    "style": "maia",
+    "fontHeading": "inherit",
+    "chartColor": "amber"
+   },
+   "derived": [
+    "chartColor"
+   ]
+  },
+  {
+   "code": "avSeILD",
+   "version": "a",
+   "values": {
+    "menuColor": "inverted-translucent",
+    "menuAccent": "bold",
+    "radius": "medium",
+    "font": "dm-sans",
+    "iconLibrary": "phosphor",
+    "theme": "emerald",
+    "baseColor": "mauve",
+    "style": "lyra",
+    "fontHeading": "inherit",
+    "chartColor": "emerald"
+   },
+   "derived": [
+    "chartColor"
+   ]
+  },
+  {
+   "code": "a1EZjrzU",
+   "version": "a",
+   "values": {
+    "menuColor": "default",
+    "menuAccent": "subtle",
+    "radius": "large",
+    "font": "outfit",
+    "iconLibrary": "remixicon",
+    "theme": "olive",
+    "baseColor": "olive",
+    "style": "mira",
+    "fontHeading": "inherit",
+    "chartColor": "violet"
+   },
+   "derived": [
+    "chartColor"
+   ]
+  },
+  {
+   "code": "a1XYrIfx",
+   "version": "a",
+   "values": {
+    "menuColor": "inverted",
+    "menuAccent": "bold",
+    "radius": "default",
+    "font": "geist",
+    "iconLibrary": "lucide",
+    "theme": "green",
+    "baseColor": "mist",
+    "style": "luma",
+    "fontHeading": "inherit",
+    "chartColor": "green"
+   },
+   "derived": [
+    "chartColor"
+   ]
+  },
+  {
+   "code": "a1qfwsKI",
+   "version": "a",
+   "values": {
+    "menuColor": "default-translucent",
+    "menuAccent": "subtle",
+    "radius": "none",
+    "font": "lora",
+    "iconLibrary": "hugeicons",
+    "theme": "taupe",
+    "baseColor": "taupe",
+    "style": "sera",
+    "fontHeading": "inherit",
+    "chartColor": "cyan"
+   },
+   "derived": [
+    "chartColor"
+   ]
+  },
+  {
+   "code": "a27Jl3k3",
+   "version": "a",
+   "values": {
+    "menuColor": "inverted-translucent",
+    "menuAccent": "bold",
+    "radius": "small",
+    "font": "playfair-display",
+    "iconLibrary": "tabler",
+    "theme": "lime",
+    "baseColor": "neutral",
+    "style": "rhea",
+    "fontHeading": "inherit",
+    "chartColor": "lime"
+   },
+   "derived": [
+    "chartColor"
+   ]
+  },
+  {
+   "code": "aISoue",
+   "version": "a",
+   "values": {
+    "menuColor": "default",
+    "menuAccent": "subtle",
+    "radius": "medium",
+    "font": "roboto-slab",
+    "iconLibrary": "phosphor",
+    "theme": "stone",
+    "baseColor": "stone",
+    "style": "nova",
+    "fontHeading": "inherit",
+    "chartColor": "lime"
+   },
+   "derived": [
+    "chartColor"
+   ]
+  },
+  {
+   "code": "aJOhbB3",
+   "version": "a",
+   "values": {
+    "menuColor": "inverted",
+    "menuAccent": "bold",
+    "radius": "large",
+    "font": "manrope",
+    "iconLibrary": "remixicon",
+    "theme": "pink",
+    "baseColor": "zinc",
+    "style": "vega",
+    "fontHeading": "inherit",
+    "chartColor": "pink"
+   },
+   "derived": [
+    "chartColor"
+   ]
+  },
+  {
+   "code": "aclwvuk",
+   "version": "a",
+   "values": {
+    "menuColor": "default-translucent",
+    "menuAccent": "subtle",
+    "radius": "default",
+    "font": "montserrat",
+    "iconLibrary": "lucide",
+    "theme": "mauve",
+    "baseColor": "mauve",
+    "style": "maia",
+    "fontHeading": "inherit",
+    "chartColor": "emerald"
+   },
+   "derived": [
+    "chartColor"
+   ]
+  },
+  {
+   "code": "avn4vpz",
+   "version": "a",
+   "values": {
+    "menuColor": "inverted-translucent",
+    "menuAccent": "bold",
+    "radius": "none",
+    "font": "source-sans-3",
+    "iconLibrary": "hugeicons",
+    "theme": "red",
+    "baseColor": "olive",
+    "style": "lyra",
+    "fontHeading": "inherit",
+    "chartColor": "red"
+   },
+   "derived": [
+    "chartColor"
+   ]
+  }
+ ],
+ "invalid": [
+  {
+   "code": "c0",
+   "error": "Invalid preset code: c0"
+  },
+  {
+   "code": "z2fA",
+   "error": "Invalid preset code: z2fA"
+  },
+  {
+   "code": "b%%",
+   "error": "Invalid preset code: b%%"
+  },
+  {
+   "code": "b",
+   "error": "Invalid preset code: b"
+  },
+  {
+   "code": "a",
+   "error": "Invalid preset code: a"
+  },
+  {
+   "code": "",
+   "error": "Invalid preset code:"
+  },
+  {
+   "code": "b-2fA",
+   "error": "Invalid preset code: b-2fA"
+  },
+  {
+   "code": "2fA",
+   "error": "Invalid preset code: 2fA"
+  }
+ ]
+}
