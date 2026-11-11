@@ -6,6 +6,17 @@
     <description>Ocelot updates</description>
     <language>en</language>
     <item>
+      <title>Ocelot 0.3.1</title>
+      <pubDate>Wed, 11 Nov 2026 07:38:12 +0000</pubDate>
+      <sparkle:version>1005</sparkle:version>
+      <sparkle:shortVersionString>0.3.1</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <description><![CDATA[<ul>
+<li>Copies of Ocelot 0.2 now update to this version automatically. Version 0.3.0 was numbered in a way that made earlier copies skip it; everything in 0.3.0 is included here.</li>
+</ul>]]></description>
+      <enclosure url="https://github.com/caracal-sh/ocelot/releases/download/v0.3.1/Ocelot-0.3.1.dmg" length="16917177" type="application/octet-stream" sparkle:edSignature="Di2hNTQFFSdOKDzd95Q5YXZQH03varrKUySZXy5qbbMb6ZyI7rW4Zdk+ZbX0oAIb3HYzpYLQ76GHni69Nsp0Bw=="/>
+    </item>
+    <item>
       <title>Ocelot 0.3.0</title>
       <pubDate>Wed, 11 Nov 2026 07:26:49 +0000</pubDate>
       <sparkle:version>3</sparkle:version>
