@@ -6,6 +6,22 @@
     <description>Ocelot updates</description>
     <language>en</language>
     <item>
+      <title>Ocelot 0.3.7</title>
+      <pubDate>Wed, 11 Nov 2026 13:00:55 +0000</pubDate>
+      <sparkle:version>1013</sparkle:version>
+      <sparkle:shortVersionString>0.3.7</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <description><![CDATA[<ul>
+<li>Components. Turn any layer into a component (⌥⌘K, or right-click) and place instances of it anywhere: change the main and every instance follows. Instances can change their text, images, colours and visibility, and components can have props such as a label, a toggle or a variant. Find them in Assets › Components; detach an instance to make it plain layers again. React export writes each component once with typed props, and the agent builds shared parts like a sidebar, nav or buttons as components instead of copies.</li>
+<li>The agent can work in parallel. For several independent screens it starts helpers that build one screen each, at the same time. Each helper only has Ocelot's own tools and runs inside the agent's sandbox.</li>
+<li>See and follow every agent. The toolbar shows each working agent; click to see what each one is doing and pick which one the camera follows (or all). Every agent's work is marked on the canvas in its own colour.</li>
+<li>Ask the agent about a layer. Select a layer and click the small button next to it (⇧⌘K): write what should change and add it to the chat, or send it right away. The agent gets exactly that layer.</li>
+<li>Task systems pick their display font deliberately: Geist stays for text, and an editorial, warm or playful brief gets a fitting display face.</li>
+<li>Privacy: the sandboxed agent now only ever sees a copy of the conversation it is working on, never your other conversations.</li>
+</ul>]]></description>
+      <enclosure url="https://github.com/caracal-sh/ocelot/releases/download/v0.3.7/Ocelot-0.3.7.dmg" length="17571030" type="application/octet-stream" sparkle:edSignature="9fuzJPmt3jqjsiIyz6qEDef51zIxcbe0qfCDpvzVkqojABctir9j9UXU5Y1Hj2DYYUi2jYs0OXoVUNcUq417CA=="/>
+    </item>
+    <item>
       <title>Ocelot 0.3.6</title>
       <pubDate>Wed, 11 Nov 2026 09:52:16 +0000</pubDate>
       <sparkle:version>1012</sparkle:version>
