@@ -31,7 +31,7 @@ export const exportRuntimeSuite = (engine) => describe(engine, () => {
   beforeAll(async () => {
     site = await serve(PUBLIC);
     browser = await start();
-  });
+  }, 60_000);
   afterAll(async () => {
     await browser?.close();
     await site?.close();
@@ -88,7 +88,7 @@ export const exportRuntimeSuite = (engine) => describe(engine, () => {
       const shape = await page.evaluate(() => ({ keys: Object.keys(window.__ocelotExport).sort(), fps: window.__ocelotExport.fps }));
       expect(shape).toEqual({ keys: ['failed', 'fps', 'ready', 'reset', 'seek'], fps: FPS });
       await page.close();
-    });
+    }, 30_000); // the first page of the suite pays the engine's cold start (over 5 s for WebKit on a 2-vCPU runner)
 
     it('CSS + GSAP + Motion + three: two renders give identical hashes for 60 frames', async () => {
       const a = await sixtyFrames();
