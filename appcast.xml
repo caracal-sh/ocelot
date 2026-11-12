@@ -6,6 +6,18 @@
     <description>Ocelot updates</description>
     <language>en</language>
     <item>
+      <title>Ocelot 0.3.11</title>
+      <pubDate>Thu, 12 Nov 2026 20:58:43 +0000</pubDate>
+      <sparkle:version>1022</sparkle:version>
+      <sparkle:shortVersionString>0.3.11</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <description><![CDATA[<ul>
+<li>No more stray window while the agent works. When the agent took a screenshot, the screen being rendered could appear on your desktop behind your other windows. Rendering now happens in a window you can never see.</li>
+<li>Shorter handoff prompts. Links that many screens share, like a sidebar, are listed once for all of them instead of once per screen, so a large app's handoff prompt is about a tenth of its old size and your coding agent spends its context on the design instead.</li>
+</ul>]]></description>
+      <enclosure url="https://github.com/caracal-sh/ocelot/releases/download/v0.3.11/Ocelot-0.3.11.dmg" length="17262382" type="application/octet-stream" sparkle:edSignature="N3bL/pPA66gHhCdkvCoFGOGZVxBl/z0aIUbZIGLXVQrCh3wsAqKdlMUVP02EYiXQmh11qDbNoBI2E90Bz2sJBg=="/>
+    </item>
+    <item>
       <title>Ocelot 0.3.10</title>
       <pubDate>Wed, 11 Nov 2026 22:48:11 +0000</pubDate>
       <sparkle:version>1019</sparkle:version>
