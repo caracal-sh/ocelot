@@ -6,6 +6,25 @@
     <description>Ocelot updates</description>
     <language>en</language>
     <item>
+      <title>Ocelot 0.3.12</title>
+      <pubDate>Thu, 12 Nov 2026 22:56:03 +0000</pubDate>
+      <sparkle:version>1023</sparkle:version>
+      <sparkle:shortVersionString>0.3.12</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <description><![CDATA[<ul>
+<li>Unsaved work stays within reach. A document you never saved now appears in Home's Recent list, marked Unsaved, with everything up to its last autosave, so a closed window or a crash never costs you the work. Saving it moves it to a file of your choice.</li>
+<li>Smoother canvas when zoomed out. Panning across many screens at once no longer redraws every screen on each step, so moving around a large project stays fluid. Text is as sharp as before once you stop zooming.</li>
+<li>Send a steering message right away. While the agent works, clicking &quot;Steering&quot; (or the new Send now button next to it) stops its current step and hands it your message at once, instead of waiting until that step ends. Edits made so far stay, and anything else you queued keeps its place.</li>
+<li>Screens no longer overlap when they grow. When the agent makes a screen taller to fit its content, the rows below it move down and keep their spacing. Before, a long page could run into the next row.</li>
+<li>Scroll areas. Give a frame a fixed height and set Overflow to Scroll in the Inspector: its content scrolls in Preview, and on the canvas when the frame is selected, so a chat, a long list or a phone screen with a pinned tab bar keeps its real size. The agent knows it can build them too.</li>
+<li>Choose a design system and plan first, from Home. Next to the prompt you can now pick one of the eight component styles for a new project, or let the agent decide. You can also turn on Plan first: the agent asks you a few questions and shows you a plan before it touches the canvas.</li>
+<li>Toasts that stack. The design system's toast can now be drawn as a stack: the newest in front, older ones peeking behind it, and fanned out the way it looks on hover. The exported code uses the same component.</li>
+<li>The agent reaches for real components. On a design-system document it uses the system's toast, dialog, drawer, menu and command menu instead of drawing look-alikes, draws the states that show how they behave, and gets a gentle check when a hand-drawn copy slips through.</li>
+<li>New transitions in the Motion section start with opacity and transform and a strong ease-out, instead of animating every property.</li>
+</ul>]]></description>
+      <enclosure url="https://github.com/caracal-sh/ocelot/releases/download/v0.3.12/Ocelot-0.3.12.dmg" length="17466014" type="application/octet-stream" sparkle:edSignature="9nXgeBHkqmhrrKZvephx7Lv84bcaeij7mEj7SKKL6Z4R6haSfcOfqgKqUzfZ6tc+Au4fXspgYbPmtoUfRk8ECg=="/>
+    </item>
+    <item>
       <title>Ocelot 0.3.11</title>
       <pubDate>Thu, 12 Nov 2026 20:58:43 +0000</pubDate>
       <sparkle:version>1022</sparkle:version>
