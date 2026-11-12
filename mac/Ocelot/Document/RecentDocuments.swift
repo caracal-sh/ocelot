@@ -53,23 +53,40 @@ struct RecentList: Equatable, Sendable {
 /// A recent document as Home shows it.
 struct RecentDocument: Identifiable, Equatable, Sendable {
     let url: URL
+    /// When the document was last opened or saved; for an unsaved one, when its recovery copy was last written.
     let lastOpened: Date
     /// `preview.png` inside the package when the document has been saved with one.
     let previewURL: URL?
     /// Modification time of the preview: changes when the thumbnail is rewritten, so views reload it.
     let previewStamp: Date?
+    /// An untitled document that only exists as a recovery package (`url` points into the Recovery folder). Saving it
+    /// anywhere moves it out of this state; removing it deletes the only copy.
+    var isUnsaved = false
+    /// An unsaved document's own name (it has no file name).
+    var unsavedName: String?
 
     var id: String { url.path }
-    var name: String { url.deletingPathExtension().lastPathComponent }
+    var name: String { unsavedName ?? url.deletingPathExtension().lastPathComponent }
     /// The containing folder's name ("Home" for the home folder itself).
     var folder: String {
+        if isUnsaved { return "Unsaved" }
         let parent = url.deletingLastPathComponent()
         if parent.path == NSHomeDirectory() { return "Home" }
         return parent.lastPathComponent
     }
+
+    /// File > Open Recent: unsaved documents all look alike by name, so they carry their date.
+    var menuTitle: String {
+        isUnsaved ? "\(name) (unsaved, \(lastOpened.formatted(date: .abbreviated, time: .shortened)))" : name
+    }
 }
 
 /// Persistent recents: recorded when a document is opened, saved or saved as. Home reads `items`.
+///
+/// `items` also holds the unsaved documents: every untitled document with a recovery package that has an artboard
+/// (`UnsavedScanner`), flagged `isUnsaved`. They are not part of the persistent list: they are found on disk each time
+/// (`reload`), so they show up whatever happened to the window that held them, and they leave the list when the document
+/// is saved (its recovery package is deleted) or deleted.
 @MainActor
 final class RecentDocuments: ObservableObject {
     static let shared = RecentDocuments(defaults: RecentDocuments.sharedDefaults)
@@ -87,22 +104,32 @@ final class RecentDocuments: ObservableObject {
 
     private let defaults: UserDefaults
     private let notifySystem: Bool
+    private let recoveryDirectory: () -> URL
     private var list = RecentList()
+    private var scanner = UnsavedScanner()
+    private var unsaved: [RecentDocument] = []
 
-    init(defaults: UserDefaults, notifySystem: Bool? = nil) {
+    /// `recoveryDirectory` is where untitled documents autosave (tests point it at a temporary folder).
+    init(defaults: UserDefaults, notifySystem: Bool? = nil, recoveryDirectory: (() -> URL)? = nil) {
         self.defaults = defaults
         self.notifySystem = notifySystem ?? !Self.underTest
+        self.recoveryDirectory = recoveryDirectory ?? { DocumentSession.recoveryDirectory }
         reload()
     }
 
-    /// Re-reads the list from disk, drops documents that no longer exist and updates `items`. Cheap: the list
-    /// holds at most `RecentList.limit` entries.
+    /// How many recent documents have a file (what Clear Menu forgets); unsaved documents stay listed.
+    var savedCount: Int { list.entries.count }
+
+    /// Re-reads the list from disk, drops documents that no longer exist, finds the unsaved documents and updates
+    /// `items`. Cheap: the list holds at most `RecentList.limit` entries and recovery packages are read again only when
+    /// their `document.json` changed.
     func reload() {
         let stored = Self.decode(defaults.data(forKey: Self.defaultsKey))
         let pruned = stored.pruned(resolve: Self.resolve)
         if pruned != stored { persist(pruned) }
         list = pruned
-        items = pruned.entries.map(Self.document)
+        unsaved = scanner.scan(in: recoveryDirectory()).map(Self.document)
+        publish()
     }
 
     /// Records `url` as just used (open, save, save as).
@@ -112,27 +139,52 @@ final class RecentDocuments: ObservableObject {
         next.note(RecentEntry(path: url.path, bookmark: try? url.bookmarkData(), lastOpened: date))
         persist(next)
         list = next
-        items = next.entries.map(Self.document)
+        publish()
         if notifySystem { NSDocumentController.shared.noteNewRecentDocumentURL(url) }
     }
 
+    /// Forgets a saved document (the file stays). An unsaved document is not forgotten this way: it has no other copy,
+    /// so only `discardUnsaved` removes it.
     func remove(_ url: URL) {
         var next = list
         next.remove(path: url.standardizedFileURL.path)
         persist(next)
         list = next
-        items = next.entries.map(Self.document)
+        publish()
     }
 
-    /// File > Open Recent > Clear Menu: forgets every recent document (the files stay).
+    /// File > Open Recent > Clear Menu: forgets every recent document that has a file (the files stay). Unsaved documents
+    /// stay: their recovery package is the only copy.
     func clear() {
         list = RecentList()
         persist(list)
-        items = []
+        publish()
         if notifySystem { NSDocumentController.shared.clearRecentDocuments(nil) }
     }
 
+    /// Deletes an unsaved document's recovery package, the only copy of it. Callers ask the person first. False when `url`
+    /// is not a recovery package (a saved document is never deleted from here).
+    @discardableResult
+    func discardUnsaved(_ url: URL) -> Bool {
+        guard UnsavedScanner.isPackage(url, in: recoveryDirectory()) else { return false }
+        try? FileManager.default.removeItem(at: url)
+        reload()
+        return true
+    }
+
     // MARK: Internals
+
+    /// Saved and unsaved documents by date, newest first (a tie keeps the saved one first).
+    private func publish() {
+        let directory = recoveryDirectory()
+        let saved = list.entries
+            .map(Self.document)
+            .filter { !UnsavedScanner.isPackage($0.url, in: directory) } // a recovery package opened by path is listed as unsaved, not as a file
+        let merged = (saved + unsaved).enumerated()
+            .sorted { ($0.element.lastOpened, $1.offset) > ($1.element.lastOpened, $0.offset) }
+            .map(\.element)
+        if merged != items { items = merged }
+    }
 
     private func persist(_ list: RecentList) {
         defaults.set(try? JSONEncoder().encode(list.entries), forKey: Self.defaultsKey)
@@ -171,5 +223,9 @@ final class RecentDocuments: ObservableObject {
         let preview = DocumentPackage.previewURL(in: url)
         let stamp = (try? preview.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate)
         return RecentDocument(url: url, lastOpened: entry.lastOpened, previewURL: stamp == nil ? nil : preview, previewStamp: stamp)
+    }
+
+    private static func document(_ unsaved: UnsavedDocument) -> RecentDocument {
+        RecentDocument(url: unsaved.url, lastOpened: unsaved.date, previewURL: unsaved.previewURL, previewStamp: unsaved.previewStamp, isUnsaved: true, unsavedName: unsaved.name)
     }
 }

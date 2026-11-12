@@ -68,6 +68,9 @@ struct HomeView: View {
     @State private var startError: String?
     @State private var starting = false
     @State private var pasteMonitor: Any?
+    /// Remembered across launches: a `HomeDesignStyle` raw value ("" = the agent decides), and whether the agent plans before it builds.
+    @AppStorage(HomeDesignStyle.defaultsKey) private var designStyleID = ""
+    @AppStorage(HomeDesignStyle.planFirstKey) private var planFirst = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     static let starters: [(title: String, prompt: String)] = [
@@ -174,14 +177,10 @@ struct HomeView: View {
                 .padding(.horizontal, 22)
                 .padding(.top, 10)
             }
-            HStack(spacing: 4) {
-                AttachButton(action: chooseFiles)
-                    .padding(.leading, -6)
-                Text("The agent builds it on the canvas, and you can edit along.")
-                    .font(.system(size: 12))
-                    .foregroundStyle(.tertiary)
-                Spacer(minLength: 12)
-                StartButton(enabled: canStart, action: start)
+            // The hint is the first thing to go in a narrow card.
+            ViewThatFits(in: .horizontal) {
+                optionsRow(hint: true)
+                optionsRow(hint: false)
             }
             .padding(.horizontal, 22)
             .padding(.vertical, 14)
@@ -203,6 +202,24 @@ struct HomeView: View {
         }
         .contentShape(Rectangle())
         .onTapGesture { promptFocused = true }
+    }
+
+    /// The card's bottom row: attach, the design-system menu, Plan first, an optional hint, Start.
+    private func optionsRow(hint: Bool) -> some View {
+        HStack(spacing: 4) {
+            AttachButton(action: chooseFiles)
+                .padding(.leading, -6)
+            DesignSystemMenu(styleID: $designStyleID)
+            PlanFirstToggle(isOn: $planFirst)
+            if hint {
+                Text("You can edit along.")
+                    .font(.system(size: 12))
+                    .foregroundStyle(.tertiary)
+                    .padding(.leading, 6)
+            }
+            Spacer(minLength: 12)
+            StartButton(enabled: canStart, action: start)
+        }
     }
 
     // MARK: Attachments
@@ -288,7 +305,7 @@ struct HomeView: View {
                 let files = try await Task.detached(priority: .userInitiated) { try items.map { try $0.payload() } }.value
                 prompt = ""
                 attachments = []
-                coordinator.start(.prompt(text, files))
+                coordinator.start(.prompt(text, files, HomeStartOptions(styleID: designStyleID, planFirst: planFirst)))
             } catch {
                 startError = error.localizedDescription
             }
@@ -317,12 +334,38 @@ struct HomeView: View {
                             selected: selection == item.id,
                             select: { selection = item.id },
                             open: { coordinator.open(item.url) },
-                            remove: { recents.remove(item.url) }
+                            remove: { remove(item) }
                         )
                     }
                 }
             }
         }
+    }
+
+    /// "Remove from Recents": forgets a saved document (its file stays). An unsaved document has no other copy, so
+    /// removing it deletes its recovery package, after the person said so.
+    private func remove(_ item: RecentDocument) {
+        guard item.isUnsaved else {
+            recents.remove(item.url)
+            return
+        }
+        let alert = NSAlert()
+        if EditorRegistry.shared.all.contains(where: { $0.session.shows(item.url) }) {
+            alert.alertStyle = .informational
+            alert.messageText = "“\(item.name)” is open in a window"
+            alert.informativeText = "It was never saved, and this is the only copy of the work. Close its window or save it first."
+            alert.addButton(withTitle: "OK")
+            alert.runModal()
+            return
+        }
+        alert.alertStyle = .critical
+        alert.messageText = "Delete “\(item.name)”?"
+        alert.informativeText = "It was never saved, so Ocelot's automatic backup is the only copy of this work. Removing it from Recents deletes that copy, and it cannot be undone. To keep it, open it and choose Save As… instead."
+        alert.addButton(withTitle: "Cancel")
+        alert.addButton(withTitle: "Delete")
+        alert.buttons[1].hasDestructiveAction = true
+        guard alert.runModal() == .alertSecondButtonReturn else { return }
+        recents.discardUnsaved(item.url)
     }
 }
 
@@ -508,10 +551,26 @@ private struct RecentCard: View {
                 Text(item.name)
                     .font(.system(size: 13, weight: .medium))
                     .lineLimit(1)
-                Text("\(item.folder) · \(item.lastOpened.formatted(.relative(presentation: .named)))")
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
+                if item.isUnsaved {
+                    // Never saved: the automatic backup is its only copy, so the tag says so.
+                    HStack(spacing: 4) {
+                        Text("Unsaved")
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundStyle(Color.orange)
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 1)
+                            .background(Capsule().fill(Color.orange.opacity(0.16)))
+                        Text(item.lastOpened.formatted(.relative(presentation: .named)))
+                            .font(.system(size: 11))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+                } else {
+                    Text("\(item.folder) · \(item.lastOpened.formatted(.relative(presentation: .named)))")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
             }
             .padding(.horizontal, 2)
         }
@@ -530,10 +589,10 @@ private struct RecentCard: View {
             Button("Open", action: open)
             Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([item.url]) }
             Divider()
-            Button("Remove from Recents", action: remove)
+            Button(item.isUnsaved ? "Remove from Recents…" : "Remove from Recents", action: remove)
         }
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(item.name), in \(item.folder)")
+        .accessibilityLabel(item.isUnsaved ? "\(item.name), unsaved" : "\(item.name), in \(item.folder)")
         .accessibilityAddTraits(.isButton)
         .accessibilityAction(named: "Open", open)
     }

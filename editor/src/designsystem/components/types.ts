@@ -53,11 +53,13 @@ export function isIconRequest(c: ComponentChild): c is IconRequest {
   return typeof c === 'object' && c !== null && typeof (c as IconRequest).icon === 'string' && !('type' in c);
 }
 
-/** An ancestor part while generating a subtree (its props feed `inherit` props, e.g. card `size` → card-header). */
+/** An ancestor part while generating a subtree (its props feed `inherit` props, e.g. card `size` → card-header; its flags feed `inheritFlags`, e.g. a hovered toast viewport → its toasts). */
 export interface AncestorPart {
   part: string;
   component: string;
   props: Record<string, string>;
+  /** The flags it hands down: the ones the request set and the ones its position gave it (see `handedFlags`). */
+  flags?: readonly string[];
 }
 
 export interface GenerateOptions {

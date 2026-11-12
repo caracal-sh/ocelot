@@ -172,6 +172,10 @@ body {
 .at-canvas--pan-active { cursor: grabbing; }
 .at-world { position: absolute; left: 0; top: 0; width: 0; height: 0; transform-origin: 0 0; }
 .at-artboard { position: absolute; }
+/* Each visible artboard is a compositing layer, so panning moves layers instead of repainting every artboard on screen (the
+   zoomed-out lag). While the zoom changes (`data-zooming`, set by Canvas.tsx) they are painted into the world instead: a layer
+   would be re-rasterized per zoom step, which is slower than one repaint. Preview lays artboards out on its own. */
+.at-canvas:not(.at-canvas--present) .at-world:not([data-zooming]) .at-artboard:not(.at-artboard--offpage) { will-change: transform; }
 /* Artboards of other pages stay mounted (agents measure them) but are invisible and inert. */
 .at-artboard--offpage, .at-artboard--offpage * { visibility: hidden; pointer-events: none !important; }
 /* One line, never wider than its artboard (so a row of slides at low zoom never overlaps): the size wraps out of
@@ -1046,6 +1050,8 @@ body {
 .at-queue { display: flex; flex-direction: column; gap: 2px; padding: 2px 2px 6px; }
 .at-queue__row { display: grid; grid-template-columns: 52px minmax(0, 1fr) auto auto auto; align-items: start; column-gap: 6px; padding: 3px 3px 3px 8px; border-radius: var(--at-radius-m); background: var(--at-bg); font: var(--at-type-small); }
 .at-queue__label { padding-top: 1px; color: var(--at-text-2); }
+.at-queue__label--action { height: auto; border: 0; padding: 1px 0 0; background: transparent; font: inherit; text-align: left; cursor: default; }
+@media (hover: hover) { .at-queue__label--action:hover:not(:disabled) { color: var(--at-text); text-decoration: underline; text-underline-offset: 2px; } }
 .at-queue__text {
   min-width: 0; color: var(--at-text); overflow-wrap: anywhere; white-space: pre-line;
   display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden;

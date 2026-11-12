@@ -10,7 +10,9 @@ import UniformTypeIdentifiers
 ///
 /// Autosave: every change notification from the editor schedules a save after
 /// `autosaveDelay`. Saved documents autosave in place; untitled ones autosave to a
-/// recovery package in Application Support, which is reopened on next launch.
+/// recovery package in Application Support. That package is never deleted when the window closes (unless the document
+/// is empty): Home lists it as an unsaved document and opens it again (`open` adopts it), the first window after a
+/// launch adopts the newest one, and saving the document somewhere real deletes it.
 @MainActor
 final class DocumentSession: ObservableObject {
     @Published private(set) var fileURL: URL? { didSet { if fileURL != oldValue { onIdentityChange?(); assetRoot.set(packageURL) } } }
@@ -54,11 +56,14 @@ final class DocumentSession: ObservableObject {
     private var hasLoadedOnce = false
     /// False while the editor page is (re)loading: opens requested then wait in `pendingOpen`.
     private var editorReady = false
+    /// True while a document is being loaded into the editor (a restore after a page load, or `open`): the editor holds
+    /// something else until the load finishes, so nothing may be autosaved from it.
+    private var loadingDocument = false
     private var pendingOpen: URL?
     /// Home flow: this window starts a new document, so its first load must not adopt a recovery file.
     private var skipsRecoveryOnFirstLoad = false
-    /// Home flow: the person's first message and attached files, sent once the editor (and its agent chat) is up.
-    private var pendingPrompt: (text: String, attachments: [StartAttachment])?
+    /// Home flow: the person's first message, attached files and choices (design system, plan first), sent once the editor (and its agent chat) is up.
+    private var pendingPrompt: (text: String, attachments: [StartAttachment], options: HomeStartOptions)?
     private var previewTask: Task<Void, Never>?
     private var lastPreviewAt: ContinuousClock.Instant?
     /// Autosaves rewrite `preview.png` at most this often (an explicit save always does).
@@ -99,24 +104,26 @@ final class DocumentSession: ObservableObject {
         if let start = pendingPrompt, editorReady {
             pendingPrompt = nil
             // Not awaited: the agent can take a while to start, and the window must not wait for it.
-            Task { @MainActor in await startAgent(with: start.text, attachments: start.attachments) }
+            Task { @MainActor in await startAgent(with: start.text, attachments: start.attachments, options: start.options) }
         }
     }
 
-    /// This window starts a new, empty document (never a recovery file), optionally with a first message (and files) for the agent.
-    func prepareFresh(prompt: String? = nil, attachments: [StartAttachment] = []) {
+    /// This window starts a new, empty document (never a recovery file), optionally with a first message (and files, and the Home choices) for the agent.
+    func prepareFresh(prompt: String? = nil, attachments: [StartAttachment] = [], options: HomeStartOptions = HomeStartOptions()) {
         skipsRecoveryOnFirstLoad = true
         let text = prompt?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        pendingPrompt = text.isEmpty && attachments.isEmpty ? nil : (text, attachments)
+        pendingPrompt = text.isEmpty && attachments.isEmpty ? nil : (text, attachments, options)
     }
 
-    /// Sends the first message to the sidebar agent (Home's Start; MCP `new_project` with a prompt after it set the project up).
-    func startAgent(with prompt: String, attachments: [StartAttachment]) async {
+    /// Sends the first message to the sidebar agent (Home's Start; MCP `new_project` with a prompt after it set the project up). The editor creates the
+    /// design system the person chose before the agent's turn, and marks a plan-first start in the message.
+    func startAgent(with prompt: String, attachments: [StartAttachment], options: HomeStartOptions = HomeStartOptions()) async {
         guard let editor = editor() else { return }
         do {
-            _ = try await editor.call(EditorMethods.StartWithPrompt.self, StartWithPromptParams(prompt: prompt, attachments: attachments.isEmpty ? nil : attachments), timeout: .seconds(120))
+            let params = StartWithPromptParams(prompt: prompt, attachments: attachments.isEmpty ? nil : attachments, designSystem: options.designSystem, planFirst: options.planFirst ? true : nil)
+            _ = try await editor.call(EditorMethods.StartWithPrompt.self, params, timeout: .seconds(120))
         } catch where WebBridge.isPageLoading(error) {
-            pendingPrompt = (prompt, attachments) // the page reloaded; the next editorDidLoad sends it
+            pendingPrompt = (prompt, attachments, options) // the page reloaded; the next editorDidLoad sends it
         } catch {
             report("Could not start the agent with your prompt: \(error.localizedDescription) Type it in the Agent tab to try again.")
         }
@@ -130,6 +137,8 @@ final class DocumentSession: ObservableObject {
             await open(url)
             return
         }
+        loadingDocument = true
+        defer { loadingDocument = false }
         let source: URL?
         if !hasLoadedOnce {
             hasLoadedOnce = true
@@ -167,10 +176,11 @@ final class DocumentSession: ObservableObject {
     /// The editor page is about to (re)load: its endpoint is gone until `editorDidLoad`.
     func editorWillLoad() { editorReady = false }
 
-    /// This window shows `url` (or is about to).
+    /// This window shows `url` (or is about to): its file, or while it is untitled its recovery package (Home's "Unsaved" documents open by that path).
     func shows(_ url: URL) -> Bool {
         let target = url.standardizedFileURL.resolvingSymlinksInPath()
-        return [fileURL, pendingOpen].contains { $0?.standardizedFileURL.resolvingSymlinksInPath() == target }
+        let candidates = [fileURL ?? recoveryURL, pendingOpen]
+        return candidates.contains { $0?.standardizedFileURL.resolvingSymlinksInPath() == target }
     }
 
     /// A fresh window nobody has typed in: safe to load a file into, or to close in favour of another window.
@@ -244,15 +254,6 @@ final class DocumentSession: ObservableObject {
         return true
     }
 
-    /// Closing this window discards an untitled document that holds work: it has no file, only the recovery package.
-    func discardUntitledWork() {
-        guard fileURL == nil else { return }
-        autosaveTask?.cancel()
-        autosaveTask = nil
-        isDirty = false
-        discardRecoveryFile()
-    }
-
     /// An untitled document with something in it (`windowWillClose` keeps such a document in recovery).
     var holdsUntitledWork: Bool {
         guard fileURL == nil else { return false }
@@ -272,26 +273,58 @@ final class DocumentSession: ObservableObject {
         // The thumbnail task renders whatever the editor holds: it must not land in the package we are leaving.
         cancelPreview()
         let previousFile = fileURL
+        let previousRecovery = recoveryURL
+        // Home's "Unsaved" documents are recovery packages: they open as untitled documents that keep autosaving to the same package.
+        let isRecovery = Self.isRecoveryPackage(url)
+        loadingDocument = true
+        defer { loadingDocument = false }
         do {
             let file = try DocumentPackage.read(from: url)
             documentReplaced()
             // The editor lists assets right after loading: the store must already point at this package.
-            fileURL = url
-            _ = try await editor()?.call(EditorMethods.LoadDocument.self, LoadDocumentParams(file: file, name: url.deletingPathExtension().lastPathComponent))
-            documentName = url.deletingPathExtension().lastPathComponent
-            isDirty = false
+            if isRecovery { adoptRecovery(url) } else { fileURL = url }
+            _ = try await editor()?.call(EditorMethods.LoadDocument.self, LoadDocumentParams(file: file, name: isRecovery ? nil : url.deletingPathExtension().lastPathComponent))
+            documentName = isRecovery ? file.name : url.deletingPathExtension().lastPathComponent
+            isDirty = isRecovery // an untitled document stays "Edited" until it is saved somewhere real
             lastError = nil
-            RecentDocuments.shared.note(url)
+            if isRecovery { RecentDocuments.shared.reload() } else { RecentDocuments.shared.note(url) }
             await refreshProjectInfo()
         } catch where WebBridge.isPageLoading(error) {
             // The page reloaded mid-open: the next editorDidLoad opens the file again instead of dropping it.
-            fileURL = previousFile
+            restore(file: previousFile, recovery: previousRecovery)
             pendingOpen = url
             log.info("open interrupted by a page reload; retrying after the next load")
         } catch {
-            fileURL = previousFile
+            restore(file: previousFile, recovery: previousRecovery)
             report("Could not open \(url.lastPathComponent): \(error.localizedDescription)")
         }
+    }
+
+    /// Whether `url` is an untitled document's recovery package (a package directly in the Recovery folder).
+    static func isRecoveryPackage(_ url: URL) -> Bool { UnsavedScanner.isPackage(url, in: recoveryDirectory) }
+
+    /// This window now holds the untitled document whose recovery package is `url`: it autosaves there from now on.
+    private func adoptRecovery(_ url: URL) {
+        let previous = recoveryURL
+        let target = url.standardizedFileURL
+        // Our own package, never written, is nothing to keep. One that holds work stays on disk and stays claimed (Home
+        // lists it; no other window may adopt it on its own).
+        if Self.claimKey(previous) != Self.claimKey(target), !DocumentPackage.hasDocument(at: previous) {
+            Self.claimedRecovery.remove(Self.claimKey(previous))
+        }
+        Self.claimedRecovery.insert(Self.claimKey(target))
+        fileURL = nil
+        recoveryURL = target
+    }
+
+    /// An open that failed or was interrupted: this window shows what it showed before.
+    private func restore(file: URL?, recovery: URL) {
+        if recoveryURL != recovery {
+            Self.claimedRecovery.remove(Self.claimKey(recoveryURL))
+            Self.claimedRecovery.insert(Self.claimKey(recovery))
+            recoveryURL = recovery
+        }
+        fileURL = file
     }
 
     /// Whether closing or quitting now would lose edits that still wait for their autosave.
@@ -308,15 +341,40 @@ final class DocumentSession: ObservableObject {
     /// one stays in the recovery package (it is the person's only copy) unless it holds nothing worth recovering.
     func windowWillClose() async {
         await flushPendingAutosave()
-        guard fileURL == nil else { return }
-        let kept = (try? DocumentPackage.read(from: recoveryURL)).map(DocumentPackage.hasArtboards) ?? false
-        if !kept { discardRecoveryFile() }
+        await saveIfEditorAhead()
+        if fileURL == nil {
+            let kept = (try? DocumentPackage.read(from: recoveryURL)).map(DocumentPackage.hasArtboards) ?? false
+            if !kept { discardRecoveryFile() }
+        }
+        // The unsaved document this window held belongs in Home's list from now on.
+        RecentDocuments.shared.reload()
     }
 
-    /// Flushes every session's pending autosave in order (app quit). Each editor call has its own timeout, so a
-    /// wedged page delays but cannot block quitting forever.
+    /// The editor tells the host about an edit 250 ms after it happens (`host.documentChanged`), so an edit made in the
+    /// last moments before a window closes or the app quits is not known here yet. Asks the editor for its state and
+    /// writes it when it differs from what is on disk: nothing is written when nothing changed.
+    func saveIfEditorAhead() async {
+        // Never ask a page that is still loading (its editor holds the previous or an empty document), and never
+        // bring back a document that was deleted while it was open.
+        guard editorReady, !loadingDocument, let editor = editor() else { return }
+        guard let file = try? await editor.call(EditorMethods.GetDocument.self, Empty(), timeout: .seconds(3)) else { return }
+        guard !loadingDocument else { return }
+        let target = fileURL ?? recoveryURL
+        if let onDisk = try? DocumentPackage.read(from: target) {
+            if onDisk.yjs == file.yjs { return }
+        } else if fileURL != nil || !DocumentPackage.hasArtboards(file) {
+            return
+        }
+        await write(to: target, isAutosave: true, file: file)
+    }
+
+    /// Writes every session's last edits (app quit): the ones waiting for their autosave, and the ones the editor has not
+    /// reported yet. Each editor call has its own timeout, so a wedged page delays but cannot block quitting forever.
     static func flushAll(_ sessions: [DocumentSession]) async {
-        for session in sessions.filter(\.hasUnsavedEdits) { await session.flushPendingAutosave() }
+        for session in sessions {
+            await session.flushPendingAutosave()
+            await session.saveIfEditorAhead()
+        }
     }
 
     // MARK: Internals
@@ -332,19 +390,22 @@ final class DocumentSession: ObservableObject {
         }
     }
 
-    private func write(to url: URL, isAutosave: Bool) async {
+    /// `file` is the editor's state when the caller already asked for it (`saveIfEditorAhead`). Autosaves never write
+    /// while a document is loading: the editor then holds the previous (or an empty) document, which must not land over the one being opened.
+    private func write(to url: URL, isAutosave: Bool, file prefetched: DocumentFile? = nil) async {
         guard let editor = editor() else { return }
+        if isAutosave, loadingDocument { return }
         do {
-            let file = try await editor.call(EditorMethods.GetDocument.self, Empty())
+            let file: DocumentFile
+            if let prefetched { file = prefetched } else { file = try await editor.call(EditorMethods.GetDocument.self, Empty()) }
+            if isAutosave, loadingDocument { return }
             try DocumentPackage.write(file, to: url)
             lastError = nil
             // Untitled documents stay "Edited" until saved somewhere real.
             if url == fileURL { isDirty = false }
-            if url != recoveryURL {
-                // A real file: remember it for Home / Open Recent and refresh its thumbnail.
-                if !isAutosave { RecentDocuments.shared.note(url) }
-                schedulePreview(for: url, force: !isAutosave)
-            }
+            // Remember a real file for Home / Open Recent; refresh the thumbnail of the file or, while untitled, of the recovery package (Home shows it).
+            if url != recoveryURL, !isAutosave { RecentDocuments.shared.note(url) }
+            schedulePreview(for: url, force: !isAutosave && url != recoveryURL)
             log.info("\(isAutosave ? "autosaved" : "saved", privacy: .public) \(url.path, privacy: .public)")
         } catch {
             report("Could not save \(url.lastPathComponent): \(error)")
@@ -370,7 +431,7 @@ final class DocumentSession: ObservableObject {
         do {
             let result = try await editor.call(EditorMethods.RenderPreview.self, Empty(), timeout: .seconds(45))
             // The editor may hold another document by now (open, new document): never write its picture here.
-            guard !Task.isCancelled, fileURL == url else { return }
+            guard !Task.isCancelled, packageURL == url else { return }
             guard let encoded = result.png else {
                 try DocumentPackage.writePreview(nil, to: url) // no artboard: drop a stale thumbnail
                 return

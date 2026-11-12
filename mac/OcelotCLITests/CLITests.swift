@@ -458,6 +458,14 @@ final class AppCommandTests: XCTestCase {
         XCTAssertThrowsError(try NewCommand.arguments(missing))
     }
 
+    func testNewMapsDesignSystemAndPlanFirst() throws {
+        let parsed = try Args(["--prompt", "A dashboard", "--design-system", "luma", "--plan-first"], valueOptions: ["--prompt", "--design-system"], flags: ["--plan-first"])
+        let arguments = try NewCommand.arguments(parsed)
+        XCTAssertEqual((arguments["design_system"] as? [String: Any])?["style"] as? String, "luma")
+        XCTAssertEqual(arguments["plan_first"] as? Bool, true)
+        XCTAssertNil(try NewCommand.arguments(Args(["--prompt", "x"], valueOptions: ["--prompt"]))["plan_first"])
+    }
+
     func testProjectsPrintOpenAndRecentWithFlags() {
         let text = ProjectsCommand.render([
             "open": [["project_id": "P1", "name": "Acme", "path": "/x/Acme.ocelot", "focused": true, "unsaved": true], ["project_id": "P2", "name": "Scratch", "untitled": true]],

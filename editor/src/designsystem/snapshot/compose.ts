@@ -213,6 +213,11 @@ export function instantiate(specs: StyleSpecs, icons: IconSet, scheme: Scheme, r
     if (scope) flags.add(`in-${scope}`);
     if (scope && position.anyFirst && `first@${scope}` in t.flags) flags.add(`first@${scope}`);
     if (scope && position.anyLast && `last@${scope}` in t.flags) flags.add(`last@${scope}`);
+    const stack = t.stackFlags;
+    if (stack?.parent === nearest.part) {
+      const index = (position.after ?? []).filter((p) => p === t.part).length;
+      if (index > 0) flags.add(stack.flags[Math.min(index, stack.flags.length) - 1]!);
+    }
   }
   for (const [flag, parts] of Object.entries(t.peerFlags ?? {})) if (flag in t.flags && position.after?.some((p) => parts.includes(p))) flags.add(flag);
   for (const [f, owner] of Object.entries(t.inheritFlags ?? {})) {

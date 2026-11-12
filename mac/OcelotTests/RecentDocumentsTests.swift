@@ -27,7 +27,10 @@ final class RecentDocumentsTests: XCTestCase {
         return url
     }
 
-    private func store() -> RecentDocuments { RecentDocuments(defaults: defaults, notifySystem: false) }
+    private func store() -> RecentDocuments {
+        let recovery = recoveryDir
+        return RecentDocuments(defaults: defaults, notifySystem: false, recoveryDirectory: { recovery })
+    }
 
     // MARK: RecentList
 
@@ -151,6 +154,89 @@ final class RecentDocumentsTests: XCTestCase {
         recents.reload()
         XCTAssertEqual(recents.items.first?.previewURL?.lastPathComponent, "preview.png")
         XCTAssertNotNil(recents.items.first?.previewStamp)
+    }
+
+    // MARK: Unsaved documents (recovery packages)
+
+    private var recoveryDir: URL { dir.appendingPathComponent("Recovery", isDirectory: true) }
+
+    /// An untitled document's autosave: `Untitled-<uuid>.ocelot` in the recovery folder.
+    @discardableResult
+    private func makeRecovery(name: String = "Untitled", savedAt: String, artboards: [String] = ["board"]) throws -> URL {
+        let url = recoveryDir.appendingPathComponent("Untitled-\(UUID().uuidString).ocelot", isDirectory: true)
+        let file = DocumentFile(format: "ocelot", version: 2, name: name, savedAt: savedAt, yjs: "AAAA", tree: .object(["artboards": .array(artboards.map { .string($0) })]))
+        try DocumentPackage.write(file, to: url)
+        return url
+    }
+
+    func testEveryUntitledDocumentWithWorkIsListedAsUnsavedNewestFirstAmongTheOthers() throws {
+        let saved = try makePackage("Saved")
+        let older = try makeRecovery(name: "Older", savedAt: "2026-11-09T10:00:00.000Z")
+        let newer = try makeRecovery(name: "", savedAt: "2026-11-09T12:00:00.000Z")
+        try makeRecovery(name: "Blank", savedAt: "2026-11-09T13:00:00.000Z", artboards: [])
+        let recents = store()
+        recents.note(saved, date: ISO8601DateFormatter().date(from: "2026-11-09T11:00:00Z")!)
+
+        XCTAssertEqual(recents.items.map(\.name), ["Untitled", "Saved", "Older"], "an empty document is not listed; the others sort by date, a missing name reads Untitled")
+        XCTAssertEqual(recents.items.map(\.isUnsaved), [true, false, true])
+        XCTAssertEqual(recents.items[0].url.resolvingSymlinksInPath().path, newer.resolvingSymlinksInPath().path)
+        XCTAssertEqual(recents.items[2].url.resolvingSymlinksInPath().path, older.resolvingSymlinksInPath().path)
+        XCTAssertEqual(recents.items[2].lastOpened.timeIntervalSince1970, 1_794_218_400, accuracy: 0.5, "the date is the document's savedAt (2026-11-09 10:00 UTC)")
+        XCTAssertEqual(recents.items[0].folder, "Unsaved")
+        XCTAssertEqual(recents.savedCount, 1)
+        XCTAssertEqual(store().items.map(\.name), ["Untitled", "Saved", "Older"], "found on disk, so they survive a relaunch with no recents entry")
+    }
+
+    func testAnUnsavedDocumentShowsItsPreviewWhenOneExists() throws {
+        let url = try makeRecovery(savedAt: "2026-11-09T10:00:00.000Z")
+        let recents = store()
+        XCTAssertNil(recents.items.first?.previewURL)
+        try DocumentPackage.writePreview(Data([0x89, 0x50]), to: url)
+        recents.reload()
+        XCTAssertEqual(recents.items.first?.previewURL?.lastPathComponent, "preview.png")
+    }
+
+    func testReloadSeesAnAutosaveAfterTheFirstScan() throws {
+        let recents = store()
+        XCTAssertTrue(recents.items.isEmpty)
+        let url = try makeRecovery(name: "First", savedAt: "2026-11-09T10:00:00.000Z")
+        recents.reload()
+        XCTAssertEqual(recents.items.map(\.name), ["First"])
+        try DocumentPackage.write(DocumentFile(format: "ocelot", version: 2, name: "Renamed", savedAt: "2026-11-09T10:05:00.000Z", yjs: "BBBB", tree: .object(["artboards": .array([.string("a")])])), to: url)
+        recents.reload()
+        XCTAssertEqual(recents.items.map(\.name), ["Renamed"], "a changed document.json is read again")
+    }
+
+    func testClearMenuAndRemoveNeverTouchUnsavedDocuments() throws {
+        let saved = try makePackage("Saved")
+        let unsaved = try makeRecovery(name: "Work", savedAt: "2026-11-09T10:00:00.000Z")
+        let recents = store()
+        recents.note(saved)
+        recents.clear()
+        XCTAssertEqual(recents.items.map(\.name), ["Work"])
+        XCTAssertEqual(recents.savedCount, 0)
+        recents.remove(unsaved)
+        XCTAssertEqual(recents.items.map(\.name), ["Work"], "forgetting is for saved documents; the recovery copy is the only copy")
+        XCTAssertTrue(DocumentPackage.hasDocument(at: unsaved))
+    }
+
+    func testDiscardingAnUnsavedDocumentDeletesItsRecoveryPackageAndNothingElse() throws {
+        let saved = try makePackage("Saved")
+        let unsaved = try makeRecovery(name: "Work", savedAt: "2026-11-09T10:00:00.000Z")
+        let recents = store()
+        recents.note(saved)
+        XCTAssertFalse(recents.discardUnsaved(saved), "a saved document is never deleted from here")
+        XCTAssertTrue(DocumentPackage.hasDocument(at: saved))
+        XCTAssertTrue(recents.discardUnsaved(unsaved))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: unsaved.path))
+        XCTAssertEqual(recents.items.map(\.name), ["Saved"])
+    }
+
+    func testARecoveryPackageNotedAsAFileIsListedOnlyOnce() throws {
+        let unsaved = try makeRecovery(name: "Work", savedAt: "2026-11-09T10:00:00.000Z")
+        let recents = store()
+        recents.note(unsaved) // an older build recorded recovery packages opened by path as files
+        XCTAssertEqual(recents.items.map(\.isUnsaved), [true])
     }
 }
 

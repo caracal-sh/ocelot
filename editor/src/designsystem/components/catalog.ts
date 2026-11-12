@@ -306,6 +306,7 @@ const ENTRIES: CatalogEntry[] = [
       'Groups go inside `command-list`, items inside groups; the title of a group is its `heading` attribute. A `command-shortcut` goes last in an item.',
       'Give the command a width (it fills its parent) and mark one item `selected` for the highlighted row.',
       'For the "nothing found" state put one `command-empty` ("No results found.") in `command-list` instead of the groups.',
+      'It runs from the keyboard: typing filters the list, ↑ and ↓ move the selected row, Enter runs it, Esc closes. Draw that: one `selected` row, a `command-shortcut` on items that have one, and the empty state as its own artboard. It opens with no animation: people use it many times a day.',
     ],
     example:
       '<ds-command style="width:320px"><ds-command-input placeholder="Type a command or search..."></ds-command-input><ds-command-list><ds-command-group heading="Suggestions">' +

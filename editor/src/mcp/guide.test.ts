@@ -109,7 +109,9 @@ describe('guide topics', () => {
     // Reuse (document components) was added to the server instructions (one line) and the design-guide (a short section and the tool-map rows) without raising
     // a budget: the same words were trimmed from copy that repeated itself, and the design-system-guide got one cross-reference.
     // product-guide: its own topic (1,700 words) because the design-guide is at its cap; agents fetch it only for app screens.
-    const budget: Record<string, number> = { 'design-guide': 5950, 'motion-guide': 2900, 'slides-guide': 1900, 'video-guide': 2300, 'theme-guide': 1470, 'design-system-guide': 1550, 'product-guide': 1750 };
+    // design-system-guide: +400 words for "Pick the component by the job" and "Draw the behaviour" (toast stacks, drawers, command menus), which
+    // the ds-hand-built check points to; agents fetch it only for design-system work.
+    const budget: Record<string, number> = { 'design-guide': 5950, 'motion-guide': 2900, 'slides-guide': 1900, 'video-guide': 2300, 'theme-guide': 1470, 'design-system-guide': 1950, 'product-guide': 1750 };
     for (const [topic, max] of Object.entries(budget)) expect(words(readGuide(topic)), topic).toBeLessThanOrEqual(max);
     expect(words(SERVER_INSTRUCTIONS)).toBeLessThanOrEqual(1250);
   });

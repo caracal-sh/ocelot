@@ -11,7 +11,7 @@ import { parseStyleText } from '../../model/styles';
 import type { NodeSpec } from '../../model/types';
 import type { Scheme } from '../model';
 import { ComponentError, nearest } from './errors';
-import { generate, resolvePart, resolveProps, type GenerateRecord } from './generate';
+import { contextFlags, generate, handedFlags, resolvePart, resolveProps, type GenerateRecord } from './generate';
 import type { ComponentSet } from './set';
 import type { AncestorPart, ComponentRequest } from './types';
 
@@ -41,8 +41,12 @@ export function createDsHtmlHook(set: ComponentSet, record: GenerateRecord, sche
       else if (key in tpl.flags) props[key] = a.value === 'false' ? false : true;
       else attrs[key] = a.value;
     }
-    const resolved = resolveProps(tpl, props, stack);
-    stack.push({ part: tpl.part, component: tpl.component, props: resolved.values });
+    const same = Array.from(el.parentElement?.children ?? [el]).filter((o) => o.tagName === el.tagName);
+    const parts = Array.from(el.parentElement?.children ?? [el]).filter((o) => o.tagName.toLowerCase().startsWith(PREFIX) && o.tagName.toLowerCase() !== `${PREFIX}icon`);
+    const siblings = { first: same[0] === el, last: same[same.length - 1] === el, anyFirst: parts[0] === el, anyLast: parts[parts.length - 1] === el, after: parts.slice(0, parts.indexOf(el)).map((o) => o.tagName.toLowerCase().slice(PREFIX.length)) };
+    const context = contextFlags(tpl, stack, siblings);
+    const resolved = resolveProps(tpl, props, stack, context);
+    stack.push({ part: tpl.part, component: tpl.component, props: resolved.values, flags: handedFlags(resolved, context) });
     let kids: NodeSpec[];
     try {
       kids = children();
@@ -52,9 +56,7 @@ export function createDsHtmlHook(set: ComponentSet, record: GenerateRecord, sche
     const req: ComponentRequest = { component: tpl.part, props, ...(name ? { name } : {}), ...(styles && Object.keys(styles).length ? { styles } : {}), ...(Object.keys(attrs).length ? { attrs } : {}) };
     if (kids.length === 1 && isLooseText(kids[0]!)) req.text = kids[0]!.text!;
     else if (kids.length) req.children = kids;
-    const same = Array.from(el.parentElement?.children ?? [el]).filter((o) => o.tagName === el.tagName);
-    const parts = Array.from(el.parentElement?.children ?? [el]).filter((o) => o.tagName.toLowerCase().startsWith(PREFIX) && o.tagName.toLowerCase() !== `${PREFIX}icon`);
-    return generate(set, record, req, { scheme, ancestors: [...stack], siblings: { first: same[0] === el, last: same[same.length - 1] === el, anyFirst: parts[0] === el, anyLast: parts[parts.length - 1] === el, after: parts.slice(0, parts.indexOf(el)).map((o) => o.tagName.toLowerCase().slice(PREFIX.length)) } });
+    return generate(set, record, req, { scheme, ancestors: [...stack], siblings });
   };
 }
 

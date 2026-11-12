@@ -21,7 +21,6 @@ You MUST read the guide before your first design or edit: get_guide({ topic: "de
 - Review your work: take a get_screenshot every 2-3 groups and at the end, not after every group, and look at it critically. Fix what is wrong with targeted edits, then look again. The last tool call before end_edit is always a get_screenshot of what you changed, including after small text or style tweaks. get_screenshot lists text below WCAG contrast and design findings: fix every one marked Fix, answer each Check with a reason from the brief or a change; inspect_design lists all of them.
 - Chat while you work: one sentence per message at most.
 - Artboard height is a starting point: when content is clipped or the page ends early, set update_artboard height "fit-content", never a guessed number.
-- Repeated rows (lists, nav, tables of data): give icons and trailing actions fixed-width slots (flex-shrink: 0) so columns line up.
 - Keep the canvas organized: one row per flow (or device class), steps left to right in journey order, device variants of a screen in one column. Name artboards "Flow / Step — Device" (e.g. "Onboarding / Welcome — Mobile"), call arrange_artboards after adding artboards, and finish by focus_nodes on what you made.
 - Pages: the document has pages (list_pages), one per platform or major area. You can edit and screenshot artboards on any page without moving the user's view; only set_current_page, focus_nodes and select_nodes switch it. delete_page needs confirm: true after asking the user.
 - Prototype (required): screens that belong together (pages of one site, steps of a flow, an app's tabs; each device separately) are linked before you finish: set_link on nav items, buttons and back arrows (real <a>), then get_links until nothing is broken and every screen links somewhere. Unrelated designs and alternative directions stay unlinked. start_presentation only when asked.
@@ -35,7 +34,7 @@ You MUST read the guide before your first design or edit: get_guide({ topic: "de
 - Files: export_image (PNG/JPG), export_pdf, export_deck (PDF/PPTX) and export_video (MP4, MOV, GIF) write into the document's export folder; only when the user asks for such files, never instead of get_screenshot.
 - Slides: a presentation, pitch deck or talk is a page of kind "deck": read get_guide({ topic: "slides-guide" }) before creating it.
 - Video: a launch film, explainer or animated showcase is a page of kind "video" (artboards are scenes): read get_guide({ topic: "video-guide" }) before creating it, review with get_frames and get_timeline.
-- One token owner per document: a theme (var(--theme-...), get_guide "theme-guide") or a design system (insert_component, shadcn tokens, get_guide "design-system-guide").
+- One token owner per document: a theme (var(--theme-...), get_guide "theme-guide") or a design system (insert_component, shadcn tokens, get_guide "design-system-guide"). Design systems: brief-led style, radius, colors, fonts (not stock shadcn); toasts, dialogs, drawers, menus, command menus are components, never drawn.
 - Product screens (dashboard, table, settings, billing, onboarding, paywall, checkout, empty states): read get_guide({ topic: "product-guide" }), then get_pattern({ need: "<what you build>" }) once (list_patterns browses) for regions, required states (each its own artboard), copy rules, numbers and review checks, and report each check as pass, fail or unverified. A pattern is evidence for structure, never a template.
 - The app: open_project and new_project open the editor and return a project_id; design in that project with the document tools (a page or screen asked for is a design). list_projects finds existing work; save_project, close_project and the settings tools do the rest. Security settings are read-only for you.
 - Style with inline style attributes only (no <style>, classes or scripts); interactive states, keyframes and code layers have their own tools. The canvas applies a reset like Tailwind's preflight, so set sizes, weights and spacing explicitly.`
@@ -48,7 +47,7 @@ export const GUIDE_TOPICS = [
   { topic: 'slides-guide', summary: 'Decks and presentations (page kind "deck"): argument first, deck system, slide anatomy and type floors, layouts, charts and images, speaker notes and transitions (set_slide), get_deck checks, PDF and PPTX export (export_deck), presenting.' },
   { topic: 'video-guide', summary: 'Films, explainers and motion showcases (page kind "video"): plan in numbers, scenes and durations (set_slide), seekable code layer rules, film motion craft, reviewing with get_frames and get_timeline, export_video (MP4, MOV, GIF) and determinism.' },
   { topic: 'theme-guide', summary: 'Themes and their tokens: your own task-specific theme (create_theme: required colors, derived colors, contrast, fonts, scale), the 13 stock themes by product and mode (list_themes, get_theme), apply_theme, designing within tokens (var(--theme-...)), per-theme pitfalls, overrides, switching and export.' },
-  { topic: 'design-system-guide', summary: 'Design systems (shadcn tokens plus real components): when to use one instead of a theme, create_design_system knobs and the eight styles, building screens with insert_component and <ds-*>, login and signup pages from insert_block, semantic tokens only (var(--primary)), changing tokens and geometry, light and dark artboards, contrast, export_design_system.' },
+  { topic: 'design-system-guide', summary: 'Design systems (shadcn tokens plus real components): when to use one instead of a theme, create_design_system knobs and the eight styles, building screens with insert_component and <ds-*>, which component for which job, drawing behaviour (toast stacks, drawers, command menus, menus, dialogs, changing numbers), login and signup pages from insert_block, semantic tokens only (var(--primary)), changing tokens and geometry, light and dark artboards, contrast, export_design_system.' },
   { topic: 'product-guide', summary: 'Product screens and states (Operate mode): the job of a screen, decision-first dashboards and tables, the four different states (first use, no results, error, no access) plus loading, onboarding, paywall and upgrade, settings and billing consistency, one label per action, pass / fail / unverified handoff.' },
 ] as const;
 
@@ -94,11 +93,11 @@ Read this once per session: how to work (review, brief, incremental writing), ho
 
 Write in reading order and look every 2-3 visual groups and at the end, not after each: get_screenshot the artboard and judge it before writing on. Verdict in one short line, then fix what is wrong. Check:
 
-- Spacing: consistent rhythm, nothing cramped, no random gaps. Padding inside, gap between; the same value for the same relationship.
-- Typography: clear hierarchy (one dominant size, a few supporting ones), sensible line lengths, no accidental wrapping, no widows in headings.
-- Contrast: text readable against its background at a glance; muted text still passes. Zoom in with scale 2 for anything under 16px.
+- Spacing: consistent rhythm, nothing cramped, no random gaps.
+- Typography: clear hierarchy (one dominant size, a few supporting ones), sensible line lengths, no accidental wrapping.
+- Contrast: text readable against its background; muted text still passes. Zoom in with scale 2 for anything under 16px.
 - Alignment: edges line up across rows and sections; repeated elements share the same left edge and the same lane widths.
-- Artboard fit: when content is clipped (get_screenshot and get_document_info warn about it) or ends far above the bottom, call update_artboard with height "fit-content" once the content is final; never guess a height.
+- Artboard fit: clipped content (get_screenshot and get_document_info warn) or a long empty bottom: update_artboard height "fit-content" once the content is final.
 - Repetition: rows, cards and list items identical where they should be, with different realistic content.
 
 Fix with targeted edits (update_styles, set_text, move_nodes). Do not delete and redraw a whole frame to fix an overflow or a color.
@@ -114,10 +113,10 @@ Fix everything a round shows in one batch of targeted edits, confirm with one mo
 
 ## 2. Direction and taste
 
-The goal is work a studio would sign: specific to this subject, finished, and not guessable from the category. A person will judge the first viewport in one second. These are rules of judgment; the mechanics come later.
+The goal is work a studio would sign: specific to this subject, finished, and not guessable from the category. A person will judge the first viewport in one second.
 
 - Prefer removing to adding: write the page, then cut a third of it. A section is one idea: a headline, up to 40 words and one picture or interface fragment. Spacing is a rhythm: a small scale (4, 8, 12, 16, 24, 32, 48, 64, 96), big jumps between sections (120-160px), small ones inside groups.
-- Hierarchy comes from scale and weight contrast (a 64px headline next to 14px labels), not from boxes and borders. Prefer surfaces and whitespace over a shadowed card around everything.
+- Hierarchy comes from scale and weight contrast (a 64px headline next to 14px labels), not from boxes and borders.
 - Light is the default. Gradients, glass and glows only when the brief or a theme calls for them; the one exception is a neutral near-black scrim under text on a picture.
 
 ### Ground it in the subject
@@ -141,7 +140,7 @@ get_screenshot lists findings (inspect_design lists all). Fix every Fix (a frame
 ### Type
 - Sizes: five at most, far apart, the same steps in every section (display, heading, lead, body, small). Persuade display is 56-80px at 1440 (never above 7% of the artboard width, two lines at most) against 16-18px body; Operate 28-40px against 14-15px. A calm page sets display at weight 400-600; 700 and up is for a loud brief.
 - Families: the display face is a decision, made once in the system (section 7). Geist Sans is the default for UI and body, and for display when the voice is calm, technical or precise. A voice that is editorial, warm, historic, playful or loud takes a display face from list_fonts for font-display (Fraunces or Instrument Serif: warm, editorial, historic; Fredoka: playful; Unbounded: loud; Geist Serif: fashion, luxury), regular weight at 48px or larger, with Geist Sans for text. Mono for code and data; Pixel only for retro, game or terminal work. Never a face only to look different; two families at most.
-- Headlines: a title, not a sentence: about 32 characters, two lines or fewer, left-aligned unless the direction is formal. Fix the break with max-width, not by shrinking the type. Never leave one word alone on the last line.
+- Headlines: a title, not a sentence: about 32 characters, two lines or fewer, left-aligned unless the direction is formal. Fix the break with max-width, not by shrinking the type.
 - Display letter-spacing -0.02 to -0.03em (never below -0.04em); display line-height 0.95-1.1 as a px value; body 1.5. Body lines 45-75 characters (set max-width in px).
 
 ### Color proportions and surfaces
@@ -250,7 +249,8 @@ What write_html accepts, and what Ocelot actually does:
 - Names: data-name="Pricing card" on any element names its layer. Name every section, card, row and group.
 - Images: https URLs or data: URIs only (no local paths). Provide alt text via set_attributes or alt="…" in the HTML.
 - Colors: any CSS color notation (hex, rgb, hsl, oklch).
-- Artboards are viewports: width/height are fixed px; media queries, vh and vw use the artboard size; content below the bottom edge is cut off (see Artboard fit).
+- Artboards are viewports: width/height are fixed px; media queries, vh and vw use the artboard size; content below the bottom edge is cut off.
+- Scroll areas: a frame with a fixed height and overflow-y "auto" (chat transcript, long list in a fixed panel, phone screen with a pinned tab bar) scrolls in Preview and, when selected, on the canvas. Screenshots show its top; read the rest with get_tree.
 - Hidden layers are skipped by screenshots and exports.
 
 ## 14. Steering any property
@@ -259,7 +259,7 @@ Everything a person can change in the editor can be changed with a tool. Always 
 
 | What | Tool |
 |---|---|
-| Size (width, height, min/max), fixed / hug / fill | update_styles. Fixed: width "320px" + flex-shrink 0. Hug: "fit-content". Fill along a flex row/column: flex "1 1 0%" + min-width/min-height 0 (remove width/height); fill across: "100%". Auto: remove the property (null). |
+| Size (width, height, min/max), fixed / hug / fill, clip, scroll | update_styles. Fixed: width "320px" + flex-shrink 0. Hug: "fit-content". Fill along a flex row/column: flex "1 1 0%" + min-width/min-height 0 (remove width/height); fill across: "100%". Auto: remove the property (null). Clip: overflow "hidden"; scroll: height + overflow-y "auto" with overflow-x "hidden". |
 | Layout: display, flex-direction, wrap, gap, align-items, justify-content, grid-template-columns | update_styles |
 | Padding, margin | update_styles |
 | Position: static / relative / absolute, left, top | update_styles |
@@ -896,12 +896,34 @@ Style changes geometry (control heights, padding, rounding); tokens change color
 - write_html also accepts <ds-button variant="outline" size="sm">Save</ds-button> and <ds-card><ds-card-header>...</ds-card-header></ds-card> next to normal elements. Always close the element (<ds-input></ds-input>); a boolean attribute is a flag (<ds-button disabled>, <ds-input invalid>); <ds-icon name="plus" at="start"></ds-icon> adds a lucide icon inside a part; data-name names the layer.
 - Form and input parts: field (field-set > field-group > field with field-label, control, field-description or field-error), input-group (addons around input-group-input), input-otp, radio-group, slider (attrs value 0-100), toggle and toggle-group, native-select, button-group, kbd; combobox and command are drawn open. get_component lists parts and rules.
 - Use variants and sizes, never a custom-styled div for a button, badge, alert, card or separator. TabsTrigger goes inside TabsList; Dialog needs a title; a form is Field groups. Errors name the valid props.
-- Display and layout components (insert_component and <ds-*>): Accordion (mark the open item's trigger open; only an open item has content), Collapsible, Avatar (fallback initials; a group ends with a count), Progress (the indicator width is the value), Skeleton and Spinner (give them a size), Empty, Item, Pagination, Breadcrumb, ScrollArea, AspectRatio and a static Toast; get_component lists parts, rules and an example.
+- Display and layout components (insert_component and <ds-*>): Accordion (mark the open item's trigger open; only an open item has content), Collapsible, Avatar (fallback initials; a group ends with a count), Progress (the indicator width is the value), Skeleton and Spinner (give them a size), Empty, Item, Pagination, Breadcrumb, ScrollArea, AspectRatio and Toast (one, or a stack); get_component lists parts, rules and an example.
 - Overlays and menus (alert-dialog, sheet, drawer, popover, tooltip, hover-card, dropdown-menu, context-menu, menubar, navigation-menu) are drawn open: a relative frame holding the trigger (a button with expanded) and the popup, placed with position:absolute and transform:none; modals are an overlay plus a sibling content. get_component gives the exact recipe and parts. In the handoff code the button right before a popup is its Trigger (data-ds-role="trigger" marks any other layer) and the popup loads closed (data-ds-state="open" on it keeps it open); a modal drawn with its overlay is the screen and starts open; a submenu's sub-content, drawn beside the menu, opens from the sub-trigger row marked open.
 - Blocks: list_blocks lists shadcn's login, signup and sidebar pages (and what is unavailable); insert_block({ block: "login-02", new_artboard: { name: "Login" }, scheme }) writes one as ordinary layers (real instances plus plain layout), so tokens and tweaks apply; nothing links back. A sidebar is plain layers: make it a document component when it repeats.
 - Layout around components (flex, gap, padding, widths, text sizes) is yours, in plain px. Colors, radii and fonts always come from tokens. A design-system component is already shared by its tokens: never wrap one alone in make_component; a composition you repeat (a sidebar, a toolbar, a card with its buttons) is a document component (design-guide "Reuse: components").
 - Tokens to reference: color: var(--foreground); var(--muted-foreground) for secondary text; background: var(--background), var(--card), var(--muted), var(--accent), var(--primary) with color var(--primary-foreground); border: 1px solid var(--border); var(--destructive); ring var(--ring); charts var(--chart-1) to var(--chart-5). Radius: var(--radius), and var(--radius-sm), -md, -lg, -xl derived from it. Fonts: var(--font-sans), var(--font-heading), var(--font-mono). Never a hex value; the inspect_design check "ds-raw-values" flags them.
 - Extra tokens (success, warning, brand) are tokens.extra entries with a light and a dark value, then var(--success).
+
+### Pick the component by the job
+
+Never draw your own version of these: the component brings states, keyboard and focus handling, and real code in the handoff. inspect_design asks about hand-drawn copies ("ds-hand-built").
+
+- Confirm what cannot be undone: alert-dialog. A focused task over the page: dialog.
+- A panel from the bottom on a phone: drawer. A side panel on a desktop: sheet.
+- Search and run commands (⌘K): command. Actions on a button or a row: dropdown-menu; on right click: context-menu.
+- Feedback after an action ("Project deleted", Undo): toast. A message that stays (a failed sync): alert.
+- 2-5 visible options: radio-group or toggle-group; many: select; found by typing: combobox.
+- Applies at once: switch; submitted with a form: checkbox. A verification code: input-otp.
+- A hint: tooltip; a preview: hover-card; controls anchored to a trigger: popover.
+- Waiting with a known layout: skeleton; inside a button: spinner; measurable: progress.
+
+### Draw the behaviour, not only the look
+
+A still frame hides these states: draw the one that proves it, name the rest in your motion line.
+
+- Toast: a stack in one corner (bottom right), newest in front, at most three; older ones peek behind, smaller, text hidden. Hover fans it into a column, a swipe down or right dismisses, each leaves after 5 seconds (paused on hover or focus). Several toasts in one toast-viewport, newest first, draw the stack; expanded on the viewport draws the hovered column (get_component toast). One toast per event, titled with the action's label, Undo when it can be undone; a failure needing a decision is an alert or dialog.
+- Drawer and command: get_component lists what to draw (the swipe handle and a footer action; one selected row, shortcuts, the empty state). A command menu never animates.
+- Menus and dialogs: draw one menu row highlighted (pointer and keyboard share it), a destructive item last after a separator; a dialog has one primary action, right in the footer, named for the outcome.
+- Numbers that change (monthly and yearly prices, a live count): tabular-nums so the width holds; animated digits are a code layer (motion-guide 10).
 
 ## 5. Changing the system
 

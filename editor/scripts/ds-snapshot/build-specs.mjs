@@ -18,7 +18,7 @@ import { existsSync } from 'node:fs';
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { composePart } from '../../src/designsystem/snapshot/compose.ts';
-import { EXTRA_ICONS, GROUPS, ancestorsOf, baseInstance, extractionTree, instancesOf, isPart, nodeAt, omitHas, partDef, toHarness, toRequest, walk, withOption } from './catalog.mjs';
+import { EXTRA_ICONS, GROUPS, ancestorsOf, baseInstance, extractionTree, firstPath, instancesOf, isPart, nodeAt, omitHas, partDef, toHarness, toRequest, walk, withOption } from './catalog.mjs';
 import { ENABLED as BLOCKS_ENABLED, NOT_INSERTED, buildable, buildBlocksStyle } from './blocks.mjs';
 import { diffFlat, flatten, isEmptyPatch, samePatch, sliceIcon, sliceTemplate } from './extract.mjs';
 import { buildHarness, missingIcons } from './harness.mjs';
@@ -374,6 +374,39 @@ async function buildStyle(style, browser, log, todo) {
           if (!isEmptyPatch(patch)) tpl.interactions.push({ when: { flags: on }, patch });
         }
       }
+      // Stacked parts (a toast): the index of the part among its siblings in a parent decides how it looks (Base UI's `--toast-index`). `stack.parent` is that
+      // parent: the part gets one flag per index after the first (`flags`, in order), set from the position of the instance (`stackFlags`: `generate` and
+      // `instantiate` count the part's earlier siblings). `stack.via` is a part whose stack flags this one follows (a toast's content is hidden when the
+      // toast is behind). The composition holds the front instance and one per flag; `stack.expand` is a flag of an ancestor (the hovered viewport) that also
+      // changes where they sit, which a patch per flag cannot compose, so those pairs become interactions.
+      if (def.stack) {
+        const st = def.stack;
+        const scomp = group.composites[st.composite];
+        const stree = extractionTree(scomp.tree);
+        if (instancesOf(stree, part).length !== st.flags.length + 1) throw new Error(`${style}/${part}: composition "${st.composite}" needs ${st.flags.length + 1} instances of the part (the front one and one per stack flag)`);
+        const stacked = async (expand) => {
+          const t = expand ? withOption(stree, firstPath(stree, expand.part), optionFor(expand.part, expand.flag)) : stree;
+          const [spec] = await renderMany(scomp, [t], dark);
+          return (k) => flatten(slice(spec, part, def, k));
+        };
+        const at = await stacked(null);
+        if (!isEmptyPatch(diffFlat(base.flat, at(0), `${part} at the front of a stack`))) throw new Error(`${style}/${part}: the front instance of "${st.composite}" differs from the lone one in "${def.from}"`);
+        st.flags.forEach((name, i) => {
+          tpl.flags[name] = diffFlat(at(0), at(i + 1), `${part}.${name}`);
+          ctxFlags.push(name);
+          if (st.via) tpl.inheritFlags[name] = st.via;
+        });
+        if (st.expand) {
+          if (!(st.expand.flag in tpl.flags)) throw new Error(`${style}/${part}: no "${st.expand.flag}" flag to combine with the stack flags (is it an option of ${st.expand.part}?)`);
+          const open = await stacked(st.expand);
+          for (let k = 0; k <= st.flags.length; k++) {
+            const direct = open(k);
+            const on = [st.expand.flag, ...(k ? [st.flags[k - 1]] : [])];
+            const patch = diffFlat(flatten(composePart(tpl, 'light', {}, on).root), direct, `${part} ${on.join('+')}`);
+            if (!isEmptyPatch(patch)) tpl.interactions.push({ when: { flags: on }, patch });
+          }
+        }
+      }
       tpl.ctxFlags = ctxFlags;
 
       // verify compose == direct over the option matrix, deriving interactions
@@ -502,6 +535,7 @@ async function buildStyle(style, browser, log, todo) {
       for (const [f, patch] of Object.entries(D.flags)) if (!samePatch(patch, L.flags[f])) (delta.flags ??= {})[f] = patch;
       if (!eq(D.interactions, L.interactions)) delta.interactions = D.interactions;
       if (Object.keys(delta).length) t.dark = delta;
+      if (def.stack?.parent) t.stackFlags = { parent: def.stack.parent, flags: def.stack.flags };
       if (def.attrTarget) t.attrTarget = def.attrTarget;
       if (def.textProps) t.textProps = def.textProps;
       if (def.peers) t.peerFlags = def.peers;

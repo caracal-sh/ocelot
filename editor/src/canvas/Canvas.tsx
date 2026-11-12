@@ -16,6 +16,7 @@ import { useAssetDrop } from './assetDrop';
 import { useComponentDrop } from './componentDrop';
 import { CanvasContextMenu } from './CanvasContextMenu';
 import { TextFormatBar } from './TextFormatBar';
+import { scrollSelectedLayerAt } from './scrollLayers';
 import { PHONE, presentLayout } from './presentLayout';
 
 /**
@@ -45,6 +46,8 @@ function sizeScreen(el: HTMLElement, frame: { width: number; height: number }, w
 
 /** Preview enter / exit crossfade (ms). */
 const PRESENT_FADE_MS = 200;
+/** How long after the last zoom step the artboards become compositing layers again (see the camera effect). */
+const ZOOM_SETTLE_MS = 180;
 
 interface GestureLikeEvent extends UIEvent {
   scale: number;
@@ -84,20 +87,40 @@ export function Canvas() {
   const phoneRef = useRef<HTMLDivElement>(null);
 
   // Apply the camera transform directly (no React re-render per frame). Preview has no camera.
+  // Every artboard is its own compositing layer (theme.css `.at-world:not([data-zooming])`), so a pan only moves layers and repaints
+  // nothing; repainting every visible artboard on each pan step is what made a zoomed-out canvas lag. A zoom step would re-rasterize
+  // each of those layers at the new scale (slower than one repaint), so while the zoom changes the layers are dropped, and they come
+  // back ZOOM_SETTLE_MS after the last zoom step, rasterized once at the final scale (crisp again).
   useLayoutEffect(() => {
     const world = worldRef.current!;
+    let lastZoom = NaN;
+    let settle: number | undefined;
     const apply = () => {
       if (presenting) {
         world.style.transform = 'none';
         world.style.setProperty('--at-zoom', '1');
+        lastZoom = NaN;
         return;
       }
       const { x, y, zoom } = editor.viewport.state;
       world.style.transform = `translate(${x}px, ${y}px) scale(${zoom})`;
+      if (zoom === lastZoom) return;
+      // Only a zoom restyles the overlays sized with var(--at-zoom); a pan leaves the custom property alone.
       world.style.setProperty('--at-zoom', String(zoom));
+      if (!Number.isNaN(lastZoom)) {
+        world.dataset.zooming = '';
+        clearTimeout(settle);
+        settle = window.setTimeout(() => delete world.dataset.zooming, ZOOM_SETTLE_MS);
+      }
+      lastZoom = zoom;
     };
     apply();
-    return editor.viewport.subscribe(apply);
+    const off = editor.viewport.subscribe(apply);
+    return () => {
+      off();
+      clearTimeout(settle);
+      delete world.dataset.zooming;
+    };
   }, [editor, presenting]);
 
   // Preview layout: the screen on show is scaled to the area's width (never above 1:1), centered and scrolled; the screen that
@@ -236,6 +259,10 @@ export function Canvas() {
         // ctrl+wheel is a trackpad pinch in Chromium; ⌘+wheel is our explicit zoom.
         editor.viewport.zoomAt(sx, sy, Math.exp(-e.deltaY * scale * (e.ctrlKey ? 0.01 : 0.004)));
       } else {
+        // A selected scroll area under the pointer scrolls (until its end); everything else pans the canvas.
+        const [sx, sy] = local(e.clientX, e.clientY);
+        const at = editor.viewport.screenToWorld(sx, sy);
+        if (scrollSelectedLayerAt(editor, at.x, at.y, e.deltaX * scale, e.deltaY * scale)) return;
         editor.viewport.panBy(-e.deltaX * scale, -e.deltaY * scale);
       }
     };

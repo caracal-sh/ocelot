@@ -78,6 +78,8 @@ export interface StartAttachment {
 export interface StartWithPromptParams {
   prompt: string;
   attachments?: StartAttachment[];
+  designSystem?: JsonValue;
+  planFirst?: boolean;
 }
 
 export interface StartWithPromptResult {

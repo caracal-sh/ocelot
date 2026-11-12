@@ -21,8 +21,9 @@ final class HomeCoordinator {
         case blank
         /// Open this package.
         case open(URL)
-        /// A new document whose agent chat starts with this message and these files (images and texts the person attached).
-        case prompt(String, [StartAttachment])
+        /// A new document whose agent chat starts with this message and these files (images and texts the person attached), after the
+        /// document got the design system the options name; plan first marks the message.
+        case prompt(String, [StartAttachment], HomeStartOptions = HomeStartOptions())
     }
 
     private(set) var isTerminating = false
@@ -199,8 +200,8 @@ final class HomeCoordinator {
         switch queue.removeFirst() {
         case .blank:
             controller.session.prepareFresh()
-        case .prompt(let text, let attachments):
-            controller.session.prepareFresh(prompt: text, attachments: attachments)
+        case .prompt(let text, let attachments, let options):
+            controller.session.prepareFresh(prompt: text, attachments: attachments, options: options)
         case .open(let url):
             // `DocumentOpener.open` already validated the package and settled the single-writer rule.
             Task { @MainActor in await controller.session.open(url) }

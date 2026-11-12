@@ -24,11 +24,14 @@ final class DocumentSessionTests: XCTestCase {
         private var _name = "Doc"
         private var _artboards: [String] = ["board"]
         private var _loading = false
+        private var _yjs = "AAAA"
         private var _loads = 0
         var name: String { get { lock.withLock { _name } } set { lock.withLock { _name = newValue } } }
         var artboards: [String] { get { lock.withLock { _artboards } } set { lock.withLock { _artboards = newValue } } }
         /// The page is reloading: `editor.loadDocument` fails the way a missing endpoint does.
         var loading: Bool { get { lock.withLock { _loading } } set { lock.withLock { _loading = newValue } } }
+        /// The document state: changes with every edit, like the real Yjs encoding.
+        var yjs: String { get { lock.withLock { _yjs } } set { lock.withLock { _yjs = newValue } } }
         var loads: Int { lock.withLock { _loads } }
         func noteLoad() { lock.withLock { _loads += 1 } }
     }
@@ -41,7 +44,7 @@ final class DocumentSessionTests: XCTestCase {
             case EditorMethods.GetDocument.name:
                 result = .object([
                     "format": .string("ocelot"), "version": .number(2), "name": .string(fake.name), "savedAt": .string("2026-11-09T00:00:00Z"),
-                    "yjs": .string("AAAA"), "tree": .object(["artboards": .array(fake.artboards.map { .string($0) })]),
+                    "yjs": .string(fake.yjs), "tree": .object(["artboards": .array(fake.artboards.map { .string($0) })]),
                 ])
             case EditorMethods.LoadDocument.name:
                 if fake.loading { throw BridgeFailure(.hostUnavailable, WebBridge.pageLoadingMessage) }
@@ -164,6 +167,116 @@ final class DocumentSessionTests: XCTestCase {
         let second = session(FakeEditor(), ready: false) // ⌘N window: its first load looks for a recovery document
         await second.editorDidLoad()
         XCTAssertFalse(second.isDirty, "it started empty instead of adopting the other window's document")
+    }
+
+    // MARK: Unsaved documents (Home)
+
+    /// An untitled document whose window closed: its recovery package is all that is left of it.
+    private func closedUntitledDocument(named name: String) async throws -> URL {
+        let fake = FakeEditor()
+        fake.name = name
+        let closed = session(fake)
+        closed.editorReportedChange(name: name)
+        await closed.windowWillClose()
+        return try XCTUnwrap(recoveryPackages().first)
+    }
+
+    func testAnUnsavedDocumentFromHomeOpensAsUntitledAndKeepsAutosavingToItsRecoveryPackage() async throws {
+        let package = try await closedUntitledDocument(named: "Pitch")
+        XCTAssertTrue(DocumentSession.isRecoveryPackage(package))
+
+        let fake = FakeEditor()
+        let s = session(fake)
+        XCTAssertFalse(s.shows(package))
+        await s.open(package)
+
+        XCTAssertNil(s.fileURL, "it stays untitled: there is no file to save to")
+        XCTAssertEqual(s.packageURL.standardizedFileURL.path, package.standardizedFileURL.path)
+        XCTAssertTrue(s.shows(package), "Home focuses this window instead of opening the document twice")
+        XCTAssertEqual(s.documentName, "Pitch")
+        XCTAssertFalse(s.isEmptyUntitled, "no later open may replace it")
+        XCTAssertEqual(fake.loads, 1)
+
+        fake.name = "Pitch v2"
+        s.editorReportedChange(name: "Pitch v2")
+        await s.windowWillClose() // ⌘W
+
+        XCTAssertEqual(recoveryPackages().count, 1, "closing again keeps the same package and adds no copy")
+        XCTAssertEqual(try DocumentPackage.read(from: package).name, "Pitch v2")
+    }
+
+    func testSavingAnOpenedUnsavedDocumentMovesItToARealFileAndDropsTheRecoveryCopy() async throws {
+        let package = try await closedUntitledDocument(named: "Pitch")
+        let s = session(FakeEditor())
+        await s.open(package)
+
+        let target = dir.appendingPathComponent("Pitch.ocelot")
+        let saved = await s.saveAs(to: target)
+
+        XCTAssertTrue(saved)
+        XCTAssertEqual(s.fileURL?.lastPathComponent, "Pitch.ocelot")
+        XCTAssertTrue(DocumentPackage.hasDocument(at: target))
+        XCTAssertTrue(recoveryPackages().isEmpty, "the recovery copy goes once the document has a file")
+    }
+
+    func testAFailedOpenOfAnUnsavedDocumentLeavesTheWindowAsItWas() async throws {
+        let package = try await closedUntitledDocument(named: "Pitch")
+        try FileManager.default.removeItem(at: package.appendingPathComponent(DocumentPackage.documentFileName))
+        let s = session(FakeEditor())
+        let before = s.packageURL
+        await s.open(package)
+        XCTAssertNotNil(s.lastError)
+        XCTAssertEqual(s.packageURL, before)
+    }
+
+    // MARK: Autosave coverage
+
+    func testAnEditTheEditorHasNotReportedYetIsStillWrittenWhenTheWindowCloses() async throws {
+        let url = try savedPackage("Doc")
+        let fake = FakeEditor()
+        let s = session(fake)
+        await s.open(url)
+        XCTAssertFalse(s.hasUnsavedEdits)
+
+        fake.name = "Late edit"
+        fake.yjs = "BBBB" // the editor's 250 ms debounce has not fired: the host was never told
+        await s.windowWillClose()
+
+        XCTAssertEqual(try DocumentPackage.read(from: url).name, "Late edit")
+    }
+
+    func testNothingIsWrittenOnCloseOrQuitWhenTheEditorHoldsWhatIsOnDisk() async throws {
+        let url = try savedPackage("Doc")
+        let fake = FakeEditor()
+        let s = session(fake)
+        await s.open(url)
+        fake.name = "Not a change: same document state"
+        await s.windowWillClose()
+        await DocumentSession.flushAll([s])
+        XCTAssertEqual(try DocumentPackage.read(from: url).name, "Doc")
+    }
+
+    func testQuitWritesAnEditNoWindowHasReportedYet() async throws {
+        let url = try savedPackage("Doc")
+        let fake = FakeEditor()
+        let s = session(fake)
+        await s.open(url)
+        fake.name = "Late edit"
+        fake.yjs = "BBBB"
+        await DocumentSession.flushAll([s])
+        XCTAssertEqual(try DocumentPackage.read(from: url).name, "Late edit")
+    }
+
+    func testAnUntitledDocumentDrawnJustBeforeTheWindowClosesIsKept() async throws {
+        let s = session(FakeEditor()) // an artboard exists, the editor never reported a change
+        await s.windowWillClose()
+        XCTAssertEqual(recoveryPackages().count, 1)
+
+        let empty = FakeEditor()
+        empty.artboards = []
+        let blank = session(empty)
+        await blank.windowWillClose()
+        XCTAssertEqual(recoveryPackages().count, 1, "an empty document still leaves nothing behind")
     }
 
     // MARK: Opening

@@ -90,6 +90,27 @@ export function partTable(sources, groups) {
   return table;
 }
 
+// A toast stack: Base UI's toasts live in the toast manager, which gives each one its --toast-index, --toast-height, --toast-offset-y and the viewport
+// its --toast-frontmost-height, data-behind and data-expanded. The viewport part therefore adds its Toast children to the manager (the first child
+// is the newest and in front, so they go in last to first, as Base UI prepends) and renders what the manager returns. `hover` plays the pointer
+// over the viewport, which fans the stack out. Toasts never time out.
+const TOAST_STACK = `
+function HarnessToastViewport({ children, hover, ...props }: { children?: React.ReactNode; hover?: boolean } & Record<string, unknown>) {
+  const manager = M_toast.useToastManager()
+  const ref = React.useRef<HTMLDivElement>(null)
+  const kids = React.Children.toArray(children) as React.ReactElement<{ toast: { id: string; type?: string } }>[]
+  React.useLayoutEffect(() => {
+    for (const k of [...kids].reverse()) manager.add({ id: k.props.toast.id, type: k.props.toast.type, timeout: 0 } as never)
+  }, [])
+  React.useEffect(() => {
+    if (hover && manager.toasts.length) ref.current?.dispatchEvent(new MouseEvent("mousemove", { bubbles: true }))
+  }, [hover, manager.toasts.length])
+  const Viewport = M_toast.ToastViewport as React.ElementType
+  return <Viewport ref={ref} {...props}>{manager.toasts.map((t) => React.cloneElement(kids.find((k) => k.props.toast.id === t.id)!, { toast: t }))}</Viewport>
+}
+PARTS["toast-viewport"] = HarnessToastViewport
+`
+
 const ENTRY = (modules, table, icons, blocks = []) => `import * as React from "react"
 import { createRoot, type Root } from "react-dom/client"
 import { flushSync } from "react-dom"
@@ -101,6 +122,7 @@ ${blocks.map((b) => `import Block_${b.replace(/\W/g, '_')} from "@/blocks/${b}/p
 const PARTS: Record<string, React.ElementType> = {
 ${Object.entries(table).map(([part, t]) => `  ${JSON.stringify(part)}: (M_${t.component.replace(/\W/g, '_')} as Record<string, React.ElementType>)[${JSON.stringify(t.fn)}]!,`).join('\n')}
 }
+${modules.includes('toast') ? TOAST_STACK : ''}
 const EL = new Set(["div", "p", "span"])
 type N = string | { icon: string; at?: string } | { el: string; style?: React.CSSProperties; text?: string; children?: N[] } | { part: string; p?: Record<string, unknown>; style?: React.CSSProperties; children?: N[] }
 

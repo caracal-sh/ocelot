@@ -186,6 +186,7 @@ function Item({ item, onSignIn, onCopy }: { item: ChatItem; onSignIn: () => void
           {item.context && <span className="at-msg__context">{item.context}</span>}
           {item.from && <span className="at-msg__tag" data-testid="agent-msg-from">From {item.from}</span>}
           {item.steered && <span className="at-msg__tag">Steered</span>}
+          {item.tags?.map((tag) => <span key={tag} className="at-msg__tag" data-testid="agent-msg-tag">{tag}</span>)}
           {item.references && <ReferenceChips items={item.references} sent />}
           {item.attachments && <AttachmentChips items={item.attachments} onCopy={onCopy} sent />}
           <div className="at-msg__bubble">{item.text}</div>
@@ -378,7 +379,7 @@ function Composer({ chat, snap, composerRef, attachments }: { chat: AgentChat; s
         void submit();
       }}
     >
-      <QueueChips queue={snap.queue} onRemove={removeQueued} onSteerNow={(item) => chat.promote(item.key)} />
+      <QueueChips queue={snap.queue} onRemove={removeQueued} onSteerNow={(item) => chat.promote(item.key)} onSendNow={(item) => chat.sendNow(item.key)} />
       {selection.length > 0 && (
         <span className="at-composer__context" data-tip="The agent sees what you have selected">
           {selectionLabel}

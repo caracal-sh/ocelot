@@ -70,6 +70,38 @@ const WEIGHTS = [
   { value: '900', label: 'Black' },
 ];
 
+export type OverflowMode = 'visible' | 'clip' | 'scroll' | 'Custom';
+
+/** What a layer's styles say about overflow: shown, cut at its box, scrolling vertically, or something else (one axis, a keyword the control does not write). */
+export function overflowModeOf(styles: Record<string, string>): OverflowMode {
+  const all = styles.overflow?.trim().split(/\s+/) ?? [];
+  const x = styles['overflow-x'] ?? all[0] ?? 'visible';
+  const y = styles['overflow-y'] ?? all[1] ?? all[0] ?? 'visible';
+  if (x === 'visible' && y === 'visible') return 'visible';
+  if ((x === 'hidden' || x === 'clip') && x === y) return 'clip';
+  if (x === 'hidden' && (y === 'auto' || y === 'scroll')) return 'scroll';
+  return 'Custom';
+}
+
+/** The style writes for an overflow mode. Every overflow key is set, so a leftover axis never conflicts with the new mode. */
+export function overflowStyles(mode: string): Record<string, string | null> | null {
+  if (mode === 'visible') return { overflow: 'visible', 'overflow-x': null, 'overflow-y': null };
+  if (mode === 'clip') return { overflow: 'hidden', 'overflow-x': null, 'overflow-y': null };
+  if (mode === 'scroll') return { overflow: null, 'overflow-x': 'hidden', 'overflow-y': 'auto' };
+  return null;
+}
+const OVERFLOW_OPTIONS = [
+  { value: 'visible', label: 'Visible' },
+  { value: 'clip', label: 'Clip' },
+  { value: 'scroll', label: 'Scroll' },
+];
+
+/** The mode every selected layer shares, or null for a mixed selection. */
+function overflowCommon(nodes: NodeData[]): OverflowMode | null {
+  const modes = new Set(nodes.map((n) => overflowModeOf(n.styles)));
+  return modes.size === 1 ? [...modes][0]! : null;
+}
+
 export function Inspector() {
   const editor = useEditor();
   useInspectorVersion(editor);
@@ -217,6 +249,21 @@ export function Inspector() {
             {!allArtboards && field('margin', { icon: 'margin', title: 'Margin', placeholder: '0' })}
           </Grid>
           {!allArtboards && isFlex && <Grid>{position}</Grid>}
+          {!editState && nodes.every((n) => n.type === 'frame') && (
+            <Grid>
+              <SelectField
+                label="Overflow"
+                title="Overflow: visible, clip at the layer's edge, or scroll vertically (give the layer a fixed height; it scrolls in Preview and, selected, on the canvas)"
+                value={overflowCommon(nodes)}
+                options={OVERFLOW_OPTIONS}
+                onChange={(v) => {
+                  const styles = overflowStyles(v);
+                  if (styles) set(styles);
+                }}
+                testId="field-overflow"
+              />
+            </Grid>
+          )}
           {!allArtboards && common('position') === 'absolute' && (
             <Grid>
               {field('left', { label: 'X', title: 'Left offset', placeholder: '0' })}

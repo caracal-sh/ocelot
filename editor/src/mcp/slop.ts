@@ -12,7 +12,7 @@ import { lintPage, type PageBoard } from '../inspect/pageChecks';
 import { probeSlop, type PageFacts, type ProbeKind } from '../inspect/probe';
 import { HELD_OUT_RULES, RULES, classify, formatFinding, type InspectFinding, type SkippedRule } from '../inspect/rules';
 import { STATE_WORD, contrastIssues } from './contrast';
-import { dsRawValueFinding } from './dsSlop';
+import { dsHandBuiltFinding, dsRawValueFinding } from './dsSlop';
 
 export interface ArtboardInspection {
   artboard_id: string;
@@ -69,8 +69,9 @@ export function inspectArtboard(editor: Editor, artboardId: string, opts: { kind
     if (opts.hidden?.includes('contrast')) break;
     findings.push({ rule_id: 'contrast', level: 'fix', node_id: c.id, name: c.name, measured: `${c.ratio}:1 on “${c.text}”${c.state ? ` on ${STATE_WORD[c.state]} (set_state_styles)` : ''}`, threshold: `${c.required}:1`, message: RULES['contrast']!.say });
   }
-  const raw = dsRawValueFinding(editor, artboardId);
-  if (raw && !(opts.hidden ?? hiddenRules()).includes(raw.rule_id)) findings.push(raw);
+  for (const ds of [dsRawValueFinding(editor, artboardId), dsHandBuiltFinding(editor, artboardId)]) {
+    if (ds && !(opts.hidden ?? hiddenRules()).includes(ds.rule_id)) findings.push(ds);
+  }
   findings.sort((a, b) => (a.level === b.level ? 0 : a.level === 'fix' ? -1 : 1) || RULES[b.rule_id]!.weight - RULES[a.rule_id]!.weight);
   return { artboard_id: artboardId, name, kind, measured: probed.laidOut, findings, skipped, facts: probed.facts };
 }

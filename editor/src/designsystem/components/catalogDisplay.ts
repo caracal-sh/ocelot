@@ -11,6 +11,10 @@ interface DisplayEntry {
 
 const PIC = 'https://example.com/photo.jpg';
 
+/** One toast of the example: the title and description in a column frame, the optional action, the close button. */
+const toastExample = (title: string, description: string, action = ''): string =>
+  `<ds-toast><ds-toast-content><div style="display:flex;min-width:0;flex:1 1 0%;flex-direction:column;gap:4px"><ds-toast-title>${title}</ds-toast-title><ds-toast-description>${description}</ds-toast-description></div>${action}<ds-toast-close></ds-toast-close></ds-toast-content></ds-toast>`;
+
 export const DISPLAY_ENTRIES: Record<string, DisplayEntry> = {
   accordion: {
     description: 'Stacked headings that expand. On the canvas every item is drawn open or closed: only an open item has content.',
@@ -127,14 +131,20 @@ export const DISPLAY_ENTRIES: Record<string, DisplayEntry> = {
     example: '<div style="width:320px"><ds-aspect-ratio></ds-aspect-ratio></div>',
   },
   toast: {
-    description: 'A transient notification, drawn static: the viewport holds the toast, the toast holds its content. Sonner is not part of the Base UI styles.',
+    description: 'A transient notification that stacks as Base UI draws it: the newest toast is in front, older ones peek out behind it, hovering the viewport fans the stack out into a column, and a toast swipes away (down or right) or closes with its button. The canvas draws one of those states.',
     parts: ['toast-viewport', 'toast', 'toast-content', 'toast-title', 'toast-description', 'toast-action', 'toast-close'],
     rules: [
       'Put the viewport in a relative frame (give it a height): it sits at the bottom-right corner; the toast goes inside the viewport and the content inside the toast.',
       'The title and description share a column frame; the action is optional, the close button is a square icon button.',
+      'A stack is several `toast`s in ONE viewport, NEWEST FIRST: the first child is the toast in front (the order Base UI renders its toasts in). Their position does the rest: the second is drawn behind the first (scaled to 0.9, 0.75rem higher, its content hidden), the third behind that (0.8), and a fourth is hidden, as Base UI shows at most 3. A toast behind takes the height of the one in front, so give the older ones short text and the frame about 24px more height than the front toast for three.',
+      '`expanded` on the viewport draws the hovered stack: a column with a 0.75rem gap, newest at the bottom, every toast at its own height with its content showing. Make the frame tall enough for all of them (about 90px per toast); leave the flag off for the collapsed stack.',
+      'Not drawn: toasts close after 5 s (the timer pauses while the pointer or focus is on the stack), the close button dismisses one, and a toast swipes away down or right.',
     ],
     example:
-      '<div style="position:relative;width:420px;height:120px"><ds-toast-viewport><ds-toast><ds-toast-content><div style="display:flex;min-width:0;flex:1 1 0%;flex-direction:column;gap:4px">' +
-      '<ds-toast-title>Event created</ds-toast-title><ds-toast-description>Sunday, December 03, 2023 at 9:00 AM</ds-toast-description></div><ds-toast-action>Undo</ds-toast-action></ds-toast-content></ds-toast></ds-toast-viewport></div>',
+      '<div style="position:relative;width:420px;height:140px"><ds-toast-viewport>' +
+      toastExample('Event created', 'Sunday, December 03, 2023', '<ds-toast-action>Undo</ds-toast-action>') +
+      toastExample('Invite sent', 'We emailed Sam a link.') +
+      toastExample('File uploaded', 'report-q4.pdf is ready.') +
+      '</ds-toast-viewport></div>',
   },
 };

@@ -1,5 +1,5 @@
 // MCP tools for an external agent that supervises or delegates to the in-app agent (the person's sidebar chat):
-// sidebar_agent (send, queue, steer, stop, new_chat, promote_queued, remove_queued) and get_sidebar_agent (status,
+// sidebar_agent (send, queue, steer, stop, new_chat, promote_queued, send_now_queued, remove_queued) and get_sidebar_agent (status,
 // model, queue, recent messages). They call the same AgentChat methods as the sidebar's composer and buttons, so the
 // person sees exactly what a click would show; a message sent here is marked "From <agent>" in the transcript.
 //
@@ -16,7 +16,7 @@ import { toolLabel, type ChatItem } from '../agent/transcript';
 import { isOmpClient } from '../editor/questions';
 import { ToolError, agentLabel, enumArg, json, num, str, type Args, type ToolContext, type ToolDef } from './toolkit';
 
-const ACTIONS = ['send', 'queue', 'steer', 'stop', 'new_chat', 'compact', 'promote_queued', 'remove_queued'] as const;
+const ACTIONS = ['send', 'queue', 'steer', 'stop', 'new_chat', 'compact', 'promote_queued', 'send_now_queued', 'remove_queued'] as const;
 type Action = (typeof ACTIONS)[number];
 const QUEUES = ['steering', 'follow_up'] as const;
 const MAX_ATTACHMENTS = 20;
@@ -184,6 +184,11 @@ async function perform(action: Action, args: Args, ctx: ToolContext) {
       const promoted = await chat.promote(item.key);
       return json({ ok: promoted, promoted, note: promoted ? 'It moved to steering: the in-app agent reads it at its next step.' : 'It was already delivered, so nothing moved. Call get_sidebar_agent.' });
     }
+    case 'send_now_queued': {
+      const { item } = queueIndex(args, chat, 'send_now');
+      const sent = await chat.sendNow(item.key);
+      return json({ ok: sent, sent, note: sent ? "The running step was stopped (edits so far stay) and the message started the next turn; the other waiting messages went back into their queues. Call get_sidebar_agent to follow it." : 'Nothing was sent now: no turn was running, the stop was refused, or the message had already been delivered. Call get_sidebar_agent.' });
+    }
     case 'remove_queued': {
       const { queue, item } = queueIndex(args, chat, 'remove');
       const { removed, draft } = await chat.removeQueued(item.key, queue);
@@ -236,7 +241,7 @@ export const SIDEBAR_AGENT_TOOLS: ToolDef[] = [
       'Actions: "send" (message [+ attachments]; starts a turn, refused while one runs), "queue" (delivered after the running turn; starts one if idle), "steer" (delivered at the in-app agent\'s next step; starts a turn if idle), ' +
       '"stop" (the Stop button: edits so far stay, queued messages go back to the person\'s prompt box), "new_chat" (starts a new conversation, the old one stays in the person\'s private history, and stops a running turn: only when the person asked or you must restart), ' +
       '"compact" (the Compact button, between turns: a summary replaces the older messages and screenshots; use it when the conversation got too large instead of new_chat), ' +
-      '"promote_queued" (queue "follow_up", index: deliver it at the next step instead of after the turn), "remove_queued" (queue "steering"|"follow_up", index; the queue may hold the person\'s own messages: remove yours, not theirs). ' +
+      '"promote_queued" (queue "follow_up", index: deliver it at the next step instead of after the turn), "send_now_queued" (queue, index: the person\'s "Send now": stops the running step, edits stay, and the message starts the next turn at once; the rest stays queued), "remove_queued" (queue "steering"|"follow_up", index; the queue may hold the person\'s own messages: remove yours, not theirs). ' +
       'Your message appears in the sidebar as "From <you>" and the in-app agent is told it comes from another agent, not the person; it does not get the person\'s canvas selection, so name layers explicitly. ' +
       'It does not wait for the turn: call get_sidebar_agent to follow progress. Attachments take the same limits as the person\'s: text files as {name, text}, images as {name, data_base64, mime_type} (max 10 images). ' +
       'If the in-app agent is not installed or signed in you get a message saying so: only the person can set it up, so these tools never do. Not for the in-app agent itself.',
@@ -261,8 +266,8 @@ export const SIDEBAR_AGENT_TOOLS: ToolDef[] = [
             additionalProperties: false,
           },
         },
-        queue: { type: 'string', enum: [...QUEUES], description: 'For promote_queued and remove_queued: which queue the message is in.' },
-        index: { type: 'integer', minimum: 0, description: 'For promote_queued and remove_queued: 0-based position in that queue, as get_sidebar_agent lists it.' },
+        queue: { type: 'string', enum: [...QUEUES], description: 'For promote_queued, send_now_queued and remove_queued: which queue the message is in.' },
+        index: { type: 'integer', minimum: 0, description: 'For promote_queued, send_now_queued and remove_queued: 0-based position in that queue, as get_sidebar_agent lists it.' },
       },
       required: ['action'],
       additionalProperties: false,
@@ -279,7 +284,7 @@ export const SIDEBAR_AGENT_TOOLS: ToolDef[] = [
     readOnly: true,
     description:
       'Reads the in-app agent (the person\'s sidebar chat): status "idle" | "running" | "asking" (waiting for the person\'s answer to its question) | "setup-needed" (omp missing or signed out: only the person can fix it), ' +
-      'its model and reasoning effort, the queue ({steering, follow_up}, each with index, text and who queued it, for sidebar_agent promote_queued/remove_queued) and the last N messages ' +
+      'its model and reasoning effort, the queue ({steering, follow_up}, each with index, text and who queued it, for sidebar_agent promote_queued/send_now_queued/remove_queued) and the last N messages ' +
       '(role user | assistant | tool | notice | answer; user messages say who sent them; tool steps give the tool, status and a readable step). Use it after sidebar_agent to see what the in-app agent did. ' +
       'Change model/effort with set_preferences (agent_model, agent_effort).',
     inputSchema: {

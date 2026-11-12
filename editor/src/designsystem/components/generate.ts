@@ -84,6 +84,10 @@ export function resolveProps(tpl: PartTemplate, props: ComponentRequest['props']
       );
     }
   }
+  // flags an ancestor hands down (a hovered toast viewport: every toast and its content are `expanded`)
+  for (const [flag, owner] of Object.entries(tpl.inheritFlags ?? {})) {
+    if (flag in tpl.flags && [...ancestors].reverse().find((a) => a.part === owner)?.flags?.includes(flag)) flags.add(flag);
+  }
   for (const [name, def] of Object.entries(tpl.props)) {
     if (values[name] !== undefined) continue;
     let value = def.default;
@@ -194,9 +198,23 @@ export function contextFlags(tpl: PartTemplate, ancestors: readonly AncestorPart
     if (scope) out.push(`in-${scope}`);
     if (scope && siblings?.anyFirst && `first@${scope}` in tpl.flags) out.push(`first@${scope}`);
     if (scope && siblings?.anyLast && `last@${scope}` in tpl.flags) out.push(`last@${scope}`);
+    // a part placed by its index among its siblings (a toast in a viewport: `behind-1` for the second): see `PartTemplate.stackFlags`
+    const stack = tpl.stackFlags;
+    if (stack?.parent === parent.part) {
+      const index = (siblings?.after ?? []).filter((p) => p === tpl.part).length;
+      if (index > 0) out.push(stack.flags[Math.min(index, stack.flags.length) - 1]!);
+    }
   }
   for (const [flag, parts] of Object.entries(tpl.peerFlags ?? {})) if (flag in tpl.flags && siblings?.after?.some((p) => parts.includes(p))) out.push(flag);
   return out;
+}
+
+/**
+ * The flags a part hands to its descendants (`inheritFlags`): the ones the request set and the ones its position gave it. The flags its own children
+ * give it (an icon) are not known when the markup path generates the children first, so they are not handed down on any path.
+ */
+export function handedFlags(resolved: ResolvedProps, context: readonly string[]): string[] {
+  return resolved.flags.filter((f) => resolved.explicit[f] === true || context.includes(f));
 }
 
 const partOf = (set: ComponentSet, name: string): string => set.part(name)?.part ?? name;
@@ -322,7 +340,8 @@ export function generate(set: ComponentSet, record: GenerateRecord, req: Compone
   const tpl = resolvePart(set, req.component);
   const childList = req.children ?? [];
   const positions = iconPositions([...(req.text !== undefined ? [req.text] : []), ...childList]);
-  const props = resolveProps(tpl, req.props, ancestors, [...iconFlags(positions, tpl), ...childPartFlags(set, tpl, childList), ...contextFlags(tpl, ancestors, opts.siblings)]);
+  const context = contextFlags(tpl, ancestors, opts.siblings);
+  const props = resolveProps(tpl, req.props, ancestors, [...iconFlags(positions, tpl), ...childPartFlags(set, tpl, childList), ...context]);
   const composed = composePart(tpl, scheme, props.values, props.flags);
   const root = composed.root;
   const wantsContent = req.text !== undefined || childList.length > 0;
@@ -331,7 +350,7 @@ export function generate(set: ComponentSet, record: GenerateRecord, req: Compone
   }
   for (const slot of new Set([tpl.part, ...collectSlots(root)])) overrideStyles(root, slot, record.components?.[tpl.component]?.parts?.[slot], props.values);
 
-  const self: AncestorPart = { part: tpl.part, component: tpl.component, props: props.values };
+  const self: AncestorPart = { part: tpl.part, component: tpl.component, props: props.values, flags: handedFlags(props, context) };
   const kids = buildChildren(set, record, tpl, req, composed.icon, self, scheme, ancestors, opts.warn);
   const spec = toSpec(root, kids, req.name ?? titleOf(tpl.part), isPlainText(req));
 

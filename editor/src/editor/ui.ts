@@ -135,6 +135,11 @@ export class UiState {
     this.#emit();
   }
 
+  /** Layers moved without a document change (a scroll area scrolled on the canvas): overlays that measure layers re-measure. */
+  layoutMoved(): void {
+    this.#emit();
+  }
+
   setHover(id: string | null): void {
     if (this.hoverId === id) return;
     this.hoverId = id;

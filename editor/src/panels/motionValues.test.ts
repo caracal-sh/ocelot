@@ -20,8 +20,8 @@ describe('transition values', () => {
     expect(parseTransition('none')).toBeNull();
   });
 
-  it('defaults the property to all, and clears without a duration', () => {
-    expect(composeTransition({ property: '', duration: '200', easing: '', delay: '' })).toBe('all 200ms');
+  it('defaults the property to opacity and transform, never all, and clears without a duration', () => {
+    expect(composeTransition({ property: '', duration: '200', easing: '', delay: '' })).toBe('opacity 200ms, transform 200ms');
     expect(composeTransition({ property: 'all', duration: '', easing: 'ease', delay: '' })).toBeNull();
     expect(normalizeTime('0.3s')).toBe('0.3s');
   });

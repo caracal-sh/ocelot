@@ -93,7 +93,7 @@ export function MotionSection({ editor, nodes }: { editor: Editor; nodes: NodeDa
   const hasAnimation = !!animation || mine.animation;
 
   const setTransition = (patch: Partial<TransitionParts>) => {
-    const base: TransitionParts = transition && transition !== 'multiple' ? transition : { property: 'all', duration: '', easing: EASINGS[0]!.value, delay: '' };
+    const base: TransitionParts = transition && transition !== 'multiple' ? transition : { property: 'opacity, transform', duration: '', easing: EASINGS[0]!.value, delay: '' };
     set({ transition: composeTransition({ ...base, ...patch }) });
   };
   const setAnimation = (patch: Partial<AnimationParts>) => {
@@ -137,7 +137,7 @@ export function MotionSection({ editor, nodes }: { editor: Editor; nodes: NodeDa
           ) : (
             <>
               <Grid>
-                <Field label="Prop" title="Transition property" span list="at-transition-props" placeholder="all" value={transition?.property ?? ''} onCommit={(v) => setTransition({ property: v.trim() })} />
+                <Field label="Prop" title="Transition property" span list="at-transition-props" placeholder="opacity, transform" value={transition?.property ?? ''} onCommit={(v) => setTransition({ property: v.trim() })} />
                 <Field label="Time" title="Transition duration" placeholder="200ms" value={transition?.duration ?? ''} onCommit={(v) => setTransition({ duration: time(v) })} testId="transition-duration" />
                 <Field label="Delay" title="Transition delay" placeholder="0ms" value={transition?.delay ?? ''} onCommit={(v) => setTransition({ delay: time(v) })} />
                 <EasingSelect value={transition?.easing ?? ''} onChange={(v) => setTransition({ easing: v })} />
@@ -188,7 +188,7 @@ export function MotionSection({ editor, nodes }: { editor: Editor; nodes: NodeDa
         </>
       )}
       <datalist id="at-transition-props">
-        {['all', 'opacity', 'transform', 'background-color', 'color', 'border-color', 'box-shadow', 'filter', 'opacity, transform'].map((p) => (
+        {['opacity, transform', 'opacity', 'transform', 'background-color', 'color', 'border-color', 'box-shadow', 'filter', 'all'].map((p) => (
           <option key={p} value={p} />
         ))}
       </datalist>

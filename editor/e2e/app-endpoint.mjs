@@ -188,6 +188,7 @@ export function createAppEndpoint(host) {
       const pathText = optString(a, 'path');
       if (kind && !['design', 'deck', 'video'].includes(kind)) throw new AppToolError('"kind" must be design, deck or video.');
       if (theme && designSystem) throw new AppToolError('A document has a theme or a design system, not both: pass "theme" or "design_system".');
+      if (a.plan_first === true && !optString(a, 'prompt') && !(Array.isArray(a.attachments) && a.attachments.length)) throw new AppToolError('plan_first needs a "prompt" (or "attachments"): the sidebar agent plans from that brief. Pass the brief, or omit plan_first for a blank project.');
       if (optString(a, 'prompt') || (Array.isArray(a.attachments) && a.attachments.length)) {
         if (!host.hasAgent()) {
           throw new AppToolError('A headless host has no sidebar agent to start on a brief (omp is not enabled here), so "prompt" and "attachments" cannot run. Create the project without them and build with the document tools (get_guide, write_html, ...).');

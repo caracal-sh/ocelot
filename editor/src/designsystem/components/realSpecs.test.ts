@@ -85,7 +85,7 @@ describe.each(loaded)('real specs: %s', (style, set) => {
     ops.setDesignSystem(record);
     const report = buildDesignSystemPage(doc, ops, { record, set: set! });
     expect(report.warnings).toEqual([]);
-    expect(report.artboards.map((a) => a.specimen)).toEqual(expect.arrayContaining(['colour-roles', 'typography', 'radius-elevation-spacing', 'iconography', 'buttons', 'form-controls', 'cards-alerts', 'navigation', 'overlays', 'overlays-modals', 'overlays-popups', 'menus', 'data', 'dark-mode', 'disclosure', 'loading-and-people', 'lists-and-empty', 'wayfinding', 'scroll-ratio-toast', 'fields', 'choices', 'actions-extra', 'combobox-command']));
+    expect(report.artboards.map((a) => a.specimen)).toEqual(expect.arrayContaining(['colour-roles', 'typography', 'radius-elevation-spacing', 'iconography', 'buttons', 'form-controls', 'cards-alerts', 'navigation', 'overlays', 'overlays-modals', 'overlays-popups', 'menus', 'data', 'dark-mode', 'disclosure', 'loading-and-people', 'lists-and-empty', 'wayfinding', 'scroll-ratio', 'toast', 'fields', 'choices', 'actions-extra', 'combobox-command']));
     for (const a of report.artboards) {
       for (const id of doc.subtreeIds(a.id)) {
         const n = doc.require(id);

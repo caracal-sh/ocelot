@@ -95,6 +95,12 @@ describe('every part group maps to its components', () => {
       expect(out.ui?.warnings, label).toEqual([]);
       expect(out.code, label).not.toMatch(/className=/);
       expect(out.code, label).not.toMatch(/<(button|input|textarea|table|tr|td|th|label|h2|p)\b/);
+      // a toast viewport is the registry's Toaster with the design's toasts added to its manager (see reactDisplay.test.ts), not placed parts
+      if (info.name === 'toast') {
+        expect(out.code, label).toContain('<Toaster>');
+        expect(out.code, label).toContain('title: "Event created"');
+        continue;
+      }
       for (const part of info.parts) if (JSON.stringify(info.example).includes(`"part":"${part}"`)) expect(out.code, `${label} ${part}`).toContain(`<${specs.parts[part]!.fn}`);
       if (virtual) expect(out.code, label).toContain(`<${virtual.fn}`);
       expect(ids.length).toBeGreaterThan(0);

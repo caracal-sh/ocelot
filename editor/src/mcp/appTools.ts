@@ -87,7 +87,7 @@ export const APP_TOOLS: readonly AppToolDef[] = [
     name: 'list_projects',
     title: 'List projects',
     description:
-      'Every project you can open: the ones open now (id, name, path, window, unsaved) and, from the person\'s recent list, the ones saved on disk (path, last opened). Projects served by a headless host or container are listed with their host. Use it to find existing work before creating anything. Then open_project with an id, name or path.',
+      'Every project you can open: the ones open now (id, name, path, window, unsaved) and, from the person\'s recent list, the ones saved on disk (path, last opened) and, in the Mac app, the untitled ones that were never saved (unsaved: true, path and recovery_path = their autosave copy; they survive closing the window). Projects served by a headless host or container are listed with their host. Use it to find existing work before creating anything. Then open_project with an id, name or path.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -102,7 +102,7 @@ export const APP_TOOLS: readonly AppToolDef[] = [
     name: 'open_project',
     title: 'Open a project',
     description:
-      'Opens a saved project in an editor window (this IS opening the Ocelot editor; the app starts if it is closed): an id, name or path from list_projects, or a path to a .ocelot package. A project that is already open is brought to the front, never opened twice. Returns { project_id, name, path, window_id, already_open }; the document tools then work on it (through `ocelot mcp` the document tools follow the project you opened last). Refuses a package that a container or headless host serves and says how to stop it.',
+      'Opens a saved project in an editor window (this IS opening the Ocelot editor; the app starts if it is closed): an id, name or path from list_projects, or a path to a .ocelot package. A project that was never saved (unsaved: true in list_projects) opens from its recovery_path as an untitled project that keeps autosaving; save_project_as gives it a file. A project that is already open is brought to the front, never opened twice. Returns { project_id, name, path, window_id, already_open }; the document tools then work on it (through `ocelot mcp` the document tools follow the project you opened last). Refuses a package that a container or headless host serves and says how to stop it.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -118,12 +118,13 @@ export const APP_TOOLS: readonly AppToolDef[] = [
     name: 'new_project',
     title: 'Create a project',
     description:
-      'Creates a new project in a new editor window, in every form the Home window offers. Blank by default: to design it yourself, create it blank and then use the document tools on the returned project_id (get_guide first). With "prompt" (and optional "attachments") the sidebar agent starts on that brief exactly as if the person had typed it on Home: it builds in the new project while you can keep working in it (use the document tools with the returned project_id; the agent and you share one canvas and its locks). Optional: "name", "kind" deck or video (the first page gets that kind), "theme" (a list_themes id), "design_system" (create_design_system arguments), "path" (save it there right away; otherwise it is untitled and kept in recovery until saved), "from_project" (a copy of an existing project). Returns { project_id, name, path, window_id }.',
+      'Creates a new project in a new editor window, in every form the Home window offers. Blank by default: to design it yourself, create it blank and then use the document tools on the returned project_id (get_guide first). With "prompt" (and optional "attachments") the sidebar agent starts on that brief exactly as if the person had typed it on Home: it builds in the new project while you can keep working in it (use the document tools with the returned project_id; the agent and you share one canvas and its locks). Optional: "name", "kind" deck or video (the first page gets that kind), "theme" (a list_themes id), "design_system" (create_design_system arguments; { style } is Home\'s design-system menu), "plan_first" (with "prompt": the agent interviews the person and shows a plan before it builds, like Home\'s Plan first), "path" (save it there right away; otherwise it is untitled and kept in recovery until saved), "from_project" (a copy of an existing project). Returns { project_id, name, path, window_id }.',
     inputSchema: {
       type: 'object',
       properties: {
         name: { type: 'string', description: 'Document name, e.g. "Acme pricing". Also the file name when "path" is a folder.' },
         prompt: { type: 'string', description: 'The brief for the sidebar agent (what the person would type on Home). Omit for a blank document.' },
+        plan_first: { type: 'boolean', description: 'Needs prompt or attachments. The sidebar agent asks the person questions and shows a plan before it touches the canvas, and builds after they approve (Home\'s "Plan first" switch). Default false: it starts building.' },
         attachments: { type: 'array', maxItems: 10, items: ATTACHMENT, description: 'Files that go with the prompt.' },
         kind: { type: 'string', enum: ['design', 'deck', 'video'], description: 'Page kind of the first page (default design). deck = presentation, video = film.' },
         theme: { type: 'string', description: 'A theme id from list_themes, applied before the agent starts. Not together with design_system.' },
@@ -174,10 +175,10 @@ export const APP_TOOLS: readonly AppToolDef[] = [
     name: 'close_project',
     title: 'Close a project',
     description:
-      'Saves the project, then closes its window. Never discards work silently: an untitled project with content has no file, so the call is refused and tells you to save_project_as it first, or pass discard: true when the person asked you to throw it away. Closing the last window shows Home. Returns { closed: true, saved }.',
+      'Saves the project, then closes its window. An untitled project with content has no file, so the call is refused and tells you to save_project_as it first, or pass discard: true to close it anyway. In the Mac app closing never deletes work: a closed untitled project stays in Home\'s Recent list as Unsaved (list_projects shows it with unsaved: true and its recovery_path; open_project reopens it). Closing the last window shows Home. Returns { closed: true, saved }.',
     inputSchema: {
       type: 'object',
-      properties: { project: PROJECT_REF, discard: { type: 'boolean', description: 'Close an untitled project without saving it (deletes its recovery copy). Only when the person said so.' } },
+      properties: { project: PROJECT_REF, discard: { type: 'boolean', description: 'Close an untitled project without saving it to a file. Only when the person said so. In the Mac app its work is never deleted: it stays in Home\'s Recent list as Unsaved.' } },
       additionalProperties: false,
     },
     readOnly: false,
@@ -192,7 +193,7 @@ export const APP_TOOLS: readonly AppToolDef[] = [
   {
     name: 'remove_recent_projects',
     title: 'Remove from recents',
-    description: 'Removes one document from the recent list on Home and File > Open Recent, or all of them with all: true (Open Recent > Clear Menu). The files stay on disk.',
+    description: 'Removes one document from the recent list on Home and File > Open Recent, or all of them with all: true (Open Recent > Clear Menu). The files stay on disk. Documents that were never saved (list_projects marks them unsaved: true) are the one exception: their recovery copy is the only copy, so they stay listed and only the person deletes them in Home.',
     inputSchema: {
       type: 'object',
       properties: { project: { type: 'string', description: 'Name or path of the recent document to remove.' }, all: { type: 'boolean', description: 'Clear the whole list.' } },

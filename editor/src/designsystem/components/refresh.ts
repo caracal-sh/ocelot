@@ -12,7 +12,7 @@ import { STATE_NAMES, type NodeSpec, type StateName } from '../../model/types';
 import type { Scheme } from '../model';
 import { ComponentError } from './errors';
 import { DS_ATTR, DS_PROPS_ATTR, generate, type GenerateRecord } from './generate';
-import { ancestorParts, findInstances, readProps, schemeOf, SCHEME_ATTR } from './instances';
+import { ancestorParts, findInstances, readProps, schemeOf, SCHEME_ATTR, siblingsOf } from './instances';
 import type { ComponentSet } from './set';
 import type { ComponentChild, InstanceRefresh, KeptOverride, RefreshReport } from './types';
 
@@ -69,16 +69,6 @@ function layerContent(doc: OcelotDocument, id: string): ComponentChild[] {
   return out;
 }
 
-
-/** First / last among the parent's children with the same part (what generation used for the `first` / `last` flags). */
-export function siblingsOf(doc: OcelotDocument, id: string): { first: boolean; last: boolean; anyFirst: boolean; anyLast: boolean; after: string[] } {
-  const parent = doc.get(id)?.parent;
-  const part = doc.get(id)?.attrs[DS_ATTR];
-  const same = parent ? doc.require(parent).children.filter((c) => doc.get(c)?.attrs[DS_ATTR] === part) : [id];
-  const parts = parent ? doc.require(parent).children.filter((c) => doc.get(c)?.attrs[DS_ATTR] !== undefined) : [id];
-  const before = parts.slice(0, Math.max(0, parts.indexOf(id))).map((c) => doc.get(c)?.attrs[DS_ATTR] ?? '');
-  return { first: same[0] === id, last: same[same.length - 1] === id, anyFirst: parts[0] === id, anyLast: parts[parts.length - 1] === id, after: before };
-}
 
 /** Generated nodes by key, in document order. The root has the key `<slot>#0` like every other node. */
 export function flattenSpec(spec: NodeSpec): Map<string, FlatNode> {

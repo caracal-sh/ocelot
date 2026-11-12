@@ -18,7 +18,7 @@ import { FrameDecoder } from './frames';
 import { LiveWriteTracker } from './liveWrite';
 import { applyEvent, emptyTranscript, isAuthError, isObj, settle, type AnswerEntry, type ChatItem, type TranscriptState } from './transcript';
 import { attachSidebarAgent } from './sidebarAgentRegistry';
-import { EMPTY_QUEUE, QueueTracker, withdrawnTexts, type QueueName, type QueueSnapshot, type RestoredDraft, type SendMode } from './queue';
+import { EMPTY_QUEUE, QueueTracker, withdrawnQueues, withdrawnTexts, type QueueName, type QueuedMeta, type QueueSnapshot, type RestoredDraft, type SendMode } from './queue';
 
 export type AgentAvailability =
   | { kind: 'checking' }
@@ -32,6 +32,34 @@ export interface AgentTurn {
   stopping: boolean;
 }
 
+/** What the host's Home window (or new_project) chose before the first message: it goes to the agent in the lead of that message and shows in the bubble as quiet tags. */
+export interface StartOptions {
+  /** The agent plans first: it interviews the person with ask_user and builds only after they approve. */
+  planFirst?: boolean;
+  /** Style of the design system the document already has for this start (create_design_system, stock tokens). */
+  designSystem?: string;
+}
+
+interface StartLead {
+  lines: string[];
+  tags: string[];
+}
+
+/** The lead lines (what the agent reads) and the bubble tags (what the person reads) for the Home choices. */
+function startLead({ planFirst, designSystem }: StartOptions): StartLead {
+  const lines: string[] = [];
+  const tags: string[] = [];
+  if (planFirst) {
+    lines.push('[Plan first]');
+    tags.push('Plan first');
+  }
+  if (designSystem) {
+    lines.push(`[Design system: the person chose the "${designSystem}" style and this document already has it with stock tokens. Colors, radius and fonts still come from the brief: update_design_system before the first screen.]`);
+    tags.push(`Design system: ${designSystem[0]!.toUpperCase()}${designSystem.slice(1)}`);
+  }
+  return { lines, tags };
+}
+
 /** A turn whose message and working state are already on screen. */
 interface StartedTurn {
   turnId: string;
@@ -40,6 +68,8 @@ interface StartedTurn {
   from?: string;
   /** Layers the person referenced with a note; their ids go to the agent in the lead of the message. */
   references?: readonly LayerReference[];
+  /** The Home window's choices for a first message. */
+  lead?: StartLead;
 }
 
 export interface AgentModel {
@@ -116,11 +146,13 @@ const SPAWN_TOOL = 'task';
 
 const SYSTEM_PROMPT = [
   "You are the design agent inside Ocelot, a macOS design tool whose canvas is real HTML and CSS. The person you are talking to watches the canvas while you work: every change you make through the ocelot tools appears live, and they can undo your edits with ⌘Z.",
-  'You can only act through the ocelot MCP tools and task (subagents that have the same ocelot tools); there is no shell and no file access. Follow the Ocelot MCP server instructions below, including loading the design guide once per conversation. Read get_guide "slides-guide" before building a deck, "video-guide" before a film or animation sequence, "theme-guide" before applying a theme, "design-system-guide" before creating a design system or inserting components, and "motion-guide" before any motion.',
+  'You can only act through the ocelot MCP tools and task (subagents that have the same ocelot tools); there is no shell and no file access. Follow the Ocelot MCP server instructions below, including loading the design guide once per conversation. Read get_guide "slides-guide" before building a deck, "video-guide" before a film or animation sequence, "theme-guide" before applying a theme, "design-system-guide" before creating a design system, inserting components or drawing a toast, dialog, drawer, menu or command menu on a design-system document, and "motion-guide" before any motion.',
   'Two or more screens (a flow\'s steps, an app\'s tabs), even linked ones, MUST be built by subagents: first create the shared theme or design system, then build what repeats across the screens once yourself: every bar the screens share (sidebar, top bar, status bar, tab bar, toolbar, page header, footer) written on the first artboard and made a component with make_component. Then call task once with one task per screen. Set each task\'s name to its screen\'s name (the subagent creates that artboard); its text holds the brief, token names, guide topics to read, and one <oc-instance of="Name"> line per shared component with its props: subagents place those, never rebuild or describe them in prose, and are never told to avoid components. Layers used on one screen only stay plain layers. A single screen, or dependent edits, you build yourself. Afterwards check each screen with get_screenshot and link them.',
   'A message may start with a [Selection: …] line listing what the person has selected on the canvas; "this", "it" or "the selection" usually refers to it.',
+  'A first message may start with a [Plan first] line: until the person approves, make no canvas change and write no plan in chat; this replaces "start building early". Interview them in rounds with ask_user: each round asks every open decision whose prerequisites are settled (audience, screens and flow, content, direction, system), each with a recommended option worded so accepting it is one click; never ask what tools can tell you (get_document_info, list_patterns, get_guide); recompute what is still open after each answer. When nothing is open, post the plan in one message (screens, system, direction; at most 120 words) and ask_user once to approve, with the options "Build it" and "Change something". Build only after "Build it"; a skipped question means take your recommendations.',
   'Start building early. Settle the brief in your reasoning, never in chat: no brief, palette or plan before your first write, and your first write comes within your first few tool calls. While you work, every message you write is one short sentence, and most steps need none. Write one visual group per call in reading order, and look with get_screenshot every 2-3 groups and at the end, not after every group.',
   'Screens that belong together (the pages of one website, the steps of a flow, an app\'s tabs) are always linked so the person can click through them in Preview: set_link on nav items, buttons and back arrows, then get_links until nothing is broken, before your final reply.',
+  'Scroll areas are real: a frame with a fixed height and overflow-y "auto" (update_styles) scrolls in Preview and on the canvas when selected, so a chat transcript, a long list or table inside a fixed panel, or a phone screen with a pinned header and tab bar keeps the screen its real size while its content scrolls. Use one instead of a very tall artboard when the screen has a fixed frame. Screenshots show only its top: check what is below the fold with get_tree.',
   'Websites and landing pages are mockups the person clicks through in Preview, so they ship with micro-interactions without being asked: read get_guide "motion-guide" before the first, then give every button, link, nav item, card and input hover, pressed and focus states with a transition (its section 10 recipes, set on the component main so every instance follows), the hero one entrance, and, where the brief earns it, one signature GSAP or Motion code layer (a headline reveal, a counter, a logo marquee, a 3D object). Product screens get the states only. Check them with get_screenshot state "hover" and "pressed", and time_ms 0 for the entrance.',
   'Contrast is checked by number, in every state, before your final reply: inspect_design (or get_screenshot) on every artboard you changed lists each text layer below WCAG, including "on hover", "on pressed" and "on focus"; fix every one. A state that changes a fill or a text color changes both together (a button filled dark on hover gets light text), text on a photo gets a near-black scrim, and after changing a component main or a theme token you check again, because every instance changed with it.',
   'Older images leave the conversation between turns to keep it small: take a fresh get_screenshot when you need to see the canvas, and get_asset for an image the person attached (its asset id is in their message).',
@@ -148,7 +180,7 @@ export class AgentChat {
   #requests = new Map<string, { resolve: (data: unknown) => void; reject: (e: Error) => void; timer: number }>();
   #requestSeq = 0;
   /** A prompt (with its attachments, and notices about the ones that were skipped) from the host's Home window waiting for the agent to be signed in. */
-  #pendingStart: { prompt: string; attachments: Attachment[]; skipped: string[] } | null = null;
+  #pendingStart: { prompt: string; attachments: Attachment[]; skipped: string[]; lead: StartLead } | null = null;
   /** What the person typed for the messages in omp's queue, by the text omp lists. */
   #queued = new QueueTracker();
   #restoreListeners = new Set<(draft: RestoredDraft) => void>();
@@ -310,7 +342,7 @@ export class AgentChat {
    * message through the sidebar_agent tool: the bubble says so, the agent is told the person did not type it, and the
    * person's canvas selection is not attached (it would not be what that agent means).
    */
-  async send(text: string, attachments: readonly Attachment[] = [], mode: SendMode = 'queue', from?: string, references: readonly LayerReference[] = []): Promise<boolean> {
+  async send(text: string, attachments: readonly Attachment[] = [], mode: SendMode = 'queue', from?: string, references: readonly LayerReference[] = [], lead?: StartLead): Promise<boolean> {
     const prompt = text.trim() || (!attachments.length && references.length ? referencesPrompt(references) : '');
     if ((!prompt && !attachments.length) || this.#loading || this.#snapshot.turn?.stopping || this.#snapshot.availability.kind !== 'ready') return false;
     const problem = firstAttachmentError(attachments);
@@ -320,15 +352,15 @@ export class AgentChat {
     }
     // While the agent works the message is queued (delivered after the turn) or steers it (delivered at its next step).
     if (this.#snapshot.turn) return this.#sendWhileWorking(prompt, attachments, mode, from, references);
-    const started = this.#beginTurn(prompt, attachments, from, references);
+    const started = this.#beginTurn(prompt, attachments, from, references, lead);
     return this.#runTurn(started, prompt, attachments);
   }
 
   /** Shows the person's message and the working state at once, before anything is checked or sent. */
-  #beginTurn(prompt: string, attachments: readonly Attachment[], from?: string, references: readonly LayerReference[] = []): StartedTurn {
+  #beginTurn(prompt: string, attachments: readonly Attachment[], from?: string, references: readonly LayerReference[] = [], lead?: StartLead): StartedTurn {
     const context = from ? null : this.#selectionContext();
     const turnId = `t-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
-    const item: ChatItem = { kind: 'user', id: turnId, text: prompt || DEFAULT_ATTACHMENT_PROMPT, ...(from ? { from } : {}), ...(context ? { context: context.label } : {}), ...(attachments.length ? { attachments: [...attachments] } : {}), ...(references.length ? { references: [...references] } : {}) };
+    const item: ChatItem = { kind: 'user', id: turnId, text: prompt || DEFAULT_ATTACHMENT_PROMPT, ...(from ? { from } : {}), ...(context ? { context: context.label } : {}), ...(lead?.tags.length ? { tags: lead.tags } : {}), ...(attachments.length ? { attachments: [...attachments] } : {}), ...(references.length ? { references: [...references] } : {}) };
     this.#transcript = { ...this.#transcript, items: [...this.#transcript.items, item] };
     const conversation = this.#current;
     conversation.turns += 1;
@@ -338,7 +370,7 @@ export class AgentChat {
     this.#update({ items: this.#transcript.items, turn: { id: turnId, startedAt: Date.now(), stopping: false } });
     // A new document's empty artboard shows the agent planning from the first moment, whichever way the turn starts.
     if (!this.editor.locks.planning) this.#showPlanning();
-    return { turnId, context, ...(from ? { from } : {}), ...(references.length ? { references } : {}) };
+    return { turnId, context, ...(from ? { from } : {}), ...(references.length ? { references } : {}), ...(lead?.lines.length ? { lead } : {}) };
   }
 
   /** Takes back a turn that never reached the agent (omp turned out missing or signed out): the message and the working state go. */
@@ -359,7 +391,7 @@ export class AgentChat {
   }
 
   /** Starts the agent process if needed and hands it the prompt of a turn that is already on screen. */
-  async #runTurn({ turnId, context, from, references }: StartedTurn, prompt: string, attachments: readonly Attachment[]): Promise<boolean> {
+  async #runTurn({ turnId, context, from, references, lead }: StartedTurn, prompt: string, attachments: readonly Attachment[]): Promise<boolean> {
     try {
       await this.#ensureProcess();
       // Fail closed: the host disables omp's other config sources by name, so verify that
@@ -379,7 +411,7 @@ export class AgentChat {
       // A shake or compaction that is still running finishes first.
       await this.#upkeep;
       this.#imageChars += images.reduce((n, i) => n + i.data.length, 0);
-      await this.#sendCommand({ id: turnId, type: 'prompt', message: withLead(message, from, context, this.#referencesLead(references)), ...(images.length ? { images } : {}) });
+      await this.#sendCommand({ id: turnId, type: 'prompt', message: withLead(message, from, context, this.#referencesLead(references), lead?.lines), ...(images.length ? { images } : {}) });
       // omp has a session file for the conversation from here on: a later process continues it.
       this.#current.resume = true;
       void this.#save();
@@ -397,11 +429,12 @@ export class AgentChat {
    * that cannot be used is left out and named in a notice. When omp is missing or signed out the prompt is taken back off
    * the screen, kept, and sent as soon as the agent becomes ready (after sign-in / "Check again"). Returns whether it was sent now.
    */
-  async startWithPrompt(text: string, files: readonly StartAttachment[] = []): Promise<boolean> {
+  async startWithPrompt(text: string, files: readonly StartAttachment[] = [], options: StartOptions = {}): Promise<boolean> {
     const prompt = text.trim();
     this.editor.ui.showSidebarTab('agent');
     const kind = this.#snapshot.availability.kind;
-    const early = prompt && !this.#snapshot.turn && (kind === 'checking' || kind === 'ready') ? this.#beginTurn(prompt, []) : null;
+    const lead = startLead(options);
+    const early = prompt && !this.#snapshot.turn && (kind === 'checking' || kind === 'ready') ? this.#beginTurn(prompt, [], undefined, [], lead) : null;
     if (early) this.#showPlanning();
     const ingested = await Promise.all(files.map((f) => ingestPayload(f, this.imageCodec)));
     const errors = attachmentErrors(ingested);
@@ -412,7 +445,7 @@ export class AgentChat {
       return false;
     }
     if (this.#snapshot.availability.kind === 'checking') await this.refreshStatus();
-    const start = { prompt, attachments, skipped };
+    const start = { prompt, attachments, skipped, lead };
     if (this.#snapshot.availability.kind === 'ready') return this.#sendStart(start, early);
     if (early) this.#retractTurn(early.turnId);
     this.#pendingStart = start;
@@ -427,9 +460,10 @@ export class AgentChat {
     const turn = this.#snapshot.turn;
     if (!turn || turn.stopping) return;
     this.#update({ turn: { ...turn, stopping: true } });
+    const known = this.#typedQueue();
     try {
       const withdrawn = withdrawnTexts(await this.#request({ type: 'abort_and_restore_queue' }));
-      if (withdrawn.length) for (const cb of this.#restoreListeners) cb(this.#queued.draft(withdrawn));
+      if (withdrawn.length) for (const cb of this.#restoreListeners) cb(this.#queued.draft(withdrawn, known));
     } catch {
       // An omp without the command, or the process is gone: a plain abort still stops the turn.
       try {
@@ -534,6 +568,61 @@ export class AgentChat {
       this.#push({ kind: 'notice', id: `n-${Date.now()}`, tone: 'error', text: `Could not steer with the queued message: ${errorMessage(err)}` });
       return false;
     }
+  }
+
+  /**
+   * "Send now" on a steering chip. Steering waits until the agent's current step ends, and one step can take minutes (writing
+   * the briefs for parallel work), so the person can cut in: the running turn stops (edits so far stay), this message starts
+   * the next turn at once, and every other waiting message goes back into its own queue, in order. False when no turn runs,
+   * omp refused the stop, or the message had already been delivered (the others are still put back).
+   */
+  async sendNow(key: string): Promise<boolean> {
+    const turn = this.#snapshot.turn;
+    if (!turn || turn.stopping) return false;
+    this.#update({ turn: { ...turn, stopping: true } });
+    // What the person typed, read before the request: omp may end the turn (which clears the tracker) before it answers.
+    const typed = this.#typedQueue();
+    let withdrawn: Record<QueueName, string[]>;
+    try {
+      withdrawn = withdrawnQueues(await this.#request({ type: 'abort_and_restore_queue' }));
+    } catch (err) {
+      if (this.#snapshot.turn?.id === turn.id) this.#update({ turn: { ...turn, stopping: false } });
+      this.#push({ kind: 'notice', id: `n-${Date.now()}`, tone: 'error', text: `Could not send it now: ${errorMessage(err)}. It stays in the queue; press Stop to take it back into the box.` });
+      return false;
+    }
+    const waiting = [
+      ...withdrawn.steering.map((k) => ({ key: k, mode: 'steer' as const, meta: this.#queued.take(k) ?? typed.get(k) })),
+      ...withdrawn.followUp.map((k) => ({ key: k, mode: 'queue' as const, meta: this.#queued.take(k) ?? typed.get(k) })),
+    ];
+    // omp ends the aborted turn before it answers, so the turn may already be over here; otherwise wait for its prompt_result.
+    if (this.#snapshot.turn?.id === turn.id) {
+      const ended = new Promise<void>((resolve) => {
+        const off = this.subscribe(() => {
+          if (this.#snapshot.turn?.id === turn.id) return;
+          off();
+          resolve();
+        });
+      });
+      // An abort normally ends the turn with prompt_result "aborted". If it does not, stop the process (as Stop does).
+      clearTimeout(this.#stopTimer);
+      this.#stopTimer = window.setTimeout(() => {
+        if (this.#snapshot.turn?.id !== turn.id) return;
+        this.#stopProcess();
+        this.#finishTurn(turn.id, undefined, 'stopped');
+      }, STOP_GRACE_MS);
+      await ended;
+    }
+    const chosen = waiting.find((w) => w.key === key);
+    const resend = (w: (typeof waiting)[number], mode: SendMode) => this.send(w.meta?.text ?? w.key, w.meta?.attachments ?? [], mode, w.meta?.from, w.meta?.references ?? []);
+    const sent = chosen ? await resend(chosen, 'queue') : false;
+    for (const w of waiting) if (w !== chosen) await resend(w, w.mode);
+    return sent;
+  }
+
+  /** What the person typed for each waiting chip, read before a stop: the turn's end clears the tracker, and omp may end it before it answers. */
+  #typedQueue(): Map<string, QueuedMeta | undefined> {
+    const { steering, followUp } = this.#snapshot.queue;
+    return new Map([...steering, ...followUp].map((item) => [item.key, this.#queued.peek(item.key)] as const));
   }
 
   // ---------- Conversations ----------
@@ -1015,9 +1104,9 @@ export class AgentChat {
   }
 
   /** `early`: the turn `startWithPrompt` already put on screen; its message is not shown twice. */
-  #sendStart({ prompt, attachments, skipped }: { prompt: string; attachments: Attachment[]; skipped: string[] }, early: StartedTurn | null = null): Promise<boolean> {
+  #sendStart({ prompt, attachments, skipped, lead }: { prompt: string; attachments: Attachment[]; skipped: string[]; lead: StartLead }, early: StartedTurn | null = null): Promise<boolean> {
     for (const note of skipped) this.#push({ kind: 'notice', id: `n-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, tone: 'error', text: note });
-    if (!early) return this.send(prompt, attachments);
+    if (!early) return this.send(prompt, attachments, 'queue', undefined, [], lead);
     const turn = this.#snapshot.turn;
     if (turn?.id !== early.turnId || turn.stopping) return Promise.resolve(false);
     const problem = firstAttachmentError(attachments);
@@ -1165,9 +1254,9 @@ function blankConversation(): Conversation {
   return { id: newConversationId(), projectId: '', title: '', createdAt: now, updatedAt: now, turns: 0, resume: false, verifyMemory: false, saved: false, files: newTranscriptFiles() };
 }
 
-/** What the agent reads before the person's words: who really sent the message (an external agent), then the selection line. */
-function withLead(message: string, from: string | undefined, context: { line: string } | null, references = ''): string {
-  const lines = [...(from ? [`[Sent by ${from}, an external agent connected to this document. The person did not type this message.]`] : []), ...(context ? [context.line] : []), ...(references ? [references] : [])];
+/** What the agent reads before the person's words: who really sent the message (an external agent), the Home choices of a first message, then the selection line. */
+function withLead(message: string, from: string | undefined, context: { line: string } | null, references = '', start: readonly string[] = []): string {
+  const lines = [...(from ? [`[Sent by ${from}, an external agent connected to this document. The person did not type this message.]`] : []), ...start, ...(context ? [context.line] : []), ...(references ? [references] : [])];
   return lines.length ? `${lines.join('\n')}\n\n${message}` : message;
 }
 

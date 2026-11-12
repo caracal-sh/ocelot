@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { encodePreset } from '../designsystem/preset';
 import type { Editor } from '../editor/Editor';
 import { setupMcp } from './testSetup';
-import { dsRawValueFinding } from './dsSlop';
+import { dsHandBuiltFinding, dsRawValueFinding } from './dsSlop';
 import { listTools } from './protocol';
 import { TOOLS } from './tools';
 
@@ -385,6 +385,24 @@ describe('ds-raw-values check', () => {
     expect(f.measured).toMatch(/1 layer.*"Raw"/);
     await insert(call, { parent_id: ab, component: 'button', text: 'Go' });
     expect(dsRawValueFinding(editor, ab)!.measured).toMatch(/^1 layer/);
+  });
+});
+
+describe('ds-hand-built check', () => {
+  it('flags the outermost layer drawn as a shipped component, by name or role, not wrappers around instances, text or documents without a system', async () => {
+    const { callJson, call, editor } = setupMcp();
+    const ab = editor.doc.artboardIds()[0]!;
+    const handDrawn =
+      '<div data-name="Toast" style="padding:12px"><div data-name="Toast body"><p>Saved</p></div></div>' +
+      '<div data-name="Actions" role="menu"><p>Rename</p></div>' +
+      '<p data-name="Dialog copy">Plain text named like a component</p>';
+    await call('write_html', { node_id: ab, mode: 'append', html: handDrawn });
+    expect(dsHandBuiltFinding(editor, ab), 'no design system, no finding').toBeNull();
+    await callJson('create_design_system', {});
+    await call('write_html', { node_id: ab, mode: 'append', html: '<div data-name="Confirm modal"><ds-button>Delete</ds-button></div>' });
+    const f = dsHandBuiltFinding(editor, ab)!;
+    expect(f).toMatchObject({ rule_id: 'ds-hand-built', level: 'check', name: 'Toast' });
+    expect(f.measured).toBe('2 layers drawn by hand where the design system has the component: "Toast" (use toast); "Actions" (use dropdown-menu)');
   });
 });
 

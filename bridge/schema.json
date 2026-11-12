@@ -71,7 +71,9 @@
     },
     "StartWithPromptParams": {
       "prompt": "string",
-      "attachments": "StartAttachment[]?"
+      "attachments": "StartAttachment[]?",
+      "designSystem": "json?",
+      "planFirst": "boolean?"
     },
     "StartWithPromptResult": {
       "started": "boolean"

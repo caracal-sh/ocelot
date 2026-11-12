@@ -14,6 +14,9 @@
 //      override and a hover state) are part of the page
 //   2. get_screenshot of each artboard; export_design_system (the registry) and save_export format react (the page + its stylesheet)
 //   3. scratch app in the OS temp folder: shadcn init + add the registry bundle, the exported pages, `tsc` and `vite build`
+//      A "Toasts" artboard holds a toast stack (a viewport with three toasts, newest first): the export is the registry's `<Toaster>` plus the design's
+//      toasts added to its manager on mount, which is not a pixel match of the canvas frame (the Toaster sits at the corner of the window), so it is
+//      checked at runtime: three toasts in the order drawn, the ones behind with their content hidden, the stack fanning out under the pointer
 //   4. Chromium renders the built pages; light and dark are diffed against Ocelot's screenshots (acceptance: <= 0.5 % differing pixels).
 //      Overlays: the dialog starts open, the select starts closed and opens on click. Menus: every popup starts closed (the page equals the canvas
 //      drawn without its popups, <= 0.5 %), then at RUNTIME clicking a trigger opens its popup, hovering or ArrowRight on the sub-trigger opens
@@ -208,6 +211,19 @@ async function buildOverlays(ab) {
 
 const MENUS_HEIGHT = 1080;
 
+/** A toast stack as an agent writes it: one viewport, newest first (the first toast is in front). */
+const TOAST_STACK = (() => {
+  const toast = (title, description, action = '') => `<ds-toast><ds-toast-content><div style="display:flex;min-width:0;flex:1 1 0%;flex-direction:column;gap:4px"><ds-toast-title>${title}</ds-toast-title><ds-toast-description>${description}</ds-toast-description></div>${action}<ds-toast-close></ds-toast-close></ds-toast-content></ds-toast>`;
+  return `<ds-toast-viewport>${toast('Event created', 'Sunday, December 03, 2023', '<ds-toast-action>Undo</ds-toast-action>')}${toast('Invite sent', 'We emailed Sam a link.')}${toast('File uploaded', 'report-q4.pdf is ready.')}</ds-toast-viewport>`;
+})();
+
+async function buildToasts(ab) {
+  await tool('update_styles', { node_id: ab, styles: { padding: '32px' } });
+  const stage = await frame(ab, 'Toast frame', { position: 'relative', width: '420px', height: '140px' });
+  const r = await tool('write_html', { node_id: stage, mode: 'append', html: TOAST_STACK });
+  assert.ok(idsOf(r).length === 1, `toast stack: ${r}`);
+}
+
 /**
  * Overlays as a person draws them: a trigger button and its popup drawn open in one relative frame (a dropdown with a submenu, a popover, a dialog,
  * a context menu in its area, a navigation menu with its flyout beside the bar). `expanded` draws the triggers in their expanded look; the closed
@@ -301,12 +317,14 @@ try {
   const overlaysId = (await tool('create_artboard', { name: 'Overlays', width: 960, height: 700, x: 2200, y: 0 })).artboard_id;
   const menusId = (await tool('create_artboard', { name: 'Menus', width: 960, height: MENUS_HEIGHT, x: 3300, y: 0 })).artboard_id;
   const menusClosedId = (await tool('create_artboard', { name: 'Menus closed', width: 960, height: MENUS_HEIGHT, x: 4400, y: 0 })).artboard_id;
+  const toastsId = (await tool('create_artboard', { name: 'Toasts', width: 960, height: 300, x: 5500, y: 0 })).artboard_id;
 
   await buildPage(light, 'light');
   await buildPage(darkId, 'dark');
   await buildOverlays(overlaysId);
   const { popupIds, dropdownId } = await buildMenus(menusId, { expanded: true });
   const closed = await buildMenus(menusClosedId, { expanded: false });
+  await buildToasts(toastsId);
   await host.page.waitForTimeout(500);
   const shots = { Light: await shot(light, 'Light'), Dark: await shot(darkId, 'Dark'), MenuDropdown: await shot(dropdownId, 'Menus-dropdown') };
   // the canvas of the closed default: the same page without its popups
@@ -315,14 +333,14 @@ try {
   log(`artboards built: Light ${light}, Dark ${darkId}, Overlays ${overlaysId}, Menus ${menusId} (${popupIds.length} popups)`);
 
   // ---- export: the registry (tokens + components) and the React pages
-  const components = ['button', 'badge', 'card', 'input', 'textarea', 'label', 'checkbox', 'switch', 'alert', 'tabs', 'table', 'separator', 'select', 'dialog', 'breadcrumb', 'avatar', 'button-group', 'toggle-group', 'radio-group', 'kbd', 'field', 'dropdown-menu', 'popover', 'context-menu', 'navigation-menu'];
+  const components = ['button', 'badge', 'card', 'input', 'textarea', 'label', 'checkbox', 'switch', 'alert', 'tabs', 'table', 'separator', 'select', 'dialog', 'breadcrumb', 'avatar', 'button-group', 'toggle-group', 'radio-group', 'kbd', 'field', 'dropdown-menu', 'popover', 'context-menu', 'navigation-menu', 'toast'];
   const reg = await tool('export_design_system', { components });
   assert.ok(reg.saved, JSON.stringify(reg).slice(0, 300));
   const registryDir = reg.folder;
   const pages = {};
-  for (const [name, id] of [['Light', light], ['Dark', darkId], ['Overlays', overlaysId], ['Menus', menusId]]) {
+  for (const [name, id] of [['Light', light], ['Dark', darkId], ['Overlays', overlaysId], ['Menus', menusId], ['Toasts', toastsId]]) {
     const code = await tool('export_react', { node_id: id, components: 'ui' });
-    check(typeof code === 'string' && /from "@\/components\/ui\/button"/.test(code), `${name}: export_react imports real components`);
+    check(typeof code === 'string' && (name === 'Toasts' ? /from "@\/components\/ui\/toast"/ : /from "@\/components\/ui\/button"/).test(code), `${name}: export_react imports real components`);
     const saved = await tool('save_export', { node_id: id, format: 'react', components: 'ui' });
     assert.ok(saved.saved, JSON.stringify(saved));
     pages[name] = { folder: saved.folder, files: saved.files };
@@ -344,6 +362,10 @@ try {
   check(/<DropdownMenuSub>\s*<DropdownMenuSubTrigger>[\s\S]*More tools[\s\S]*<DropdownMenuSubContent>[\s\S]*Email/.test(menusCode), 'Menus: the submenu is a DropdownMenuSub with its SubTrigger and SubContent');
   check(/<PopoverTrigger render=/.test(menusCode) && /<DialogTrigger render=/.test(menusCode) && /<ContextMenuTrigger render=/.test(menusCode), 'Menus: popover, dialog and the context menu area have their Trigger');
   check(!/defaultOpen/.test(menusCode), 'Menus: nothing starts open');
+  const toastsCode = await readFile(join(pages.Toasts.folder, 'Toasts.tsx'), 'utf8');
+  writeFileSync(`${OUT}/Toasts.tsx`, toastsCode);
+  check(/<Toaster>[\s\S]*<DesignToasts \/>[\s\S]*<\/Toaster>/.test(toastsCode) && !/<ToastViewport|<ToastProvider/.test(toastsCode), 'Toasts: the stack is the registry Toaster, not placed parts');
+  check([...toastsCode.matchAll(/toasts\.add\(/g)].length === 3 && toastsCode.indexOf('File uploaded') < toastsCode.indexOf('Invite sent') && toastsCode.indexOf('Invite sent') < toastsCode.indexOf('Event created'), 'Toasts: the three toasts are added oldest first, so the first one drawn ends up in front');
 
   // ---- scratch app
   const pin = JSON.parse(await readFile(join(EDITOR, 'src/designsystem/snapshot/MANIFEST.json'), 'utf8')).pins.shadcn;
@@ -361,7 +383,7 @@ try {
   let css = await readFile(join(app, 'src', 'index.css'), 'utf8');
   const lastImport = [...css.matchAll(/^@import [^\n]+\n/gm)].at(-1);
   const at = lastImport.index + lastImport[0].length;
-  css = `${css.slice(0, at)}@import "./pages/Light.css";\n@import "./pages/Dark.css";\n@import "./pages/Overlays.css";\n@import "./pages/Menus.css";\n${css.slice(at)}\n@font-face { font-family: "Geist"; src: url("/fonts/Geist-Variable.woff2") format("woff2"); font-weight: 100 900; font-display: block; }\n:root { --font-sans: Geist, sans-serif; --font-heading: var(--font-sans); }\n`;
+  css = `${css.slice(0, at)}@import "./pages/Light.css";\n@import "./pages/Dark.css";\n@import "./pages/Overlays.css";\n@import "./pages/Menus.css";\n@import "./pages/Toasts.css";\n${css.slice(at)}\n@font-face { font-family: "Geist"; src: url("/fonts/Geist-Variable.woff2") format("woff2"); font-weight: 100 900; font-display: block; }\n:root { --font-sans: Geist, sans-serif; --font-heading: var(--font-sans); }\n`;
   await writeFile(join(app, 'src', 'index.css'), css);
   await writeFile(
     join(app, 'src', 'App.tsx'),
@@ -369,8 +391,9 @@ try {
 import Dark from "./pages/Dark"
 import Overlays from "./pages/Overlays"
 import Menus from "./pages/Menus"
+import Toasts from "./pages/Toasts"
 
-const pages = { Light: [960, 1120, Light], Dark: [960, 1120, Dark], Overlays: [960, 700, Overlays], Menus: [960, ${MENUS_HEIGHT}, Menus] } as const
+const pages = { Light: [960, 1120, Light], Dark: [960, 1120, Dark], Overlays: [960, 700, Overlays], Menus: [960, ${MENUS_HEIGHT}, Menus], Toasts: [960, 300, Toasts] } as const
 
 export default function App() {
   const name = (location.hash.slice(1) || "Light") as keyof typeof pages
@@ -505,6 +528,35 @@ export default function App() {
     await page.close();
   };
 
+  /** The Toasts page at runtime: the Toaster shows the design's toasts, newest in front, the ones behind with their content hidden, and fans out under the pointer. */
+  const toastsRuntime = async (browser, server) => {
+    const page = await browser.newPage({ viewport: { width: 960, height: 600 }, deviceScaleFactor: 1 });
+    const errors = [];
+    const warnings = [];
+    page.on('pageerror', (e) => errors.push(String(e)));
+    page.on('console', (m) => (m.type() === 'warning' || m.type() === 'error') && warnings.push(m.text()));
+    await page.goto(`${server.url}/#Toasts`);
+    await page.addStyleTag({ content: '*,*::before,*::after{transition:none!important;animation:none!important}' });
+    await page.locator('[data-slot="toast"]').nth(2).waitFor({ state: 'attached', timeout: 5000 });
+    await page.waitForTimeout(400);
+    const titles = await page.locator('[data-slot="toast-title"]').allInnerTexts();
+    check(JSON.stringify(titles) === JSON.stringify(['Event created', 'Invite sent', 'File uploaded']), `Toasts: three toasts, the first drawn in front (${titles.join(' | ')})`);
+    check((await page.locator('[data-slot="toast-content"][data-behind]').count()) === 2, 'Toasts: the two behind have their content hidden (data-behind)');
+    const rects = await page.locator('[data-slot="toast"]').evaluateAll((els) => els.map((e) => { const r = e.getBoundingClientRect(); return { top: r.top, bottom: r.bottom }; }));
+    check(rects[1].top < rects[0].top && rects[2].top < rects[1].top && rects[1].bottom < rects[0].bottom, 'Toasts: the older ones peek out above the front toast');
+    check((await page.locator('[data-slot="toast-action"]').innerText()) === 'Undo', 'Toasts: the action of the front toast is there');
+    await page.locator('[data-slot="toast"]').first().hover();
+    await page.waitForTimeout(300);
+    check((await page.locator('[data-slot="toast"][data-expanded]').count()) === 3, 'Toasts: hovering the stack fans it out (data-expanded on every toast)');
+    const open = await page.locator('[data-slot="toast"]').evaluateAll((els) => els.map((e) => e.getBoundingClientRect().height));
+    check(open.every((h) => h > 60) && (await page.locator('[data-slot="toast-content"][data-behind]').evaluateAll((els) => els.every((e) => getComputedStyle(e).opacity === '1'))), 'Toasts: expanded, every toast shows its content');
+    const base = warnings.filter((w) => /base ui|nativeButton|render/i.test(w));
+    check(base.length === 0, `Toasts: Base UI logs no warnings${base.length ? `: ${base[0].slice(0, 200)}` : ''}`);
+    check(errors.length === 0, `Toasts: no page errors${errors.length ? `: ${errors[0]}` : ''}`);
+    await page.screenshot({ path: `${OUT}/Toasts-react.png` });
+    await page.close();
+  };
+
   if (tsc.ok && build.ok) {
     const server = await serve(join(app, 'dist'));
     const browser = await launch();
@@ -554,6 +606,7 @@ export default function App() {
       check(await page.locator('[data-slot="select-content"]').waitFor({ state: 'visible', timeout: 3000 }).then(() => true, () => false), 'Overlays: clicking the select trigger opens it');
       await page.close();
       await menusRuntime(browser, server);
+      await toastsRuntime(browser, server);
     } finally {
       await browser.close();
       await server.close();

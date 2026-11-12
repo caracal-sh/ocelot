@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { AgentEventParams, AssetRecord, BridgeResponse } from '../bridge/schema.gen';
+import { McpServer } from '../mcp/protocol';
 import { Editor } from '../editor/Editor';
 import { registerCoreEditorMethods } from '../host/editorMethods';
 import { editorEndpoint, type Host } from '../host/host';
@@ -207,5 +208,47 @@ describe('editor.startWithPrompt through the bridge', () => {
     await chat.refreshStatus();
     await vi.waitFor(() => expect(prompts()).toHaveLength(1));
     expect(prompts()[0]!['message']).toMatch(/^Later\n\n<attachment name="a\.txt"/);
+  });
+
+  it('creates the chosen design system before the turn and tells the agent; the bubble shows quiet tags, never the markers', async () => {
+    const { chat, editor, host, prompts } = setup();
+    cleanup.push(registerCoreEditorMethods(editor, host, undefined, chat));
+    expect(editor.doc.designSystem()).toBeNull();
+    const response = await call({ prompt: 'A pricing page', designSystem: { style: 'luma' }, planFirst: true });
+    expect(response).toMatchObject({ ok: true, result: { started: true } });
+    expect(editor.doc.designSystem()).toMatchObject({ style: 'luma' });
+    const message = prompts()[0]!['message'] as string;
+    expect(message).toMatch(/^\[Plan first\]\n\[Design system: the person chose the "luma" style and this document already has it with stock tokens\. Colors, radius and fonts still come from the brief: update_design_system before the first screen\.\]\n\nA pricing page$/);
+    expect(chat.snapshot.items[0]).toMatchObject({ kind: 'user', text: 'A pricing page', tags: ['Plan first', 'Design system: Luma'] });
+  });
+
+  it('plan first alone marks only the message; no design system is created', async () => {
+    const { chat, editor, host, prompts } = setup();
+    cleanup.push(registerCoreEditorMethods(editor, host, undefined, chat));
+    await call({ prompt: 'A dashboard', planFirst: true });
+    expect(prompts()[0]!['message']).toBe('[Plan first]\n\nA dashboard');
+    expect(editor.doc.designSystem()).toBeNull();
+    expect(chat.snapshot.items[0]).toMatchObject({ tags: ['Plan first'] });
+  });
+
+  it('leaves a design system the document already has alone and still tells the agent its style', async () => {
+    const { chat, editor, host, prompts } = setup();
+    const mcp = new McpServer({ editor, locks: editor.locks, host });
+    cleanup.push(registerCoreEditorMethods(editor, host, mcp, chat));
+    await mcp.handle(JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'create_design_system', arguments: { style: 'sera' } } }));
+    const first = editor.doc.designSystem()!;
+    await call({ prompt: 'y', designSystem: { style: 'luma' } });
+    expect(editor.doc.designSystem()).toBe(first);
+    expect(String(prompts()[0]!['message'])).toContain('"sera"');
+  });
+
+  it('keeps the choices until the agent is signed in', async () => {
+    const { chat, editor, host, prompts, state } = setup({ loggedIn: false });
+    cleanup.push(registerCoreEditorMethods(editor, host, undefined, chat));
+    await call({ prompt: 'Later', planFirst: true });
+    state.loggedIn = true;
+    await chat.refreshStatus();
+    await vi.waitFor(() => expect(prompts()).toHaveLength(1));
+    expect(prompts()[0]!['message']).toBe('[Plan first]\n\nLater');
   });
 });

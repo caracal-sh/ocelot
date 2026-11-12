@@ -11,11 +11,14 @@ interface Props {
   onRemove: (item: QueuedItem, queue: QueueName) => Promise<unknown>;
   /** "Steer now" for a follow-up. */
   onSteerNow: (item: QueuedItem) => Promise<unknown>;
+  /** "Send now" for a steering message: stops the current step and sends it at once. */
+  onSendNow: (item: QueuedItem) => Promise<unknown>;
 }
 
 const LABELS: Record<QueueName, string> = { steering: 'Steering', followUp: 'Queued' };
+const SEND_NOW_TIP = "Send it now: the agent's current step stops (edits so far stay) and it reads this at once. Otherwise it waits until the step ends, which can take minutes.";
 
-export function QueueChips({ queue, onRemove, onSteerNow }: Props) {
+export function QueueChips({ queue, onRemove, onSteerNow, onSendNow }: Props) {
   // One request at a time per row: a second click on the same row would act on a message that is already moving.
   const [busy, setBusy] = useState<ReadonlySet<string>>(new Set());
   const rows = [
@@ -41,7 +44,14 @@ export function QueueChips({ queue, onRemove, onSteerNow }: Props) {
     <div className="at-queue" role="list" aria-label="Queued messages" data-testid="queue-chips">
       {rows.map(({ item, name, id }) => (
         <div key={id} className="at-queue__row at-chip--enter" role="listitem" data-queue={name} data-testid="queue-chip">
-          <span className="at-queue__label">{LABELS[name]}</span>
+          {name === 'steering' ? (
+            // The label is the obvious thing to click; it does what "Send now" does.
+            <button type="button" className="at-queue__label at-queue__label--action" disabled={busy.has(id)} onClick={() => void run(id, () => onSendNow(item))} data-tip={SEND_NOW_TIP} tabIndex={-1}>
+              {LABELS[name]}
+            </button>
+          ) : (
+            <span className="at-queue__label">{LABELS[name]}</span>
+          )}
           <span className="at-queue__text" title={item.text}>
             {item.text}
           </span>
@@ -50,6 +60,11 @@ export function QueueChips({ queue, onRemove, onSteerNow }: Props) {
               <Icon name="paperclip" size={12} />
               {item.attachments}
             </span>
+          )}
+          {name === 'steering' && (
+            <button type="button" className="at-queue__act" disabled={busy.has(id)} onClick={() => void run(id, () => onSendNow(item))} data-tip={SEND_NOW_TIP} data-testid="queue-send-now">
+              {busy.has(id) ? 'Sending…' : 'Send now'}
+            </button>
           )}
           {name === 'followUp' && (
             <button type="button" className="at-queue__act" disabled={busy.has(id)} onClick={() => void run(id, () => onSteerNow(item))} data-tip="Deliver it at the agent's next step instead of after the turn" data-testid="queue-steer-now">

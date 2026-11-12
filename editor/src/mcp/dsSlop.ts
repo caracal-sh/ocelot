@@ -1,9 +1,14 @@
-// The `ds-raw-values` check of a design-system document: layers an agent (or a person) wrote with a literal color or radius where a
-// token exists. It reads the document, not the rendered page, because a computed style always resolves var() to a literal.
+// The checks of a design-system document, read from the document, not the rendered page:
 //
-// Not flagged: custom properties (the tokens themselves), shadows and filters (components carry literal shadow colors), the artboard
-// root, instances generated from components (`data-slot`: refresh_design_system_instances governs those), `transparent`, `currentColor`,
-// named colors, pill radii (999px and up), 0 and percentages, and any value that already goes through var().
+// `ds-raw-values`: layers an agent (or a person) wrote with a literal color or radius where a token exists (a computed style always
+// resolves var() to a literal, so the page cannot tell). Not flagged: custom properties (the tokens themselves), shadows and filters
+// (components carry literal shadow colors), the artboard root, instances generated from components (`data-slot`:
+// refresh_design_system_instances governs those), `transparent`, `currentColor`, named colors, pill radii (999px and up), 0 and
+// percentages, and any value that already goes through var().
+//
+// `ds-hand-built`: a layer drawn by hand as a component the system ships with its states and behaviour (a toast that stacks, a dialog
+// that traps focus, a command menu driven by the keyboard). Found by the layer's name or ARIA role; a layer that holds an instance is a
+// wrapper around the real component and is not flagged, nor are text layers or anything inside a flagged layer.
 
 import type { Editor } from '../editor/Editor';
 import type { NodeData } from '../model/types';
@@ -32,6 +37,64 @@ function rawRadius(prop: string, value: string): string | null {
     if (px > 0 && px < 999) return value;
   }
   return null;
+}
+
+/**
+ * Names and roles that say "this layer IS component X". The component word must end the name ("Delete modal", "Toasts", "Command menu"),
+ * so a part or a label about one ("Toast header", "Dialog copy", "popover / popover-foreground") is not taken for it.
+ */
+const HAND_BUILT: ReadonlyArray<{ component: string; name: RegExp; roles?: readonly string[] }> = [
+  { component: 'command', name: /(\bcommand[ -](menu|palette|bar|k)|⌘ ?k|\bcmd ?\+? ?k)$/i },
+  { component: 'toast', name: /\b(toast|snackbar)s?$/i },
+  { component: 'alert-dialog or dialog', name: /\b(dialog|modal)s?$/i, roles: ['dialog', 'alertdialog'] },
+  { component: 'drawer', name: /\b(drawer|bottom ?sheet)s?$/i },
+  { component: 'sheet', name: /\b(side ?)?sheets?$/i },
+  { component: 'dropdown-menu', name: /\b((drop-?down|context|popup|overflow|actions?) menu|drop-?down)s?$/i, roles: ['menu'] },
+  { component: 'popover', name: /\bpopovers?$/i },
+  { component: 'tooltip', name: /\btooltips?$/i, roles: ['tooltip'] },
+  { component: 'input-otp', name: /\b(otp|one[- ]time (code|password)|verification code)( input| field)?$/i },
+];
+
+/** The component a hand-drawn layer stands in for, or null. A trailing note ("Toast — success", "Dialog (open)", "Modal 2") is ignored. */
+function handBuiltAs(node: NodeData): string | null {
+  const head = node.name.replace(/\s*[([—–:|].*$/, '').replace(/\s+\d+$/, '');
+  const role = node.attrs['role'];
+  for (const h of HAND_BUILT) if (h.name.test(head) || (role !== undefined && h.roles?.includes(role))) return h.component;
+  return null;
+}
+
+/** One finding for the artboard (or null): layers drawn by hand as a component the design system ships, outermost first. */
+export function dsHandBuiltFinding(editor: Editor, artboardId: string): InspectFinding | null {
+  const { doc } = editor;
+  if (!doc.designSystem()) return null;
+  const isInstance = (id: string) => {
+    const a = doc.get(id)?.attrs;
+    return !!a && (a['data-ds'] !== undefined || a['data-slot'] !== undefined);
+  };
+  const hits: Array<{ node: NodeData; component: string }> = [];
+  const visit = (id: string) => {
+    const node = doc.get(id);
+    if (!node || isInstance(id)) return;
+    const component = id !== artboardId && node.type !== 'text' ? handBuiltAs(node) : null;
+    if (component && !doc.subtreeIds(id).some(isInstance)) {
+      hits.push({ node, component });
+      return;
+    }
+    for (const child of node.children) visit(child);
+  };
+  visit(artboardId);
+  if (!hits.length) return null;
+  const first = hits.slice(0, 3).map((h) => `"${h.node.name}" (use ${h.component})`).join('; ');
+  const more = hits.length > 3 ? ` (+${hits.length - 3} more)` : '';
+  return {
+    rule_id: 'ds-hand-built',
+    level: 'check',
+    node_id: hits[0]!.node.id,
+    name: hits[0]!.node.name,
+    measured: `${hits.length} layer${hits.length === 1 ? '' : 's'} drawn by hand where the design system has the component: ${first}${more}`,
+    threshold: 'insert_component or <ds-…>',
+    message: RULES['ds-hand-built']!.say,
+  };
 }
 
 /** One finding for the artboard (or null): how many layers carry a raw value, with the first few named. */

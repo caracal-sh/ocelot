@@ -3,7 +3,7 @@
 
 import type { DocumentOps, OcelotDocument } from '../../model/document';
 import type { Scheme } from '../model';
-import { DS_ATTR, DS_PROPS_ATTR, generate, resolveProps, type GenerateRecord } from './generate';
+import { contextFlags, DS_ATTR, DS_PROPS_ATTR, generate, handedFlags, resolveProps, type GenerateRecord } from './generate';
 import type { ComponentSet } from './set';
 import type { AncestorPart, ComponentRequest, InstanceCount } from './types';
 
@@ -55,27 +55,43 @@ const propValues = (props: Record<string, string | boolean>): Record<string, str
  * a label inside it is styled by that orientation, and the export must see the same one.
  */
 export function ancestorParts(doc: OcelotDocument, nodeId: string, set: ComponentSet): AncestorPart[] {
-  const chain: Array<{ part: string; explicit: Record<string, string | boolean> }> = [];
+  const chain: Array<{ id: string; part: string; explicit: Record<string, string | boolean> }> = [];
   let cur = doc.get(nodeId)?.parent ?? null;
   while (cur) {
     const n = doc.get(cur);
     if (!n) break;
     const part = n.attrs[DS_ATTR];
-    if (part) chain.unshift({ part, explicit: readProps(n.attrs) });
+    if (part) chain.unshift({ id: cur, part, explicit: readProps(n.attrs) });
     cur = n.parent;
   }
   const out: AncestorPart[] = [];
-  for (const { part, explicit } of chain) {
+  for (const { id, part, explicit } of chain) {
     const tpl = set.part(part);
     let props = propValues(explicit);
+    let flags: string[] = [];
     try {
-      if (tpl) props = resolveProps(tpl, explicit, out).values;
+      if (tpl) {
+        const context = contextFlags(tpl, out, siblingsOf(doc, id));
+        const resolved = resolveProps(tpl, explicit, out, context);
+        props = resolved.values;
+        flags = handedFlags(resolved, context);
+      }
     } catch {
       // a stored prop this snapshot no longer knows: keep what is stored
     }
-    out.push({ part, component: tpl?.component ?? part, props });
+    out.push({ part, component: tpl?.component ?? part, props, flags });
   }
   return out;
+}
+
+/** First / last among the parent's children with the same part (what generation used for the `first` / `last` flags), and the parts before it. */
+export function siblingsOf(doc: OcelotDocument, id: string): { first: boolean; last: boolean; anyFirst: boolean; anyLast: boolean; after: string[] } {
+  const parent = doc.get(id)?.parent;
+  const part = doc.get(id)?.attrs[DS_ATTR];
+  const same = parent ? doc.require(parent).children.filter((c) => doc.get(c)?.attrs[DS_ATTR] === part) : [id];
+  const parts = parent ? doc.require(parent).children.filter((c) => doc.get(c)?.attrs[DS_ATTR] !== undefined) : [id];
+  const before = parts.slice(0, Math.max(0, parts.indexOf(id))).map((c) => doc.get(c)?.attrs[DS_ATTR] ?? '');
+  return { first: same[0] === id, last: same[same.length - 1] === id, anyFirst: parts[0] === id, anyLast: parts[parts.length - 1] === id, after: before };
 }
 
 /** Every instance (node with `data-ds`) in the subtrees of `roots`, in document order. */

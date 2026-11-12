@@ -245,18 +245,27 @@ final class LiveAppControl: AppControl {
             guard match(row["name"] as? String ?? "", row["path"] as? String ?? "") else { return nil }
             row["focused"] = c === front
             row["unsaved"] = c.session.hasUnsavedEdits
-            if c.session.fileURL == nil { row["untitled"] = true }
+            if c.session.fileURL == nil {
+                row["untitled"] = true
+                row["recovery_path"] = c.session.packageURL.path
+            }
             return row
         }
         var out: [String: Any] = ["open": open]
         if includeRecent {
-            let openURLs = registry.all.compactMap(\.session.fileURL)
+            let windows = registry.all
             let entries = known.all()
             let iso = ISO8601DateFormatter()
             out["recent"] = recents.items.compactMap { item -> [String: Any]? in
                 guard match(item.name, item.url.path) else { return nil }
-                var row: [String: Any] = ["name": item.name, "path": item.url.path, "last_opened": iso.string(from: item.lastOpened), "open": openURLs.contains { samePath($0, item.url) }]
-                if let entry = entries.first(where: { samePath(URL(fileURLWithPath: $0.path), item.url) }) { row["project_id"] = entry.id }
+                var row: [String: Any] = ["name": item.name, "path": item.url.path, "last_opened": iso.string(from: item.lastOpened), "open": windows.contains { $0.session.shows(item.url) }]
+                if item.isUnsaved {
+                    // Never saved: the recovery package is the only copy. open_project with this path (or the name) opens it as an untitled project; save_project_as then gives it a file.
+                    row["unsaved"] = true
+                    row["recovery_path"] = item.url.path
+                } else if let entry = entries.first(where: { samePath(URL(fileURLWithPath: $0.path), item.url) }) {
+                    row["project_id"] = entry.id
+                }
                 return row
             }
         }
@@ -359,17 +368,19 @@ final class LiveAppControl: AppControl {
         let theme = try string(a, "theme")
         let designSystem = a["design_system"] as? [String: Any]
         if a["design_system"] != nil, !(a["design_system"] is NSNull), designSystem == nil { throw AppToolError("\"design_system\" must be an object of create_design_system arguments.") }
+        let planFirst = (try bool(a, "plan_first")) ?? false
         let pathText = try string(a, "path")
         let from = try string(a, "from_project")
         if let kind, !["design", "deck", "video"].contains(kind) { throw AppToolError("\"kind\" must be design, deck or video.") }
         if theme != nil, designSystem != nil { throw AppToolError("A document has a theme or a design system, not both: pass \"theme\" or \"design_system\".") }
         let files = try attachments(a["attachments"])
+        if planFirst, prompt == nil, files.isEmpty { throw AppToolError("plan_first needs a \"prompt\" (or \"attachments\"): the sidebar agent plans from that brief. Pass the brief, or omit plan_first for a blank project.") }
         let url = try pathText.map { try Self.packageURL($0) }
         if let url, FileManager.default.fileExists(atPath: url.path) { throw AppToolError("\(url.path) already exists. Pick another path, or open_project it.") }
 
         if let from {
             guard let url else { throw AppToolError("from_project copies a project to disk, so it needs \"path\" for the copy. Pass the path, or omit from_project for a blank project.") }
-            if prompt != nil || !files.isEmpty || kind != nil || theme != nil || designSystem != nil {
+            if prompt != nil || !files.isEmpty || kind != nil || theme != nil || designSystem != nil || planFirst {
                 throw AppToolError("from_project makes a copy as it is. Open the copy, then change it with the document tools (apply_theme, update_page) or sidebar_agent.")
             }
             return try await duplicate(ref: from, url: url, open: true, name: name, client: client)
@@ -379,8 +390,9 @@ final class LiveAppControl: AppControl {
         // Plain Home semantics when nothing needs setting up first: the prompt starts with the window.
         let setup = name != nil || kind != nil || theme != nil || designSystem != nil || url != nil
         let request: HomeCoordinator.Request
-        if let prompt, !setup { request = .prompt(prompt, files) }
-        else if prompt == nil, !files.isEmpty, !setup { request = .prompt(HomeAttachment.defaultPrompt, files) }
+        let options = HomeStartOptions(designSystem: nil, planFirst: planFirst)
+        if let prompt, !setup { request = .prompt(prompt, files, options) }
+        else if prompt == nil, !files.isEmpty, !setup { request = .prompt(HomeAttachment.defaultPrompt, files, options) }
         else { request = .blank }
         coordinator.start(request)
         guard let c = await waitForNewWindow(background: (try bool(a, "background")) ?? false, { !before.contains($0.id) }) else {
@@ -404,7 +416,9 @@ final class LiveAppControl: AppControl {
                 guard await c.session.saveAs(to: url) else { throw AppToolError(c.session.lastError ?? "Could not save \(url.path).") }
             }
             if let prompt = prompt ?? (files.isEmpty ? nil : HomeAttachment.defaultPrompt), setup {
-                await c.session.startAgent(with: prompt, attachments: files)
+                // The system was created above; the editor sees it, and tells the agent about it in the first message.
+                let system = try designSystem.map { try JSONDecoder().decode(JSONValue.self, from: try JSONSerialization.data(withJSONObject: $0)) }
+                await c.session.startAgent(with: prompt, attachments: files, options: HomeStartOptions(designSystem: system, planFirst: planFirst))
             }
         } catch let error as AppToolError {
             var out = describe(c)
@@ -489,12 +503,13 @@ final class LiveAppControl: AppControl {
         let session = c.session
         let title = name(of: c)
         var saved = false
+        var keptInRecovery: String?
         if session.fileURL == nil {
             if session.holdsUntitledWork {
                 guard discard else {
-                    throw AppToolError("\"\(title)\" is untitled and has work in it, and closing would lose it. Call save_project_as with a path first, then close_project; or close_project with discard: true if the person asked you to throw it away.")
+                    throw AppToolError("\"\(title)\" is untitled and has work in it. Call save_project_as with a path first, then close_project; or close_project with discard: true to close it without a file (its work stays in Home's Recent list as Unsaved: closing never deletes it).")
                 }
-                session.discardUntitledWork()
+                keptInRecovery = session.packageURL.path
             }
         } else {
             await session.save()
@@ -503,7 +518,13 @@ final class LiveAppControl: AppControl {
         }
         activity.record(client: client, did: "closed \(title)", in: registry.all.filter { $0 !== c })
         c.webView.window?.close()
-        return ["closed": true, "name": title, "saved": saved]
+        var out: [String: Any] = ["closed": true, "name": title, "saved": saved]
+        if let keptInRecovery {
+            out["unsaved"] = true
+            out["recovery_path"] = keptInRecovery
+            out["note"] = "Never saved: the work stays in Home's Recent list as Unsaved (open_project with the recovery_path reopens it)."
+        }
+        return out
     }
 
     private func revealProject(ref: String?) throws -> Any {
@@ -520,10 +541,14 @@ final class LiveAppControl: AppControl {
 
     private func removeRecents(ref: String?, all: Bool, client: String?) throws -> Any {
         if all {
-            let count = recents.items.count
+            // Unsaved documents stay: their recovery package is the only copy, and only the person deletes it (Home).
+            let count = recents.savedCount
             recents.clear()
             activity.record(client: client, did: "cleared the recent documents")
-            return ["removed": count]
+            var out: [String: Any] = ["removed": count]
+            let kept = recents.items.filter(\.isUnsaved).count
+            if kept > 0 { out["kept_unsaved"] = kept }
+            return out
         }
         guard let ref else { throw AppToolError("remove_recent_projects needs \"project\" (a name or path from list_projects' recent list) or all: true.") }
         let hits: [RecentDocument]
@@ -535,6 +560,9 @@ final class LiveAppControl: AppControl {
         }
         guard !hits.isEmpty else { throw AppToolError("No recent document matches \"\(ref)\". list_projects shows the recent list.") }
         guard hits.count == 1 else { throw AppToolError("More than one recent document is called \"\(ref)\": \(hits.map(\.url.path).joined(separator: ", ")). Use the path.") }
+        guard !hits[0].isUnsaved else {
+            throw AppToolError("\"\(hits[0].name)\" was never saved: its recovery copy (\(hits[0].url.path)) is the only copy of that work, so removing it from the list would delete it, and only the person does that (Home > the card's menu > Remove from Recents). To keep it, open_project it and save_project_as a path.")
+        }
         recents.remove(hits[0].url)
         activity.record(client: client, did: "removed \(hits[0].name) from the recent documents")
         return ["removed": hits[0].url.path]
@@ -720,6 +748,8 @@ final class LiveAppControl: AppControl {
                 recovery.append(name(of: c))
             }
         }
+        // An edit made in the last 250 ms is not reported to the host yet: ask the editors that look clean.
+        for c in sessions where !unsaved.contains(where: { $0 === c }) { await c.session.saveIfEditorAhead() }
         activity.record(client: client, did: "is quitting Ocelot")
         // Everything is written: quit without the delegate's second flush (its `.terminateLater` waits for a main-actor job that
         // could never run while this one is inside `terminate`). The reply leaves first; the app exits right after it.
@@ -728,7 +758,7 @@ final class LiveAppControl: AppControl {
             MainActor.assumeIsolated { NSApp.terminate(nil) }
         }
         var out: [String: Any] = ["quitting": true, "saved": saved, "note": "The next tool call starts Ocelot again."]
-        if !recovery.isEmpty { out["kept_in_recovery"] = recovery; out["recovery_note"] = "Untitled projects have no file: they stay in crash recovery and come back at the next launch (save_project_as would have given them a place)." }
+        if !recovery.isEmpty { out["kept_in_recovery"] = recovery; out["recovery_note"] = "Untitled projects have no file: they stay in crash recovery, come back at the next launch and are listed in Home's Recent list as Unsaved (save_project_as would have given them a place)." }
         return out
     }
 }

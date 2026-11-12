@@ -67,6 +67,11 @@ export class QueueTracker {
     this.#meta = [];
   }
 
+  /** The oldest message sent with exactly this text, left in place. */
+  peek(key: string): QueuedMeta | undefined {
+    return this.#meta.find((m) => m.key === key);
+  }
+
   /** The chips for a `queue_update` frame (or `get_state.queuedMessages`); null when the frame has no queue lists. */
   view(frame: Record<string, unknown>): QueueSnapshot | null {
     const lists = (v: unknown): string[] | null => (Array.isArray(v) && v.every((x) => typeof x === 'string') ? (v as string[]) : null);
@@ -80,13 +85,16 @@ export class QueueTracker {
     return { steering: steering.map(item), followUp: followUp.map(item) };
   }
 
-  /** The composer draft for withdrawn messages (omp's chip texts), oldest first: typed texts, blank line between, with their attachments. */
-  draft(keys: readonly string[]): RestoredDraft {
+  /**
+   * The composer draft for withdrawn messages (omp's chip texts), oldest first: typed texts, blank line between, with their attachments.
+   * `known`: what was typed, read before the request, for messages the tracker no longer holds (omp ended the turn before it answered).
+   */
+  draft(keys: readonly string[], known?: ReadonlyMap<string, QueuedMeta | undefined>): RestoredDraft {
     const texts: string[] = [];
     const attachments: Attachment[] = [];
     const references: LayerReference[] = [];
     for (const key of keys) {
-      const meta = this.take(key);
+      const meta = this.take(key) ?? known?.get(key);
       texts.push((meta?.text ?? key).trim());
       if (meta) attachments.push(...meta.attachments);
       if (meta?.references) references.push(...meta.references);
@@ -95,10 +103,15 @@ export class QueueTracker {
   }
 }
 
-/** The texts of a `{ steering: [{ text }], followUp: [{ text }] }` reply (abort_and_restore_queue), steering first. */
+/** The texts of a `{ steering: [{ text }], followUp: [{ text }] }` reply (abort_and_restore_queue), per queue. */
+export function withdrawnQueues(data: unknown): Record<QueueName, string[]> {
+  if (typeof data !== 'object' || data === null) return { steering: [], followUp: [] };
+  const entries = (v: unknown): string[] => (Array.isArray(v) ? v.flatMap((e: unknown) => (typeof e === 'object' && e !== null && 'text' in e && typeof e.text === 'string' ? [e.text] : [])) : []);
+  return { steering: entries('steering' in data ? data.steering : undefined), followUp: entries('followUp' in data ? data.followUp : undefined) };
+}
+
+/** The same texts in one list, steering first (Stop hands them all to the composer). */
 export function withdrawnTexts(data: unknown): string[] {
-  if (typeof data !== 'object' || data === null) return [];
-  const entries = (v: unknown): string[] => (Array.isArray(v) ? v.flatMap((e) => (typeof e === 'object' && e !== null && typeof (e as { text?: unknown }).text === 'string' ? [(e as { text: string }).text] : [])) : []);
-  const d = data as Record<string, unknown>;
-  return [...entries(d['steering']), ...entries(d['followUp'])];
+  const { steering, followUp } = withdrawnQueues(data);
+  return [...steering, ...followUp];
 }

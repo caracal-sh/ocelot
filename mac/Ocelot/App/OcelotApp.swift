@@ -56,14 +56,14 @@ struct OcelotApp: App {
                 .keyboardShortcut("o")
                 Menu("Open Recent") {
                     ForEach(recents.items.prefix(10)) { item in
-                        Button(item.name) {
+                        Button(item.menuTitle) {
                             HomeCoordinator.shared.install(openWindow)
                             HomeCoordinator.shared.open(item.url)
                         }
                     }
                     if !recents.items.isEmpty { Divider() }
                     Button("Clear Menu") { recents.clear() }
-                        .disabled(recents.items.isEmpty)
+                        .disabled(recents.savedCount == 0)
                 }
                 Button("Home") {
                     HomeCoordinator.shared.install(openWindow)
@@ -186,9 +186,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         HomeCoordinator.shared.willTerminate()
         if Self.documentsFlushedForQuit { return .terminateNow }
-        // Edits wait up to ~1.75 s for their autosave: write them out before the process goes away.
+        // Edits wait up to ~1.75 s for their autosave (250 ms in the editor, then 1.5 s here), and an edit of the last
+        // 250 ms is not reported yet: write them out before the process goes away.
         let sessions = EditorRegistry.shared.all.map(\.session)
-        guard sessions.contains(where: \.hasUnsavedEdits) else { return .terminateNow }
+        guard !sessions.isEmpty else { return .terminateNow }
         Task { @MainActor in
             await DocumentSession.flushAll(sessions)
             sender.reply(toApplicationShouldTerminate: true)

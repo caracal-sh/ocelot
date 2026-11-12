@@ -86,6 +86,8 @@ struct StartAttachment: Codable, Sendable, Equatable {
 struct StartWithPromptParams: Codable, Sendable, Equatable {
     var prompt: String
     var attachments: [StartAttachment]? = nil
+    var designSystem: JSONValue? = nil
+    var planFirst: Bool? = nil
 }
 
 struct StartWithPromptResult: Codable, Sendable, Equatable {

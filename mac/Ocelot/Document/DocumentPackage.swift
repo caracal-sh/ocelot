@@ -91,8 +91,10 @@ enum DocumentPackage {
     }
 
     /// Whether the document holds any artboard (what a person would miss): the readable `tree.artboards` list.
-    static func hasArtboards(_ file: DocumentFile) -> Bool {
-        guard case .object(let tree) = file.tree, case .array(let artboards)? = tree["artboards"] else { return false }
+    static func hasArtboards(_ file: DocumentFile) -> Bool { hasArtboards(tree: file.tree) }
+
+    static func hasArtboards(tree: JSONValue) -> Bool {
+        guard case .object(let fields) = tree, case .array(let artboards)? = fields["artboards"] else { return false }
         return !artboards.isEmpty
     }
 

@@ -71,10 +71,12 @@ export function registerCoreEditorMethods(
     }),
     editorEndpoint.register('editor.undo', () => (nativeTextUndo('undo') ? { applied: true } : historyResult(editor.undo()))),
     editorEndpoint.register('editor.redo', () => (nativeTextUndo('redo') ? { applied: true } : historyResult(editor.redo()))),
-    // Home window: a new document that starts with the person's prompt (it appears as their first chat message).
-    editorEndpoint.register('editor.startWithPrompt', async ({ prompt, attachments }) => {
+    // Home window: a new document that starts with the person's prompt (it appears as their first chat message), after it got the design
+    // system they chose (the editor's own create_design_system tool, so it is one undo step like the agent's) and with a plan-first marker.
+    editorEndpoint.register('editor.startWithPrompt', async ({ prompt, attachments, designSystem, planFirst }) => {
       if (!chat) throw new BridgeError('invalid_params', 'This editor has no agent chat to send the prompt to.');
-      return { started: await chat.startWithPrompt(prompt, attachments ?? []) };
+      const style = designSystem === undefined || designSystem === null ? undefined : await ensureDesignSystem(editor, mcp, designSystem);
+      return { started: await chat.startWithPrompt(prompt, attachments ?? [], { ...(planFirst ? { planFirst: true } : {}), ...(style ? { designSystem: style } : {}) }) };
     }),
     editorEndpoint.register('editor.renderPreview', () => renderPreview(editor, host)),
     editorEndpoint.register('editor.exportProgress', (p) => {
@@ -114,6 +116,25 @@ export function registerCoreEditorMethods(
     }),
   ];
   return () => offs.forEach((off) => off());
+}
+
+/**
+ * Gives the new document the design system a start asked for (create_design_system with `args`, stock tokens unless the caller passed more)
+ * and returns its style. A document that already has one (the host's new_project made it) is left alone. A system that cannot be created is
+ * reported in a toast and the start goes on without it: the agent still gets the person's prompt.
+ */
+async function ensureDesignSystem(editor: Editor, mcp: McpServer, args: JsonValue): Promise<string | undefined> {
+  if (!editor.doc.designSystem()) {
+    const input = typeof args === 'object' && args !== null && !Array.isArray(args) ? args : {};
+    const body = JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'create_design_system', arguments: input } });
+    const reply = JSON.parse((await mcp.handle(body)) ?? 'null') as { result?: { isError?: boolean; content?: Array<{ text?: string }> }; error?: { message?: string } } | null;
+    if (reply?.error || reply?.result?.isError) {
+      const why = reply?.error?.message ?? reply?.result?.content?.map((c) => c.text ?? '').join(' ') ?? '';
+      editor.ui.toast(`The design system could not be created${why ? `: ${why}` : ''}. The agent will choose one.`, 'warn');
+      return undefined;
+    }
+  }
+  return editor.doc.designSystem()?.style;
 }
 
 /**

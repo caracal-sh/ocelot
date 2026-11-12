@@ -30,7 +30,7 @@ import {
   type PropSummary,
 } from './docComponents';
 import { designSystemCss } from '../designsystem/export/css';
-import { childrenJsx as uiChildren, contextAreaJsx, createUiExport, iconNode, importedNames, importLines, instanceNode, uiReport, type UiComponents, type UiEnv, type UiExport, type UiReport } from '../designsystem/export/reactComponents';
+import { childrenJsx as uiChildren, contextAreaJsx, createUiExport, helperLines, iconNode, importedNames, importLines, instanceNode, uiReport, type UiComponents, type UiEnv, type UiExport, type UiReport } from '../designsystem/export/reactComponents';
 import type { DesignSystemRecord } from '../designsystem/model';
 import { ownedProps, rootStyles } from '../designsystem/tokens';
 
@@ -149,7 +149,7 @@ export function exportReact(doc: OcelotDocument, id: string, opts: ReactExportOp
   const themeCss = reactThemeCss(name, theme, usedBundledFonts(doc, roots, theme), themed && doc.theme() ? `Theme: ${doc.theme()!.id}` : undefined);
   const css = ds ? { path: `${name}.css`, text: `${designSystemCss(ds)}\n${themeCss?.text ?? ''}` } : themeCss;
   const cssNote = css ? `// Needs ./${css.path}: @import it in your Tailwind stylesheet after @import "tailwindcss" (${ds ? `the "${ds.name}" design system tokens, theme aliases, ` : 'theme variables, '}@theme, @font-face).\n` : '';
-  const code = `${uiOut ? importLines(uiOut) : ''}${docImportLines(links.imports, docs)}${prelude}${cssNote}${uiOut ? uiNote(ds!.name, uiOut) : ''}${links.usedInternal ? REACT_ROUTES_NOTE : ''}export default function ${name}() {\n  return (\n${screen.body}  );\n}\n`;
+  const code = `${uiOut ? importLines(uiOut) : ''}${docImportLines(links.imports, docs)}${prelude}${cssNote}${uiOut ? uiNote(ds!.name, uiOut) : ''}${links.usedInternal ? REACT_ROUTES_NOTE : ''}${uiOut ? helperLines(uiOut) : ''}export default function ${name}() {\n  return (\n${screen.body}  );\n}\n`;
   return {
     componentName: name,
     code,
@@ -247,7 +247,7 @@ function componentFile(sh: Shared, plan: ComponentPlan, screenUi: UiExport | nul
   const prelude = codeExport.layers.length ? reactCodePrelude(codeExport) : '';
   const note = `// The “${plan.def.name}” component of the Ocelot document: write it once, use <${plan.name} … /> for every instance (props below; className and style place it).\n`;
   const code =
-    `${react}${uiOut ? importLines(uiOut) : ''}${docImportLines(links.imports, docs)}${prelude}${note}${uiOut ? uiNote(sh.ds!.name, uiOut) : ''}${links.usedInternal ? REACT_ROUTES_NOTE : ''}\n` +
+    `${react}${uiOut ? importLines(uiOut) : ''}${docImportLines(links.imports, docs)}${prelude}${note}${uiOut ? uiNote(sh.ds!.name, uiOut) : ''}${links.usedInternal ? REACT_ROUTES_NOTE : ''}${uiOut ? helperLines(uiOut) : ''}\n` +
     `${propsDeclaration(plan)}\n${tables.lines.length ? `${tables.lines.join('\n\n')}\n\n` : ''}` +
     `export function ${plan.name}(${propsParams(plan)}) {\n  return (\n${body}  );\n}\n`;
   return { id: plan.def.id, name: plan.name, path: plan.file, code, props: plan.def.props.map((p) => propSummary(doc, p)) };

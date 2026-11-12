@@ -171,6 +171,50 @@ describe('queued chips', () => {
     expect(t.commandsOf('abort_and_restore_queue')).toHaveLength(1);
     expect(input(el).value).toBe('half a thought\n\nMake it blue');
   });
+
+  it('"Send now" on a steering chip stops the step, starts a turn with that message, and puts the other waiting messages back in their queues', async () => {
+    const { el, t } = await mountWorking();
+    await act(async () => void (await t.chat.send('Use the word Fieldnote', [], 'steer')));
+    await act(async () => void (await t.chat.send('Then make it blue')));
+    await act(async () => void (await t.emit([queueUpdate(['Use the word Fieldnote'], ['Then make it blue'])])));
+    t.replies['abort_and_restore_queue'] = () => ({ data: { steering: [{ text: 'Use the word Fieldnote' }], followUp: [{ text: 'Then make it blue' }] } });
+    const turnId = String(t.commandsOf('prompt')[0]!['id']);
+    await act(async () => q(el, 'queue-send-now')!.click());
+    await flush();
+    expect(t.commandsOf('abort_and_restore_queue')).toHaveLength(1);
+    // Nothing is re-sent until the stopped turn has ended.
+    expect(t.commandsOf('prompt')).toHaveLength(3);
+    await act(async () => void (await t.emit([{ type: 'prompt_result', id: turnId, status: 'aborted' }])));
+    await flush();
+    await flush();
+    const prompts = t.commandsOf('prompt').slice(3);
+    expect(prompts[0]).toMatchObject({ type: 'prompt' });
+    expect(String(prompts[0]!['message'])).toContain('Use the word Fieldnote');
+    expect(prompts[0]!['streamingBehavior']).toBeUndefined();
+    expect(String(prompts[1]!['message'])).toContain('Then make it blue');
+    expect(prompts[1]!['streamingBehavior']).toBe('followUp');
+    expect(input(el).value).toBe('');
+  });
+
+  it('"Send now" still sends when omp ends the aborted turn before it answers', async () => {
+    const { el, t } = await mountWorking();
+    await act(async () => void (await t.chat.send('Use the word Fieldnote', [], 'steer')));
+    await act(async () => void (await t.emit([queueUpdate(['Use the word Fieldnote'], [])])));
+    const turnId = String(t.commandsOf('prompt')[0]!['id']);
+    let ended: Promise<unknown> = Promise.resolve();
+    t.replies['abort_and_restore_queue'] = () => {
+      ended = t.emit([{ type: 'prompt_result', id: turnId, status: 'aborted' }]);
+      return { data: { steering: [{ text: 'Use the word Fieldnote' }], followUp: [] } };
+    };
+    await act(async () => q(el, 'queue-send-now')!.click());
+    await act(async () => void (await ended));
+    await flush();
+    await flush();
+    const prompts = t.commandsOf('prompt').slice(2);
+    expect(prompts).toHaveLength(1);
+    expect(String(prompts[0]!['message'])).toContain('Use the word Fieldnote');
+    expect(prompts[0]!['streamingBehavior']).toBeUndefined();
+  });
 });
 
 describe('delivered messages', () => {

@@ -57,13 +57,13 @@ export function parseTransition(value: string | undefined): TransitionParts | 'm
   return { property: parsed.map((p) => p.property).join(', '), duration: first.duration, easing: first.easing, delay: first.delay };
 }
 
-/** null when there is no duration (clears the transition). */
+/** null when there is no duration (clears the transition). An empty property means the default "opacity, transform", never "all". */
 export function composeTransition(p: TransitionParts): string | null {
   const duration = normalizeTime(p.duration);
   if (!duration) return null;
   const delay = normalizeTime(p.delay);
   const props = p.property.split(',').map((s) => s.trim()).filter(Boolean);
-  return (props.length ? props : ['all'])
+  return (props.length ? props : ['opacity', 'transform'])
     .map((prop) => [prop, duration, p.easing, delay && delay !== '0ms' && delay !== '0s' ? delay : ''].filter(Boolean).join(' '))
     .join(', ');
 }

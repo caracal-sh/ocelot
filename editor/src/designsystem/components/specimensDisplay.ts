@@ -1,5 +1,5 @@
 // The Design system page's specimens of P4 batch C (display & layout): disclosure (accordion, collapsible), loading and people (avatar,
-// progress, skeleton, spinner), lists (item, empty), wayfinding (breadcrumb, pagination) and layout (scroll area, aspect ratio, toast).
+// progress, skeleton, spinner), lists (item, empty), wayfinding (breadcrumb, pagination) and layout (scroll area, aspect ratio) and toast.
 // Same rules as specimens.ts: every request goes through `Maker` (a part or prop the style lacks is skipped with a warning), every specimen is
 // as wide as its content needs, and every colour is a token.
 
@@ -196,37 +196,55 @@ function layoutSpecimen(m: Maker): Specimen {
     sized(m.gen(c('scroll-area', { styles: { height: '200px', width: '240px' }, children: [frame('Tags', { padding: '16px' }, [text('Tags', { 'font-size': '14px', 'font-weight': '600', margin: '0 0 12px', color: 'var(--foreground)' }, 'h4'), ...lines])] }))),
   ]);
   const ratio = (value: string | undefined, width: string, label: string) => labelled(label, frame('Ratio frame', { width }, [m.gen(c('aspect-ratio', { ...(value ? { styles: { 'aspect-ratio': value } } : {}), children: [fill()] }))]));
-  const toast = frame('Toast frame', { position: 'relative', width: '420px', height: '120px' }, [
-    m.gen(
-      c('toast-viewport', {
-        children: [
-          c('toast', {
-            children: [
-              c('toast-content', {
-                children: [
-                  frame('Toast text', { display: 'flex', 'min-width': '0', flex: '1 1 0%', 'flex-direction': 'column', gap: '4px' }, [m.gen(c('toast-title', { text: 'Event created' })), m.gen(c('toast-description', { text: 'Sunday, December 03, 2023 at 9:00 AM' }))]),
-                  c('toast-action', { text: 'Undo' }),
-                ],
-              }),
-            ],
-          }),
-        ],
-      }),
-    ),
-  ]);
   return {
-    id: 'scroll-ratio-toast',
-    name: 'Scroll area, aspect ratio & toast',
+    id: 'scroll-ratio',
+    name: 'Scroll area & aspect ratio',
     row: 'components',
     scheme: 'light',
-    width: 960,
-    height: 620,
+    width: 904,
+    height: 340,
     children: [
       row('Layout', [
         section('Scroll area', 'A fixed-size region with a styled scrollbar.', [scroll]),
         section('Aspect ratio', 'Keeps its ratio from the width of its parent (16:9; override with aspect-ratio).', [row('Ratios', [ratio(undefined, '320px', '16:9'), ratio('1', '120px', '1:1')], { gap: '32px', 'align-items': 'flex-start' })]),
       ], { gap: '64px', 'flex-wrap': 'nowrap', 'align-items': 'flex-start' }),
-      section('Toast', 'A transient notification, drawn static: the viewport sits at the bottom-right of its frame.', [toast, caption('Sonner is not part of the Base UI styles; use the toast component.', MUTED)]),
+    ],
+  };
+}
+
+/** Toasts as Base UI stacks them: one, three collapsed (the newest in front), three with the pointer over the viewport. */
+function toastSpecimen(m: Maker): Specimen {
+  const toast = (title: string, description: string, action?: string): ComponentRequest =>
+    c('toast', {
+      children: [
+        c('toast-content', {
+          children: [
+            frame('Toast text', { display: 'flex', 'min-width': '0', flex: '1 1 0%', 'flex-direction': 'column', gap: '4px' }, [m.gen(c('toast-title', { text: title })), m.gen(c('toast-description', { text: description }))]),
+            ...(action ? [c('toast-action', { text: action })] : []),
+            c('toast-close'),
+          ],
+        }),
+      ],
+    });
+  // newest first, as Base UI renders them: the first toast is the one in front
+  const toasts = [toast('Event created', 'Sunday, December 03, 2023', 'Undo'), toast('Invite sent', 'We emailed Sam a link.'), toast('File uploaded', 'report-q4.pdf is ready.')];
+  const stage = (label: string, height: string, kids: ComponentRequest[], expanded = false) =>
+    labelled(label, frame('Toast frame', { position: 'relative', width: '420px', height }, [m.gen(c('toast-viewport', { ...(expanded ? { props: { expanded: true } } : {}), children: kids }))]));
+  return {
+    id: 'toast',
+    name: 'Toast',
+    row: 'components',
+    scheme: 'light',
+    width: 960,
+    height: 520,
+    children: [
+      section('Toast', 'A transient notification at the bottom-right of its frame. A stack is several toasts in one viewport, newest first: the ones behind peek out, scaled, with their content hidden.', [
+        row('Toast states', [
+          column('Collapsed', [stage('One toast', '110px', toasts.slice(0, 1)), stage('Collapsed stack of three', '140px', toasts)], { gap: '24px' }),
+          stage('Expanded (pointer over the viewport)', '290px', toasts, true),
+        ], { gap: '32px', 'flex-wrap': 'nowrap', 'align-items': 'flex-start' }),
+        caption('Toasts close after 5 s (the timer pauses on hover and focus), swipe away down or right, and show at most three.', MUTED),
+      ]),
     ],
   };
 }
@@ -247,6 +265,7 @@ export function appendDisplaySpecimens(specimens: Specimen[], warnings: string[]
   add('Avatar, progress & loading', m.has('avatar') && m.has('progress') && m.has('skeleton') && m.has('spinner'), loadingSpecimen);
   add('Item & empty', m.has('item') && m.has('empty') && m.has('button'), listsSpecimen);
   add('Breadcrumb & pagination', m.has('breadcrumb') && m.has('pagination'), wayfindingSpecimen);
-  add('Scroll area, aspect ratio & toast', m.has('scroll-area') && m.has('aspect-ratio') && m.has('toast'), layoutSpecimen);
+  add('Scroll area & aspect ratio', m.has('scroll-area') && m.has('aspect-ratio'), layoutSpecimen);
+  add('Toast', m.has('toast'), toastSpecimen);
   warnings.push(...m.warnings);
 }

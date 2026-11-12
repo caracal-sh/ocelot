@@ -32,8 +32,8 @@ import { stateClasses, type MotionExport } from '../../export/motion';
 import type { ComponentChild, ComponentRequest } from '../components/types';
 import { ComponentError } from '../components/errors';
 import { childPartFlags, contextFlags, DS_ATTR, DS_PROPS_ATTR, generate, iconFlags, iconPositions, resolveProps } from '../components/generate';
-import { ancestorParts, BLOCK_ATTR, readProps, SCHEME_ATTR, schemeOf } from '../components/instances';
-import { flattenLayer, flattenSpec, siblingsOf } from '../components/refresh';
+import { ancestorParts, BLOCK_ATTR, readProps, SCHEME_ATTR, schemeOf, siblingsOf } from '../components/instances';
+import { flattenLayer, flattenSpec } from '../components/refresh';
 import { createComponentSet, loadComponentSet, type ComponentSet } from '../components/set';
 import { isSlot, hasSlot, type PartNode, type PartTemplate } from '../components/specs';
 import { composePart } from '../snapshot/compose';
@@ -114,10 +114,12 @@ export interface UiExport {
   consumed: Set<string>;
   /** Navigation item id -> the flyout contents drawn beside the bar that belong to it. */
   attached: Map<string, string[]>;
+  /** Top-level declarations the file needs next to its component (the small component that adds a toast stack to the Toaster). */
+  helpers: string[];
 }
 
 export function createUiExport(): UiExport {
-  return { imports: new Map(), components: new Set(), fallbacks: [], warnings: [], wrapped: new Set(), values: new Map(), samples: new Map(), triggers: new Set(), subs: new Map(), subsOpen: new Set(), consumed: new Set(), attached: new Map() };
+  return { imports: new Map(), components: new Set(), fallbacks: [], warnings: [], wrapped: new Set(), values: new Map(), samples: new Map(), triggers: new Set(), subs: new Map(), subsOpen: new Set(), consumed: new Set(), attached: new Map(), helpers: [] };
 }
 
 /** Names of every imported binding (the exported function must not shadow one). */
@@ -136,6 +138,11 @@ function use(out: UiExport, module: string, name: string): string {
   if (!s) out.imports.set(module, (s = new Set()));
   s.add(name);
   return name;
+}
+
+/** The declarations of `out.helpers`, ready to put between the imports and the exported component. */
+export function helperLines(out: UiExport): string {
+  return out.helpers.map((h) => `${h}\n`).join('');
 }
 
 /** The parts of the page `export_react` hands back so the caller can say what to install. */
@@ -507,7 +514,8 @@ function virtualRootOf(env: UiEnv, n: NodeData): { component: string; fn: string
   const part = n.attrs[DS_ATTR];
   const tpl = part ? env.ui.set.part(part) : undefined;
   // the bar itself is a real layer, not inside a MenubarMenu
-  if (!tpl || part === 'menubar' || env.out.wrapped.has(n.id)) return null;
+  // (a toast viewport becomes the registry's `Toaster`, see `toastExport`, which brings its own provider)
+  if (!tpl || part === 'menubar' || tpl.component === 'toast' || env.out.wrapped.has(n.id)) return null;
   const virtual = env.ui.set.specs.components[tpl.component]?.virtual[0];
   if (!virtual) return null;
   for (let p = n.parent ? env.doc.get(n.parent) : null; p; p = p.parent ? env.doc.get(p.parent) : null) {
@@ -517,6 +525,46 @@ function virtualRootOf(env: UiEnv, n: NodeData): { component: string; fn: string
   }
   const entry = env.ui.slots.get(tpl.part);
   return { component: tpl.component, fn: virtual.fn ?? entry?.fn ?? pascal(virtual.part) };
+}
+
+// ---------- toasts ----------
+
+/**
+ * Toasts are not layers a page places: Base UI draws them from a toast manager (newest in front, the stack fans out when the pointer is over it)
+ * in a portal at the bottom-right corner of the window, which is what the design's viewport frame draws. A viewport instance therefore becomes the
+ * registry's `<Toaster>` and one small component that adds the design's toasts to its manager on mount, oldest first (Base UI puts the newest in
+ * front). Only a toast's title, description and action carry over: the Toaster draws the rest (the close button, the layout) from `ui/toast.tsx`.
+ */
+function toastExport(env: UiEnv, n: NodeData, depth: number, fail: (reason: string) => UiResult): UiResult {
+  const { doc, out } = env;
+  const part = n.attrs[DS_ATTR]!;
+  if (part !== 'toast-viewport') return fail('a toast is drawn by the Toaster from its toast manager: put it inside a toast viewport');
+  const toasts = n.children.filter((id) => partOf(env, id) === 'toast' && !doc.require(id).hidden);
+  if (!toasts.length) return fail('a toast viewport with no toast draws nothing');
+  const textIn = (id: string, slot: string): string => instancesBelow(env, id, [slot], 'toast').map((i) => textOf(doc, i)).find(Boolean) ?? '';
+  const calls = toasts.map((id) => {
+    const title = textIn(id, 'toast-title');
+    const description = textIn(id, 'toast-description');
+    const action = textIn(id, 'toast-action');
+    if (!title && !description) out.warnings.push(`${doc.require(id).name}: a toast with neither a title nor a description exports as an empty toast.`);
+    const fields = [title && `title: ${JSON.stringify(title)}`, description && `description: ${JSON.stringify(description)}`, action && `actionProps: { children: ${JSON.stringify(action)} }`, 'timeout: 0'].filter(Boolean);
+    return `      toasts.add({ ${fields.join(', ')} }),`;
+  });
+  if (hasExplicitFlag(n, 'expanded')) out.warnings.push(`${n.name}: the design draws the toast stack open (hovered); the exported Toaster opens it when the pointer is over it.`);
+  const taken = importedNames(out);
+  for (const h of out.helpers) taken.add(/^function (\w+)/.exec(h)?.[1] ?? '');
+  let helper = 'DesignToasts';
+  for (let i = 2; taken.has(helper); i++) helper = `DesignToasts${i}`;
+  const toaster = use(out, moduleOf(env, 'toast'), 'Toaster');
+  const manager = use(out, moduleOf(env, 'toast'), 'useToastManager');
+  const effect = use(out, 'react', 'useEffect');
+  out.components.add('toast');
+  out.helpers.push(
+    `// Base UI draws toasts from its toast manager (newest in front; the stack fans out on hover), so the design's stack is added on mount, oldest first.\n` +
+      `// They stay until dismissed, like the design: drop \`timeout: 0\` for the default 5 s.\n` +
+      `function ${helper}() {\n  const toasts = ${manager}();\n  ${effect}(() => {\n    const ids = [\n${calls.reverse().join('\n')}\n    ];\n    return () => ids.forEach((id) => toasts.close(id));\n  }, []);\n  return null;\n}\n`,
+  );
+  return { jsx: `${pad(depth)}<${toaster}>\n${pad(depth + 1)}{/* The Toaster draws toasts in a portal at the bottom-right of the window: the design's viewport frame is a picture of that corner. */}\n${pad(depth + 1)}<${helper} />\n${pad(depth)}</${toaster}>\n` };
 }
 
 // ---------- overlays: triggers, open state, submenus ----------
@@ -760,6 +808,7 @@ export function instanceNode(env: UiEnv, n: NodeData, depth: number, opts: { cla
   const { doc, ui, out } = env;
   const tpl: PartTemplate | undefined = ui.set.part(part);
   if (!tpl) return fail(`"${part}" is not a part of the ${ui.set.style} style (an older snapshot or another style)`);
+  if (tpl.component === 'toast') return toastExport(env, n, depth, fail);
 
   // A part that needs a context root nobody provides cannot render: Base UI throws.
   const info = ui.set.specs.components[tpl.component];

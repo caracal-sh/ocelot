@@ -114,7 +114,7 @@ const settle = async () => {
 await settle();
 let ids = await specimenIds();
 const partial = process.env.DS_PAGE_PARTIAL === '1'; // while a style's specs lack parts: report instead of failing
-for (const sp of ['colour-roles', 'typography', 'radius-elevation-spacing', 'iconography', 'buttons', 'form-controls', 'cards-alerts', 'navigation', 'overlays', 'data', 'dark-mode', 'disclosure', 'loading-and-people', 'lists-and-empty', 'wayfinding', 'scroll-ratio-toast']) {
+for (const sp of ['colour-roles', 'typography', 'radius-elevation-spacing', 'iconography', 'buttons', 'form-controls', 'cards-alerts', 'navigation', 'overlays', 'data', 'dark-mode', 'disclosure', 'loading-and-people', 'lists-and-empty', 'wayfinding', 'scroll-ratio', 'toast']) {
   if (!ids[sp] && partial) console.log(`(partial) specimen ${sp} missing`);
   else assert.ok(ids[sp], `specimen ${sp} exists`);
 }

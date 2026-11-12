@@ -85,6 +85,7 @@ export const OVERLAY_ENTRIES: CatalogEntry[] = [
     rules: [
       'Draw it open: a relative frame (give it a width and height) holding `drawer-overlay` (a leaf) and `drawer-content` as its SIBLING. `direction` (down, up, left, right) is the edge it is pinned to; down is the bottom drawer.',
       'A drawer always has a `drawer-title`. `drawer-swipe-handle` is the optional grab bar: put it first inside `drawer-content`.',
+      'It is dragged closed toward its edge (Base UI follows the finger and keeps the release speed), so on touch screens show `drawer-swipe-handle` and keep the main action in `drawer-footer`, within thumb reach. A bottom drawer is for phones; a side panel on a desktop is a `sheet`.',
       MODAL_EXPORT,
     ],
     example:

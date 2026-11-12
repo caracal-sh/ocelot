@@ -77,16 +77,18 @@ enum NewCommand: Subcommand {
     static let summary = "Create a project, optionally from a prompt (the app tool new_project)"
     static let usage = """
     Usage: ocelot new [<name>] [--prompt <text>] [--attach <file>]... [--kind design|deck|video] [--theme <id>]
-                      [--path <file.ocelot>] [--from <project>] [--background] [--json]
+                      [--design-system <style>] [--plan-first] [--path <file.ocelot>] [--from <project>] [--background] [--json]
 
     Creates a project in a new editor window (starting Ocelot if needed), like Home's Blank document or, with --prompt,
     like typing the brief on Home: the sidebar agent starts on it. --attach adds an image or text file to the brief
     (repeatable). --kind deck or video makes the first page a presentation or a film; --theme applies a theme before the
-    agent starts; --path saves it right away; --from copies an existing project (with --path). Prints the new project id.
+    agent starts; --design-system gives the document a design system of that style (nova, vega, maia, lyra, mira, luma,
+    rhea or sera) first; --plan-first (with --prompt) makes the agent ask you questions and show a plan before it builds;
+    --path saves it right away; --from copies an existing project (with --path). Prints the new project id.
     """
 
     static func run(_ args: [String]) throws -> Int32 {
-        let parsed = try Args(args, valueOptions: ["--prompt", "--attach", "--kind", "--theme", "--path", "--from"], flags: ["--json", "--background"])
+        let parsed = try Args(args, valueOptions: ["--prompt", "--attach", "--kind", "--theme", "--design-system", "--path", "--from"], flags: ["--json", "--background", "--plan-first"])
         guard parsed.positionals.count <= 1 else { throw CLIError(message: "Pass the project name as one argument (quote it). Usage: ocelot new [<name>] [--prompt <text>]", code: 2) }
         return try AppToolRunner.print(try AppToolRunner.call("new_project", try arguments(parsed)), json: parsed.flag("--json"), name: "new_project")
     }
@@ -104,8 +106,10 @@ enum NewCommand: Subcommand {
             }
         }
         for (flag, key) in [("--kind", "kind"), ("--theme", "theme"), ("--from", "from_project")] { if let v = parsed.value(flag) { arguments[key] = v } }
+        if let style = parsed.value("--design-system") { arguments["design_system"] = ["style": style] }
         if let path = parsed.value("--path") { arguments["path"] = (path as NSString).expandingTildeInPath }
         if parsed.flag("--background") { arguments["background"] = true }
+        if parsed.flag("--plan-first") { arguments["plan_first"] = true }
         return arguments
     }
 }
@@ -188,7 +192,7 @@ enum CloseCommand: Subcommand {
     Usage: ocelot close [--project <id|name>] [--discard] [--json]
 
     Saves the project, then closes its window. An untitled project with work in it is not closed (`ocelot save --as <path>` first),
-    unless you pass --discard to throw it away.
+    unless you pass --discard to close it anyway (the work stays in Home's Recent list as Unsaved).
     """
 
     static func run(_ args: [String]) throws -> Int32 {

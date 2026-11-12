@@ -632,25 +632,99 @@ export const GROUPS = [
     };
   })(),
   (() => {
-    const stack = (...kids) => P('toast-provider', {}, P('toast-viewport', {}, ...kids));
-    const toast = (obj, ...kids) => P('toast', { react: { toast: { id: 't1', priority: 'low', ...obj } } }, P('toast-content', {}, ...kids));
+    const BEHIND = ['behind-1', 'behind-2', 'behind-3'];
+    const EXPAND = { part: 'toast-viewport', flag: 'expanded' };
+    // ---------- toast: Base UI's runtime variables as layout a static layer can hold ----------
+    //
+    // Base UI sizes and places a toast from measurements: --toast-height (its natural height), --toast-frontmost-height, --toast-offset-y (the heights of the
+    // toasts in front of it) and --toast-index, which the registry's classes turn into `height: <px>` and `transform: translateY(<px>) scale(<n>)` from the
+    // bottom edge. Those pixel counts are the sample's content and would be wrong for any other text, so the layers state the same picture without them:
+    //  - collapsed: the front toast is in the flow (the viewport is as tall as it), a toast behind it is `position: absolute; height: 100%` (the front's
+    //    height, as Base UI clamps it) and scales from its TOP edge, so its translate is just `-index * 0.75rem` (Base UI's `scale from the bottom edge,
+    //    then move up by index * peek + shrink * height` is the same transform);
+    //  - expanded: the viewport is a column (`column-reverse`: the newest is first and sits at the bottom) with a 0.75rem gap and every toast has its own
+    //    natural height, which is what the translateY(-(offset + index * gap)) draws.
+    /** Pixels of what Base UI's variables leave in a resolved declaration (`calc(0px - (1 * .75rem) - ...)`). */
+    function toastPx(expr) {
+      const js = expr.replace(/calc\(/g, '(').replace(/max\(/g, 'Math.max(').replace(/min\(/g, 'Math.min(').replace(/(-?\d*\.?\d+)rem/g, '($1*16)').replace(/(-?\d*\.?\d+)px/g, '$1');
+      if (/[^\d\s.+\-*/(),Mathmxin]/.test(js)) throw new Error(`toast: cannot evaluate "${expr}"`);
+      return Function(`"use strict"; return (${js})`)();
+    }
+    const callArgs = (text, fn) => {
+      const at = text.indexOf(`${fn}(`);
+      if (at < 0) throw new Error(`toast: no ${fn}() in "${text}"`);
+      let depth = 0;
+      for (let i = at + fn.length; i < text.length; i++) {
+        if (text[i] === '(') depth++;
+        else if (text[i] === ')' && --depth === 0) return text.slice(at + fn.length + 1, i);
+      }
+      throw new Error(`toast: unbalanced ${fn}() in "${text}"`);
+    };
+    const round = (n) => +n.toFixed(3);
+
+    // Base UI hides the content of a toast behind the front one with `opacity: 0`; the layer also says `visibility: hidden`, which paints the same and tells
+    // the canvas, the inspector and a click that this text is not there (it would otherwise be text on top of the front toast's text)
+    function fixContent(root) {
+      if (root.attrs?.['data-behind'] !== undefined && root.attrs?.['data-expanded'] === undefined) root.styles.visibility = 'hidden';
+    }
+
+    function fixViewport(root) {
+      if (root.attrs?.['data-expanded'] === undefined) return;
+      Object.assign(root.styles, { display: 'flex', 'flex-direction': 'column-reverse', gap: '0.75rem' });
+    }
+
+    function fixToast(root) {
+      const st = root.styles;
+      const z = /^calc\(1000 - (\d+)\)$/.exec(st['z-index'] ?? '');
+      if (!z) throw new Error(`toast: z-index "${st['z-index']}" is no longer calc(1000 - index): the registry's classes changed, update fixToast (catalog.mjs)`);
+      const index = Number(z[1]);
+      st['z-index'] = String(1000 - index);
+      if (root.attrs) delete root.attrs.inert; // a toast beyond the limit is inert in the page; a layer must stay selectable
+      const expanded = root.attrs?.['data-expanded'] !== undefined;
+      if (!expanded && index > 0) {
+        const height = toastPx(st.height);
+        const scale = round(toastPx(callArgs(st.transform, 'scale')));
+        const up = round(toastPx(callArgs(st.transform, 'translateY')) + (1 - scale) * height);
+        Object.assign(st, { position: 'absolute', height: '100%', 'transform-origin': 'center top', transform: `translateY(${up}px) scale(${scale})` });
+        return;
+      }
+      for (const k of ['height', 'transform', 'transform-origin', 'right', 'bottom']) delete st[k];
+      st.position = 'relative';
+    }
+    const viewport = (opts, ...toasts) => P('toast-provider', {}, P('toast-viewport', opts, ...toasts));
+    const toast = (id, obj, ...kids) => P('toast', { react: { toast: { id, priority: 'low', ...obj } } }, P('toast-content', {}, ...kids));
     const body = (title, description) => L({ display: 'flex', 'min-width': '0', flex: '1 1 0%', 'flex-direction': 'column', gap: '4px' }, P('toast-title', {}, title), P('toast-description', {}, description));
-    const sample = () => stack(toast({ type: 'success' }, body('Event created', 'Sunday, December 03, 2023 at 9:00 AM'), P('toast-action', {}, 'Undo'), P('toast-close')));
+    const front = () => toast('t1', {}, body('Event created', 'Sunday, December 03, 2023 at 9:00 AM'), P('toast-action', {}, 'Undo'), P('toast-close'));
+    const older = (n) => toast(`t${n}`, {}, body(['', '', 'Invite sent', 'File uploaded', 'Settings saved'][n], ['', '', 'We emailed Sam a link to the project.', 'report-q4.pdf is ready to share.', 'Your changes are live.'][n]), P('toast-close'));
+    // a short toast in front of a tall one: collapsed, the one behind is clamped to the front's height; expanded, each keeps its own
+    const short = () => toast('t1', {}, body('Saved', 'Changes saved.'), P('toast-close'));
+    const tall = (n) => toast(`t${n}`, {}, body('Backup finished', 'Your workspace was backed up and three collaborators were told about it by mail.'), P('toast-action', {}, 'View'), P('toast-close'));
     return {
       component: 'toast',
       virtual: [{ part: 'toast-provider', fn: 'ToastProvider' }],
       parts: {
-        'toast-viewport': { from: 'main' },
-        toast: { from: 'main' },
-        'toast-content': { from: 'main' },
+        // `expanded` is the hovered stack (Base UI marks the viewport, every toast and every content `data-expanded`): the harness plays the pointer over the viewport
+        // (`harness` props reach only the harness, never the part's React props in the export)
+        'toast-viewport': { from: 'main', flags: { expanded: { harness: { hover: true } } }, fix: fixViewport },
+        // behind-1/-2/-3 are the toasts after the first in a viewport (Base UI's --toast-index); `limited` (index 3 and up) is hidden
+        toast: { from: 'main', stack: { parent: 'toast-viewport', composite: 'stack', flags: BEHIND, expand: EXPAND }, fix: fixToast },
+        'toast-content': { from: 'main', stack: { via: 'toast', composite: 'stack', flags: BEHIND, expand: EXPAND }, fix: fixContent },
         'toast-title': { from: 'main' },
         'toast-description': { from: 'main' },
         // hovering a toast expands Base UI's stack (data-expanded), which a static layer cannot show: the states are not compared
         'toast-action': { from: 'main', interactive: true, statesCheck: false },
         'toast-close': { from: 'main', structure: ['any'], interactive: true, statesCheck: false },
       },
-      composites: { main: { overlay: true, tree: sample() } },
-      specimens: [{ id: 'toast', overlay: true, tree: L({ height: '120px', width: '420px' }, sample()) }],
+      // what get_component shows: the layout frame around the title and description is not part of a request tree, so they are plain children here
+      exampleTree: viewport({}, P('toast', {}, P('toast-content', {}, P('toast-title', {}, 'Event created'), P('toast-description', {}, 'Sunday, December 03, 2023 at 9:00 AM'), P('toast-action', {}, 'Undo'), P('toast-close')))),
+      composites: { main: { overlay: true, tree: viewport({}, front()) }, stack: { overlay: true, tree: viewport({}, front(), older(2), older(3), older(4)) } },
+      specimens: [
+        { id: 'toast', overlay: true, tree: L({ height: '120px', width: '420px' }, viewport({}, front())) },
+        { id: 'toast-stack', overlay: true, tree: L({ height: '150px', width: '420px' }, viewport({}, front(), older(2), older(3))) },
+        { id: 'toast-stack-expanded', overlay: true, tree: L({ height: '270px', width: '420px' }, viewport({ flags: ['expanded'] }, front(), older(2), older(3))) },
+        { id: 'toast-stack-mixed', overlay: true, tree: L({ height: '150px', width: '420px' }, viewport({}, short(), tall(2))) },
+        { id: 'toast-stack-mixed-expanded', overlay: true, tree: L({ height: '230px', width: '420px' }, viewport({ flags: ['expanded'] }, short(), tall(2))) },
+      ],
     };
   })(),
   // ---------- P4 batch A: form & input ----------
@@ -1238,7 +1312,7 @@ export function toHarness(n) {
   if ('el' in n) return { el: n.el, style: cssObject(n.style), ...(n.text !== undefined ? { text: n.text } : { children: (n.children ?? []).map(toHarness) }) };
   const hooked = partDef(n.part)?.propApply ?? {};
   const p = { ...Object.fromEntries(Object.entries(n.props ?? {}).filter(([k]) => !(k in hooked))), ...(n.attrs ?? {}) };
-  for (const f of n.flags ?? []) Object.assign(p, partDef(n.part)?.flags?.[f]?.react ?? {});
+  for (const f of n.flags ?? []) Object.assign(p, partDef(n.part)?.flags?.[f]?.react ?? {}, partDef(n.part)?.flags?.[f]?.harness ?? {});
   Object.assign(p, n.react ?? {});
   const style = { ...(n.style ?? {}), ...(p.style ?? {}) };
   delete p.style;

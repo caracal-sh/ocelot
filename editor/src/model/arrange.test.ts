@@ -358,3 +358,31 @@ describe('new artboard placement', () => {
     expect(doc.has(there)).toBe(true);
   });
 });
+
+describe('an agent artboard that grows', () => {
+  it('pushes the rows below it down, keeping their gap, and leaves user-locked artboards and a person\'s resize alone', () => {
+    const { doc, ops, pos } = setup();
+    const agent = doc.ops(ORIGIN.agent);
+    const kunde = ops.createArtboard({ name: 'Kunde / 1 Start — Desktop', preset: 'desktop' });
+    const kunde2 = ops.createArtboard({ name: 'Kunde / 2 Ergebnis — Desktop', preset: 'desktop' });
+    const profi = ops.createArtboard({ name: 'Profi / 1 Leads — Desktop', preset: 'desktop' });
+    const profi2 = ops.createArtboard({ name: 'Profi / 2 Lead — Desktop', preset: 'desktop' });
+    expect(pos(profi)).toEqual({ x: 0, y: 900 + 240 });
+    agent.setArtboardFrame(kunde, { height: 2072 });
+    expect(pos(profi)).toEqual({ x: 0, y: 2072 + 240 });
+    expect(pos(profi2)).toEqual({ x: 1440 + 120, y: 2072 + 240 });
+    expect(pos(kunde2)).toEqual({ x: 1440 + 120, y: 0 });
+    // Shrinking or growing within the gap moves nothing.
+    agent.setArtboardFrame(kunde, { height: 2000 });
+    expect(pos(profi).y).toBe(2072 + 240);
+    // A person's resize is their choice: nothing moves.
+    ops.setArtboardFrame(kunde, { height: 3000 });
+    expect(pos(profi).y).toBe(2072 + 240);
+    // A user-locked artboard stays put; the others still make room.
+    ops.setArtboardFrame(kunde, { height: 2072 });
+    ops.setLocked(profi2, true);
+    agent.setArtboardFrame(kunde2, { height: 2600 });
+    expect(pos(profi).y).toBe(2600 + 240);
+    expect(pos(profi2).y).toBe(2072 + 240);
+  });
+});

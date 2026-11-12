@@ -26,6 +26,7 @@ import { rejectAttr, toKebab } from './styles';
 import { isInternalLink, linkEquals, normalizeLink, readLink } from './links';
 import { STARTER_CODE, STARTER_LIBRARIES, cloneCode, normalizeCode, readCode, writeCode } from './code';
 import {
+  DEFAULT_ROW_GAP,
   planArrangement,
   planPlacement,
   type ArrangeItem,
@@ -839,6 +840,7 @@ export class DocumentOps {
     this.assertFrame(id, frame);
     this.transact(() => {
       const f = n.get('frame') as Y.Map<number>;
+      const before = { y: f.get('y') ?? 0, height: f.get('height') ?? 0 };
       let resized = false;
       for (const key of ['x', 'y', 'width', 'height'] as const) {
         const v = frame[key];
@@ -850,7 +852,29 @@ export class DocumentOps {
       // A slide / scene that changes size keeps the row tidy: the others slide over (the same undo step). Setting a position is the person's choice and stays.
       const page = this.doc.pageOfArtboard(id);
       if (resized && frame.x === undefined && frame.y === undefined && page && isSlideKind(this.doc.pageKind(page))) this.layoutSlideRow(page);
+      else if (resized && frame.y === undefined && page && this.origin === ORIGIN.agent) this.makeRoomBelow(id, page, before.y + before.height);
     });
+  }
+
+  /**
+   * An agent's artboard that grew taller (height "fit-content", a longer page) pushes everything below it down instead of
+   * covering it: screens built in parallel are placed while they are still short, and the next row sat where the old bottom
+   * ended. The gap that was there is kept (at most a row gap); user-locked artboards stay put; a person's own resize never moves others.
+   */
+  private makeRoomBelow(id: string, pageId: string, oldBottom: number): void {
+    const grown = this.doc.require(id).frame!;
+    const newBottom = grown.y + grown.height;
+    if (newBottom <= oldBottom) return;
+    const below = this.doc.artboardIds(pageId).flatMap((other) => {
+      const node = other === id ? undefined : this.doc.get(other);
+      return node?.frame && node.frame.y >= oldBottom ? [{ id: other, frame: node.frame, locked: node.locked }] : [];
+    });
+    const under = below.filter((o) => o.frame.x < grown.x + grown.width && o.frame.x + o.frame.width > grown.x);
+    if (!under.length) return;
+    const nearest = Math.min(...under.map((o) => o.frame.y));
+    const shift = newBottom + Math.min(nearest - oldBottom, DEFAULT_ROW_GAP) - nearest;
+    if (shift <= 0) return;
+    for (const o of below) if (!o.locked) (this.doc.ynode(o.id).get('frame') as Y.Map<number>).set('y', o.frame.y + shift);
   }
 
   // ---------- pages ----------

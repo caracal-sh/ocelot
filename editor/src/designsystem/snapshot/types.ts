@@ -224,6 +224,12 @@ export interface PartTemplate {
    * switch it on when one of them stands before the instance in the same parent. `generate` and `instantiate` set them when they know the siblings.
    */
   peerFlags?: Record<string, string[]>;
+  /**
+   * Flags a part gets from its index among the siblings of its own part in `parent` (Base UI places a toast by `--toast-index`): `flags[i]` is the flag of
+   * the sibling at index `i + 1` (the first one has none, an index past the end takes the last). `generate` and `instantiate` set them from the siblings
+   * before the instance, when the nearest part ancestor is `parent`. They are context flags (`contextFlags`), never the caller's.
+   */
+  stackFlags?: { parent: string; flags: string[] };
 }
 
 export interface ComponentInfo {
