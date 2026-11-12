@@ -124,7 +124,7 @@ try {
   writeFileSync(`${OUT}/prompt.txt`, prompt);
   check(prompt.includes(`Ocelot project ${projectId}`), 'the prompt names the project and its id');
   check(prompt.includes(`- Home: 1440×900, id ${home}, route /home`) && prompt.includes(`- Pricing: 1440×900, id ${pricing}, route /pricing`), 'the prompt lists both screens with size, id and route');
-  check(prompt.includes('- Home (/home) → Pricing (/pricing) via “') && prompt.includes('- Pricing (/pricing) → Home (/home) via “'), 'the prompt lists the flows');
+  check(/On \/home:\n- “[^”]+” → \/pricing\n/.test(prompt) && /On \/pricing:\n- “[^”]+” → \/home\n/.test(prompt), 'the prompt lists the flows');
   check(/Design system: “Acme”: shadcn nova style/.test(prompt) && /Preset code \w+/.test(prompt), 'the prompt names the design system and its preset code');
   const order = ['get_handoff', 'get_screenshot', 'Install the design system', 'Adapt `code/`', 'get_links'].map((t) => prompt.indexOf(`. ${t}`));
   check(order.every((i) => i > 0) && [...order].sort((a, b) => a - b).join() === order.join(), 'the steps come in order: get_handoff (files inline), get_screenshot, install the registry, adapt code/, get_links');
@@ -191,12 +191,12 @@ try {
   const md = await readFile(join(folder, 'HANDOFF.md'), 'utf8');
   writeFileSync(`${OUT}/HANDOFF.md`, md);
   check(md.includes('| Home | 1440×900 | `screens/home@2x.png` | `code/Home.tsx` | `/home` |') && md.includes('| Pricing | 1440×900 | `screens/pricing@2x.png` | `code/Pricing.tsx` | `/pricing` |'), 'HANDOFF.md lists the screens with their files and routes');
-  check(md.includes('- Home (/home) → Pricing (/pricing) via “') && md.includes('- Pricing (/pricing) → Home (/home) via “'), 'HANDOFF.md lists the flows');
+  check(/On \/home:\n- “[^”]+” → \/pricing\n/.test(md) && /On \/pricing:\n- “[^”]+” → \/home\n/.test(md), 'HANDOFF.md lists the flows');
   check(md.includes('## How to run it') && md.includes('./design-system/r/acme.json'), 'HANDOFF.md says how to run it and how to install the design system');
   check(md.includes('## Motion') && md.includes('### Home') && md.includes('- “Learn more”: hover: background-color #1f2937; pressed: scale 0.96;') && md.includes('animation `rise-in` 600ms') && md.includes('### Implementing the motion') && md.indexOf('## Motion') < md.indexOf('## Constraints'), 'HANDOFF.md has the Motion section for Home (pressed scale, the entrance) and "Implementing the motion"');
   const flows = JSON.parse(await readFile(join(folder, 'flows.json'), 'utf8'));
   check(flows.screens[0].motion?.states.some((s) => s.layer === 'Learn more') && flows.screens[0].motion.animations.length === 1 && flows.screens[1].motion.animations.length === 0, 'flows.json carries the motion blocks');
-  check(flows.screens.length === 2 && flows.flows.length === 2 && flows.screens[0].component === 'code/Home.tsx', 'flows.json has the screens and the flows');
+  check(flows.screens.length === 2 && flows.flows.reduce((n, g) => n + g.from.length * g.links.length, 0) === 2 && flows.screens[0].component === 'code/Home.tsx', 'flows.json has the screens and the flows');
   const homeCode = await readFile(join(folder, 'code/Home.tsx'), 'utf8');
   check(/from "@\/components\/ui\/button"/.test(homeCode) && homeCode.includes('"/pricing"'), 'code/Home.tsx imports the design system\'s Button and links to /pricing');
   check(homeCode.includes('active:[scale:0.96]!') && homeCode.includes('hover:bg-[#1f2937]!') && homeCode.includes('focus-visible:[outline:2px_solid_#2563eb]!') && homeCode.includes('[transition:background-color_150ms_ease,scale_150ms_cubic-bezier(0.23,1,0.32,1)]'), 'code/Home.tsx carries the button\'s hover, pressed and focus states and its transition');

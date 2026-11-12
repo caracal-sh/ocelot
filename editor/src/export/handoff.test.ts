@@ -102,29 +102,41 @@ describe('buildHandoff: flows', () => {
     const { editor, home, pricing, signup } = flow();
     const h = buildHandoff(src(editor), { scope: 'document' });
     expect(h.flows).toEqual([
-      { from: { id: home, name: 'Home', route: '/home' }, via: { node_id: expect.any(String), name: 'Nav / Pricing' }, to: { id: pricing, name: 'Pricing — Desktop', route: '/pricing-desktop', in_handoff: true } },
-      { from: { id: home, name: 'Home', route: '/home' }, via: { node_id: expect.any(String), name: 'Logo' }, to: { url: 'https://example.com/' } },
-      { from: { id: pricing, name: 'Pricing — Desktop', route: '/pricing-desktop' }, via: { node_id: expect.any(String), name: 'Nav / Home' }, to: { id: home, name: 'Home', route: '/home', in_handoff: true } },
-      { from: { id: pricing, name: 'Pricing — Desktop', route: '/pricing-desktop' }, via: { node_id: expect.any(String), name: 'Buy button' }, to: { id: signup, name: 'Sign up', route: '/sign-up', in_handoff: true } },
+      { from: [home], links: [{ via: 'Nav / Pricing', to: { id: pricing, route: '/pricing-desktop', in_handoff: true } }, { via: 'Logo', to: { url: 'https://example.com/' } }] },
+      { from: [pricing], links: [{ via: 'Nav / Home', to: { id: home, route: '/home', in_handoff: true } }, { via: 'Buy button', to: { id: signup, route: '/sign-up', in_handoff: true } }] },
     ]);
-    expect(h.prompt).toContain('- Home (/home) → Pricing — Desktop (/pricing-desktop) via “Nav / Pricing”');
-    expect(h.prompt).toContain('- Home (/home) → https://example.com/ via “Logo” (external link)');
+    expect(h.link_count).toBe(4);
+    expect(h.prompt).toContain('On /home:\n- “Nav / Pricing” → /pricing-desktop\n- “Logo” → https://example.com/ (external link)\n');
+  });
+
+  it('a link the same layer carries on several screens is listed once for all of them, before the screens\' own links', () => {
+    const { editor, home, pricing, signup } = flow();
+    const [back] = editor.human.insertNodes(signup, [{ type: 'text', tag: 'a', text: 'Home', name: 'Nav / Home' }]);
+    editor.human.setLink(back!, { artboard: home });
+    const h = buildHandoff(src(editor), { scope: 'document' });
+    expect(h.flows.map((g) => [g.from, g.links.map((l) => l.via)])).toEqual([
+      [[pricing, signup], ['Nav / Home']],
+      [[home], ['Nav / Pricing', 'Logo']],
+      [[pricing], ['Buy button']],
+    ]);
+    expect(h.link_count).toBe(5);
+    expect(h.prompt).toContain('On 2 screens, every one except /home:\n- “Nav / Home” → /home\n');
+    expect(h.prompt.match(/“Nav \/ Home”/g)).toHaveLength(1);
   });
 
   it('a selection keeps the links of its screens and marks targets outside it', () => {
-    const { editor, pricing, signup } = flow();
+    const { editor, pricing } = flow();
     const h = buildHandoff(src(editor), { scope: 'selection', nodeIds: [pricing] });
-    expect(h.flows.map((f) => ('id' in f.to ? `${f.from.name}>${f.to.name}:${f.to.in_handoff}` : ''))).toEqual(['Pricing — Desktop>Home:false', 'Pricing — Desktop>Sign up:false']);
+    expect(h.flows.map((g) => g.from)).toEqual([[pricing]]);
+    expect(h.flows[0]!.links.map((l) => ('id' in l.to ? `${l.to.route}:${l.to.in_handoff}` : ''))).toEqual(['/home:false', '/sign-up:false']);
     expect(h.prompt).toContain('(screen not in this handoff)');
-    expect(h.flows.every((f) => f.from.id === pricing)).toBe(true);
-    expect(signup).toBeTruthy();
   });
 
   it('a link to a deleted screen is reported, not hidden', () => {
     const { editor, signup } = flow();
     editor.human.deleteNodes([signup]);
     const h = buildHandoff(src(editor), { scope: 'document' });
-    expect(h.flows.some((f) => 'missing' in f.to)).toBe(true);
+    expect(h.flows.some((g) => g.links.some((l) => 'missing' in l.to))).toBe(true);
     expect(h.prompt).toContain('a screen that was deleted');
   });
 
@@ -132,6 +144,7 @@ describe('buildHandoff: flows', () => {
     const editor = new Editor();
     const h = buildHandoff(src(editor), { scope: 'document' });
     expect(h.flows).toEqual([]);
+    expect(h.link_count).toBe(0);
     expect(h.prompt).toContain('Flows: no screens are linked.');
     expect(h.constraints.join(' ')).not.toContain('routes');
     expect(h.steps.join(' ')).not.toContain('get_links');
@@ -234,7 +247,7 @@ describe('buildHandoff: the prompt', () => {
     expect(p).toContain(`“${editor.doc.name || 'Untitled'}” (Ocelot project ${editor.doc.projectId})`);
     for (const id of [home, pricing, signup]) expect(p).toContain(`id ${id}`);
     expect(p).toContain('Sign up: 375×812');
-    const order = ['Screens (3):', 'Flows (get_links):', 'Call these Ocelot MCP tools, in this order:', '1. get_handoff', '2. get_screenshot', '3. Adapt', 'Constraints:'].map((s) => p.indexOf(s));
+    const order = ['Screens (3):', 'Flows (4 links', 'Call these Ocelot MCP tools, in this order:', '1. get_handoff', '2. get_screenshot', '3. Adapt', 'Constraints:'].map((s) => p.indexOf(s));
     expect(order.every((i) => i >= 0)).toBe(true);
     expect([...order].sort((a, b) => a - b)).toEqual(order);
     expect(p).toContain('Match the screenshots');
@@ -265,13 +278,13 @@ describe('the handoff folder text', () => {
     const md = folderMarkdown(h, layout);
     expect(md).toContain('| Home | 1440×900 | `screens/home@2x.png` | `code/Screen0.tsx` | `/home` |');
     expect(md).toContain('| Sign up | 375×812 |');
-    expect(md).toContain('- Home (/home) → Pricing — Desktop (/pricing-desktop) via “Nav / Pricing”');
+    expect(md).toContain('On /home:\n- “Nav / Pricing” → /pricing-desktop');
     expect(md).toContain('./design-system/r/acme.json');
     expect(md).toContain('`prototype/`');
     expect(md).toContain('## How to run it');
     const flows = JSON.parse(flowsJson(h, layout));
     expect(flows.screens.map((s: { id: string; component: string }) => [s.id, s.component])).toEqual([[home, 'code/Screen0.tsx'], [pricing, 'code/Screen1.tsx'], [h.screens[2]!.id, 'code/Screen2.tsx']]);
-    expect(flows.flows).toHaveLength(4);
+    expect(flows.flows).toEqual(h.flows);
     expect(folderReadme(h)).toContain('Read HANDOFF.md');
   });
 

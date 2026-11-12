@@ -47,12 +47,18 @@ export interface HandoffScreen {
   motion?: HandoffMotion;
 }
 
-export interface HandoffFlow {
-  from: { id: string; name: string; route: string };
-  /** The layer that carries the link. */
-  via: { node_id: string; name: string };
-  /** A screen (in the handoff or elsewhere in the document), an external URL, or a link whose screen was deleted. */
-  to: { id: string; name: string; route: string; in_handoff: boolean } | { url: string } | { missing: string };
+/** Where a link goes: a screen (in the handoff or elsewhere in the document), an external URL, or a screen that was deleted. */
+export type HandoffFlowTarget = { id: string; route: string; in_handoff: boolean } | { url: string } | { missing: string };
+
+/**
+ * Links that the same screens all carry: a shared navigation on every screen, a row on the three variants of one screen, or one
+ * screen's own buttons. Grouped so a sidebar on 20 screens is listed once, not 20 times; get_links has every layer id.
+ */
+export interface HandoffFlowGroup {
+  /** The screens that carry every link below, by id, in screen order. */
+  from: string[];
+  /** `via` is the name of the layer that carries the link. */
+  links: Array<{ via: string; to: HandoffFlowTarget }>;
 }
 
 export interface HandoffDesignSystem {
@@ -83,7 +89,10 @@ export interface Handoff {
   screens: HandoffScreen[];
   /** Layers the person selected inside those screens: where to look first. Only with the selection scope. */
   focus: Array<{ id: string; name: string; screen_id: string }>;
-  flows: HandoffFlow[];
+  /** The click-through graph, grouped by the screens that share links: the biggest group (usually the navigation) first. */
+  flows: HandoffFlowGroup[];
+  /** Every link of `flows` counted on every screen that carries it. */
+  link_count: number;
   design_system: HandoffDesignSystem | null;
   /** The document's theme (`--theme-*` tokens the React export writes to a stylesheet), when it has one instead of a design system. */
   theme: { id: string } | null;
@@ -270,19 +279,7 @@ export function buildHandoff(src: HandoffSource, req: HandoffRequest): Handoff {
   });
   const components = handoffComponents(doc, ids);
 
-  const inScope = new Set(ids);
-  const seen = new Set<string>();
-  const flows: HandoffFlow[] = [];
-  for (const e of collectLinks(doc)) {
-    if (!inScope.has(e.fromId)) continue;
-    const r = e.resolved;
-    const to: HandoffFlow['to'] =
-      r.kind === 'url' ? { url: r.url } : r.kind === 'missing' ? { missing: r.artboardId } : { id: r.artboardId, name: r.name, route: route(r.artboardId), in_handoff: inScope.has(r.artboardId) };
-    const key = `${e.fromId}>${'id' in to ? to.id : 'url' in to ? to.url : to.missing}>${e.nodeName}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    flows.push({ from: { id: e.fromId, name: e.fromName, route: route(e.fromId) }, via: { node_id: e.nodeId, name: e.nodeName }, to });
-  }
+  const { flows, linkCount } = groupFlows(doc, ids, route);
 
   let designSystem: HandoffDesignSystem | null = null;
   if (ds) {
@@ -308,6 +305,7 @@ export function buildHandoff(src: HandoffSource, req: HandoffRequest): Handoff {
     screens,
     focus,
     flows,
+    link_count: linkCount,
     design_system: designSystem,
     theme: theme ? { id: theme.id } : null,
     components,
@@ -319,9 +317,39 @@ export function buildHandoff(src: HandoffSource, req: HandoffRequest): Handoff {
     prompt: '',
   };
   handoff.steps = toolSteps(handoff, req.nodeIds);
-  handoff.constraints = [...(designSystem ? DS_CONSTRAINTS : theme ? THEME_CONSTRAINTS : []), ...(components.length ? [COMPONENTS_CONSTRAINT] : []), ...BASE_CONSTRAINTS, ...(screens.length > 1 || flows.length ? [ROUTES_CONSTRAINT] : [])];
+  handoff.constraints = [...(designSystem ? DS_CONSTRAINTS : theme ? THEME_CONSTRAINTS : []), ...(components.length ? [COMPONENTS_CONSTRAINT] : []), ...BASE_CONSTRAINTS, ...(screens.length > 1 || linkCount ? [ROUTES_CONSTRAINT] : [])];
   handoff.prompt = promptText(handoff);
   return handoff;
+}
+
+/**
+ * The links of the screens in `ids`, grouped by the set of screens that carry the same link (layer name and target). A link layer
+ * with one name on 20 screens (a sidebar item) is one link of a 20-screen group; the links of one screen alone are its own group.
+ */
+function groupFlows(doc: OcelotDocument, ids: readonly string[], route: (id: string) => string): { flows: HandoffFlowGroup[]; linkCount: number } {
+  const order = new Map(ids.map((id, i) => [id, i]));
+  const byLink = new Map<string, { via: string; to: HandoffFlowTarget; from: Set<string> }>();
+  for (const e of collectLinks(doc)) {
+    if (!order.has(e.fromId)) continue;
+    const r = e.resolved;
+    const to: HandoffFlowTarget = r.kind === 'url' ? { url: r.url } : r.kind === 'missing' ? { missing: r.artboardId } : { id: r.artboardId, route: route(r.artboardId), in_handoff: order.has(r.artboardId) };
+    const key = `${e.nodeName}\u0000${'id' in to ? to.id : 'url' in to ? to.url : to.missing}`;
+    const link = byLink.get(key) ?? { via: e.nodeName, to, from: new Set<string>() };
+    link.from.add(e.fromId);
+    byLink.set(key, link);
+  }
+  const groups = new Map<string, HandoffFlowGroup>();
+  let linkCount = 0;
+  for (const link of byLink.values()) {
+    const from = [...link.from].sort((a, b) => order.get(a)! - order.get(b)!);
+    linkCount += from.length;
+    const key = from.join(' ');
+    const group = groups.get(key) ?? { from, links: [] };
+    group.links.push({ via: link.via, to: link.to });
+    groups.set(key, group);
+  }
+  const flows = [...groups.values()].sort((a, b) => b.from.length - a.from.length || order.get(a.from[0]!)! - order.get(b.from[0]!)!);
+  return { flows, linkCount };
 }
 
 /** The `get_handoff` arguments that reproduce this scope. */
@@ -348,16 +376,30 @@ function toolSteps(h: Handoff, nodeIds: readonly string[] | undefined): string[]
   steps.push(
     `Adapt \`code/\` into the app: copy its .tsx and .css files into src/pages/, ${h.components.length ? '`code/components/` into src/components/ (the screens import the document components as "@/components/<Name>"), ' : ''}\`code/public/\` into public/, \`@import\` each stylesheet after "tailwindcss", and wire the routes. Start from those components, do not rewrite them. Only if you want a fresh copy of one screen: export_react { "node_id": "<screen id>"${ds ? ', "components": "ui"' : ''} }.`,
   );
-  if (h.screens.length > 1 || h.flows.length) steps.push('get_links: the click-through graph. Every flow below must work as a route in your app, and nothing may dangle.');
+  if (h.screens.length > 1 || h.link_count) steps.push('get_links: the click-through graph with every layer id. Every flow below must work as a route in your app, and nothing may dangle.');
   return steps;
 }
 
-function flowLine(f: HandoffFlow): string {
-  const via = `via “${f.via.name}”`;
-  const t = f.to;
-  if ('url' in t) return `- ${f.from.name} (${f.from.route}) → ${t.url} ${via} (external link)`;
-  if ('missing' in t) return `- ${f.from.name} (${f.from.route}) → a screen that was deleted ${via}: ask the person where it should go`;
-  return `- ${f.from.name} (${f.from.route}) → ${t.name} (${t.route}) ${via}${t.in_handoff ? '' : ' (screen not in this handoff)'}`;
+/** "On every screen except /a, /b:" — the screens of a group by route, or by what they leave out when that is shorter. */
+function groupHeading(h: Handoff, g: HandoffFlowGroup): string {
+  const routes = new Map(h.screens.map((s) => [s.id, s.route]));
+  if (g.from.length === 1) return `On ${routes.get(g.from[0]!)}:`;
+  if (g.from.length === h.screens.length) return `On every screen (${g.from.length}):`;
+  const inGroup = new Set(g.from);
+  const others = h.screens.filter((s) => !inGroup.has(s.id)).map((s) => s.route);
+  if (others.length < g.from.length) return `On ${g.from.length} screens, every one except ${others.join(', ')}:`;
+  return `On ${g.from.map((id) => routes.get(id)).join(', ')}:`;
+}
+
+function flowLine(l: HandoffFlowGroup['links'][number]): string {
+  const t = l.to;
+  if ('url' in t) return `- “${l.via}” → ${t.url} (external link)`;
+  if ('missing' in t) return `- “${l.via}” → a screen that was deleted: ask the person where it should go`;
+  return `- “${l.via}” → ${t.route}${t.in_handoff ? '' : ' (screen not in this handoff)'}`;
+}
+
+function flowLines(h: Handoff): string[] {
+  return h.flows.flatMap((g) => [groupHeading(h, g), ...g.links.map(flowLine)]);
 }
 
 function designSystemLines(h: Handoff): string[] {
@@ -425,7 +467,7 @@ export function promptText(h: Handoff): string {
   out.push(`Screens (${h.screens.length}):`);
   for (const s of h.screens) out.push(`- ${s.name}: ${s.width}×${s.height}, id ${s.id}, route ${s.route}${manyPages ? `, page “${s.page}”` : ''}${s.scheme === 'dark' ? ', dark' : ''}${s.blocks?.length ? `, based on shadcn ${s.blocks.join(', ')}` : ''}`);
   if (h.focus.length) out.push(`Start with: ${h.focus.map((f) => `“${f.name}” (id ${f.id})`).join(', ')}.`);
-  out.push('', h.flows.length ? 'Flows (get_links):' : 'Flows: no screens are linked.', ...h.flows.map(flowLine));
+  out.push('', h.link_count ? `Flows (${plural(h.link_count, 'link')}, grouped by the screens that carry them; “layer” → route):` : 'Flows: no screens are linked.', ...flowLines(h));
   const ds = designSystemLines(h);
   if (ds.length) out.push('', ...ds);
   if (h.components.length) out.push('', ...componentLines(h));
@@ -466,7 +508,7 @@ export function folderMarkdown(h: Handoff, layout: FolderLayout): string {
   }
   if (layout.hasPrototype) out.push('', '`prototype/` has every screen as linked static HTML (`prototype/<slug>.html`): open one in a browser to click through the flows and see the hover states.');
   if (h.focus.length) out.push('', `Start with: ${h.focus.map((f) => `“${f.name}”`).join(', ')}.`);
-  out.push('', '## Flows', '', ...(h.flows.length ? [...h.flows.map(flowLine), '', 'The same flows are in `flows.json`.'] : ['No screens are linked.']));
+  out.push('', '## Flows', '', ...(h.link_count ? [...flowLines(h), '', 'The same flows are in `flows.json`.'] : ['No screens are linked.']));
   const dsLines = designSystemLines(h);
   if (dsLines.length) out.push('', '## Design system', '', ...dsLines);
   if (h.components.length) out.push('', '## Components', '', ...componentSection(h, layout));
@@ -532,7 +574,7 @@ const plural = (n: number, noun: string): string => `${n} ${noun}${n === 1 ? '' 
 
 /** "3 screens · 2 flows · design system “Acme” · 4 images". */
 export function describeHandoff(h: Handoff): string {
-  const parts = [plural(h.screens.length, 'screen'), plural(h.flows.length, 'flow')];
+  const parts = [plural(h.screens.length, 'screen'), plural(h.link_count, 'flow')];
   if (h.design_system) parts.push(`design system “${h.design_system.name}”`);
   else if (h.theme) parts.push(`theme “${h.theme.id}”`);
   if (h.assets.images) parts.push(plural(h.assets.images, 'image'));
