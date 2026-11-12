@@ -390,19 +390,18 @@ final class VideoCompositionSchemeHandler: NSObject, WKURLSchemeHandler {
 // MARK: Capture worker
 
 /// One offscreen WKWebView showing the stage page. Built like `OffscreenRenderer.ensureWebView` (occlusion detection off,
-/// a borderless window far outside every screen) but sized by `VideoGeometry`.
+/// an invisible `OffscreenWindow`) but sized by `VideoGeometry`.
 @MainActor
 final class VideoCaptureWorker: NSObject, WKNavigationDelegate {
     private let geometry: VideoGeometry
-    private let window: NSWindow
+    private let window: OffscreenWindow
     private let webView: WKWebView
     private var loadContinuation: CheckedContinuation<Void, any Error>?
     private var crashed = false
 
     /// The backing scale an offscreen window gets (it follows the main display, so 1x on some Mac minis).
     static func probeBackingScale() -> Double {
-        let probe = NSWindow(contentRect: NSRect(x: -32000, y: -32000, width: 16, height: 16), styleMask: [.borderless], backing: .buffered, defer: false)
-        probe.isReleasedWhenClosed = false
+        let probe = OffscreenWindow(size: NSSize(width: 16, height: 16))
         defer { probe.close() }
         return Double(probe.backingScaleFactor)
     }
@@ -421,16 +420,7 @@ final class VideoCaptureWorker: NSObject, WKNavigationDelegate {
         }
         webView.pageZoom = geometry.pageZoom
         if alpha { webView.setValue(false, forKey: "drawsBackground") }
-        window = NSWindow(contentRect: NSRect(x: -32000, y: -32000, width: size.width, height: size.height), styleMask: [.borderless], backing: .buffered, defer: false)
-        window.isReleasedWhenClosed = false
-        window.ignoresMouseEvents = true
-        window.hasShadow = false
-        window.isExcludedFromWindowsMenu = true
-        window.collectionBehavior = [.transient, .ignoresCycle, .stationary]
-        if alpha {
-            window.isOpaque = false
-            window.backgroundColor = .clear
-        }
+        window = OffscreenWindow(size: size, transparentBackground: alpha)
         window.contentView = webView
         super.init()
         webView.navigationDelegate = self

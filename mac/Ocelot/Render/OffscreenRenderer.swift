@@ -27,7 +27,7 @@ final class OffscreenRenderer: NSObject {
         }
     }
 
-    private var window: NSWindow?
+    private var window: OffscreenWindow?
     private var webView: WKWebView?
     private var loadContinuation: CheckedContinuation<Void, any Error>?
     private var queueTail: Task<Void, Never>?
@@ -162,7 +162,7 @@ final class OffscreenRenderer: NSObject {
 
     private func ensureWebView(size: NSSize) -> WKWebView {
         if let webView, let window {
-            window.setContentSize(size)
+            window.park(contentSize: size)
             webView.frame = NSRect(origin: .zero, size: size)
             return webView
         }
@@ -177,16 +177,7 @@ final class OffscreenRenderer: NSObject {
         if webView.responds(to: NSSelectorFromString("_setWindowOcclusionDetectionEnabled:")) {
             webView.setValue(false, forKey: "windowOcclusionDetectionEnabled")
         }
-        // Borderless window far outside every screen: never visible, never focusable.
-        let window = NSWindow(
-            contentRect: NSRect(x: -32000, y: -32000, width: size.width, height: size.height),
-            styleMask: [.borderless], backing: .buffered, defer: false
-        )
-        window.isReleasedWhenClosed = false
-        window.ignoresMouseEvents = true
-        window.hasShadow = false
-        window.isExcludedFromWindowsMenu = true
-        window.collectionBehavior = [.transient, .ignoresCycle, .stationary]
+        let window = OffscreenWindow(size: size)
         window.contentView = webView
         window.orderFrontRegardless()
         self.window = window
