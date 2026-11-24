@@ -7,6 +7,7 @@ import { ARTBOARD_PRESETS, STATE_NAMES, type ArtboardPreset, type NodeData } fro
 import { AlignGrid, Field, Grid, IconButton, Section, SectionEpoch, Segmented, SelectField, ColorRow, type FieldProps, type SegOption } from './fields';
 import { MotionSection, StateSwitcher } from './MotionSection';
 import { CodeSection } from './CodeSection';
+import { ShaderSection } from './ShaderSection';
 import { ImageSection } from './ImageSection';
 import { LinkSection } from './LinkSection';
 import { SlideSection } from './SlideSection';
@@ -201,7 +202,7 @@ export function Inspector() {
         {!editState && nodes.length === 1 && <ComponentSection key={first.id} editor={editor} node={first} />}
         {!editState && allArtboards && nodes.length === 1 && <ArtboardSection node={first} />}
         {!editState && allArtboards && nodes.length === 1 && <SlideSection editor={editor} node={first} />}
-        {!editState && nodes.length === 1 && first.type === 'code' && <CodeSection node={first} />}
+        {!editState && nodes.length === 1 && first.type === 'code' && (first.code?.shader ? <ShaderSection node={first} /> : <CodeSection node={first} />)}
         {!editState && nodes.length === 1 && first.type === 'image' && <ImageSection node={first} />}
 
         <Section title="Layout" testId="layout-section">

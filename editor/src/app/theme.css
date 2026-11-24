@@ -1068,20 +1068,20 @@ body {
   .at-agent__primary, .at-composer__send, .at-agent__suggestion { transition: scale 150ms ease-out, background-color 150ms ease; }
   .at-agent__primary:active:not(:disabled), .at-composer__send:active:not(:disabled), .at-agent__suggestion:active:not(:disabled) { scale: 0.96; }
   /* New chat entries settle in; streaming text updates in place and does not animate. */
-  .at-msg, .at-step, .at-notice {
+  .at-msg, .at-step, .at-notice, .at-direction {
     transition: opacity 200ms var(--at-ease-out), translate 200ms var(--at-ease-out);
     @starting-style { opacity: 0; translate: 0 4px; }
   }
 }
 @media (prefers-reduced-motion: reduce) {
-  .at-msg, .at-step, .at-notice {
+  .at-msg, .at-step, .at-notice, .at-direction {
     transition: opacity 150ms ease;
     @starting-style { opacity: 0; }
   }
 }
 /* Entries that are already there when the panel mounts (the sidebar is reopened, the app starts with a chat) do not replay their enter:
    AgentPanel sets data-restoring for the first two frames. */
-.at-agent[data-restoring] :is(.at-msg, .at-step, .at-notice, .at-chip--enter, .at-ask, .at-answer) { transition: none; }
+.at-agent[data-restoring] :is(.at-msg, .at-step, .at-notice, .at-direction, .at-chip--enter, .at-ask, .at-answer) { transition: none; }
 
 /* ---------- Motion: Preview mode, state switcher, keyframes ---------- */
 .at-canvas--interact .at-artboard__frame { pointer-events: auto; }
@@ -1574,6 +1574,34 @@ input:focus-visible + .at-ask__mark { outline: 2px solid color-mix(in srgb, var(
 .at-answer__who { display: flex; align-items: center; gap: 6px; }
 .at-answer__pair { display: flex; flex-direction: column; gap: 1px; overflow-wrap: anywhere; }
 .at-answer__a { font: var(--at-type-body); font-weight: 500; color: var(--at-text); overflow-wrap: anywhere; }
+
+/* ---------- Direction card (agent/DirectionCard.tsx): the system the agent chose, in the transcript where its create_theme row was ---------- */
+/* The same quiet card as the theme gallery's: a tone step and a hairline. Only the swatches and the type specimen carry the system's own colours. */
+.at-direction { display: flex; flex-direction: column; gap: 8px; min-width: 0; padding: 10px; border-radius: var(--at-radius-l); background: var(--at-bg); box-shadow: inset 0 0 0 1px var(--at-border); }
+.at-direction__head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 6px; min-width: 0; }
+.at-direction__eyebrow { font: var(--at-type-small); color: var(--at-text-2); }
+.at-direction__name { min-width: 0; margin: 0; font: var(--at-type-title); color: var(--at-text); overflow-wrap: anywhere; }
+.at-direction__mood { flex: none; margin-left: auto; padding: 1px 6px; border-radius: 9px; font: var(--at-type-small); color: var(--at-text-2); box-shadow: inset 0 0 0 1px var(--at-border); }
+.at-direction__line { margin: 0; font: var(--at-type-body); line-height: 18px; color: var(--at-text); text-wrap: pretty; overflow-wrap: anywhere; }
+.at-direction__core { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; margin: 0; padding: 0; list-style: none; }
+.at-direction__core li { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.at-direction__role { font: var(--at-type-small); color: var(--at-text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* A ring one step stronger than the card's hairline, so a white ground shows on the light card and a black ink on the dark one. */
+.at-direction__swatch { display: block; height: 28px; border-radius: var(--at-radius-m); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--at-text) 22%, transparent); }
+.at-direction__more { display: flex; flex-wrap: wrap; gap: 4px; margin: 0; padding: 0; list-style: none; border-radius: var(--at-radius-s); }
+.at-direction__more .at-direction__swatch { width: 16px; height: 16px; border-radius: 50%; }
+.at-direction__stage { display: flex; align-items: center; gap: 10px; min-width: 0; padding: 8px 10px; overflow: hidden; border-radius: var(--at-radius-m); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--at-text) 22%, transparent); }
+.at-direction__aa { flex: none; font-size: 34px; line-height: 38px; }
+.at-direction__sample { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0; }
+.at-direction__sample > span { overflow: hidden; text-overflow: ellipsis; overflow-wrap: anywhere; }
+.at-direction__display { font-size: 15px; line-height: 20px; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; }
+.at-direction__body { font-size: 12px; line-height: 16px; white-space: nowrap; }
+.at-direction__meta { display: flex; align-items: center; gap: 6px; font: var(--at-type-small); color: var(--at-text-2); }
+.at-direction__meta > span:first-child { min-width: 0; overflow-wrap: anywhere; }
+/* The large radius as a shape: the accent in the system's own corner. */
+.at-direction__shape { flex: none; margin-left: auto; width: 24px; height: 16px; box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--at-text) 22%, transparent); }
+.at-direction__actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.at-direction :is(.at-btn, [tabindex]):focus-visible { outline: 2px solid var(--at-accent); outline-offset: 2px; }
 
 /* Waiting for the person is not work: the dot is a hollow ring that holds still. */
 .at-working--waiting { color: var(--at-text-2); }

@@ -74,6 +74,8 @@ export class UiState {
    */
   followAgentKey: string | null = null;
   sidebarTab: SidebarTab = parseTab(readStored(SIDEBAR_TAB_KEY, 'agent'));
+  /** Which sub-tab of the Assets tab is shown. */
+  assetsLibrary: AssetsLibrary = 'images';
   /**
    * The native window around the editor (Mac app): room to leave for the traffic lights, the file's
    * title and edited state. `title` is null outside the app; the toolbar then shows the document name.
@@ -211,6 +213,19 @@ export class UiState {
     this.#emit();
   }
 
+  /** The Assets tab's library (Images, Styles, Patterns, Components), without showing the tab. */
+  setAssetsLibrary(library: AssetsLibrary): void {
+    if (this.assetsLibrary === library) return;
+    this.assetsLibrary = library;
+    this.#emit();
+  }
+
+  /** Opens the sidebar's Assets tab on `library` (the Direction card's "Adjust" opens Styles; agents: set_preferences assets_library). */
+  showAssetsLibrary(library: AssetsLibrary): void {
+    this.setAssetsLibrary(library);
+    this.showSidebarTab('assets');
+  }
+
   setWindowChrome(chrome: { leadingInset: number; title: string; edited: boolean }): void {
     const c = this.windowChrome;
     if (c.leadingInset === chrome.leadingInset && c.title === chrome.title && c.edited === chrome.edited) return;
@@ -307,6 +322,10 @@ export class UiState {
 
 export type SidebarTab = 'agent' | 'layers' | 'assets';
 export const SIDEBAR_TABS: readonly SidebarTab[] = ['agent', 'layers', 'assets'];
+
+/** The Assets tab's sub-tabs. Not remembered across launches: the tab opens on Images. */
+export type AssetsLibrary = 'images' | 'styles' | 'patterns' | 'components';
+export const ASSETS_LIBRARIES: readonly AssetsLibrary[] = ['images', 'styles', 'patterns', 'components'];
 
 const SIDEBAR_OPEN_KEY = 'ocelot.sidebar.open';
 const SIDEBAR_TAB_KEY = 'ocelot.sidebar.tab';

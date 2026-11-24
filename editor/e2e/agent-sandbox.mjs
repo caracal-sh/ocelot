@@ -88,8 +88,15 @@ export const BUNDLED_AGENTS_OFF = ['scout', 'designer', 'reviewer', 'security-re
  */
 export const COMPACTION_YML = 'compaction:\n  enabled: true\n  thresholdPercent: 70\n  methodOrder:\n    - shake\n    - soft\n';
 
+/**
+ * omp's automated tool-issue reporting adds a built-in `report_issue` tool to every session (on by default since omp 19.1) and
+ * pushes reports to a remote endpoint. The sidebar agent keeps only Ocelot's tools and `task`, and refuses to start with any
+ * other (`foreignTools`), so it is switched off here. Mirrored in AgentLaunch.swift.
+ */
+export const AUTOQA_OFF_YML = 'dev:\n  autoqa: false\n';
+
 export function agentConfigYml({ disabledProviders, defaultModel, thinkingLevel }) {
-  let text = `tools:\n  xdev: false\nasync:\n  enabled: false\ntask:\n  maxConcurrency: ${SUBAGENT_CONCURRENCY}\n  maxRecursionDepth: 1\n  disabledAgents:\n${BUNDLED_AGENTS_OFF.map((a) => `    - ${a}\n`).join('')}disabledProviders:\n${disabledProviders.map((p) => `  - ${p}\n`).join('')}${COMPACTION_YML}`;
+  let text = `tools:\n  xdev: false\nasync:\n  enabled: false\ntask:\n  maxConcurrency: ${SUBAGENT_CONCURRENCY}\n  maxRecursionDepth: 1\n  disabledAgents:\n${BUNDLED_AGENTS_OFF.map((a) => `    - ${a}\n`).join('')}disabledProviders:\n${disabledProviders.map((p) => `  - ${p}\n`).join('')}${COMPACTION_YML}${AUTOQA_OFF_YML}`;
   if (defaultModel) text += `modelRoles:\n  default: ${JSON.stringify(defaultModel)}\n`;
   if (thinkingLevel) text += `defaultThinkingLevel: ${JSON.stringify(thinkingLevel)}\n`;
   return text;

@@ -207,19 +207,16 @@ final class AgentProcessService: NSObject, OcelotAgentServiceProtocol, @unchecke
     /// omp loads `<HOME>/.omp/natives/<version>/pi_natives.*.node`. A sandboxed process cannot extract it itself: files it
     /// writes are quarantined and Gatekeeper refuses to load unsigned code from them. The app (unsandboxed) already ran omp,
     /// which extracted the addon into the real `~/.omp/natives`; the entitlements make exactly that directory readable
-    /// (not `~/.omp/agent`, where the credentials are), and the container's `.omp/natives` points at it.
+    /// (not `~/.omp/agent`, where the credentials are). The container gets real directories down to the version level, because
+    /// omp 19.1+ stamps the version directory's mtime on every start, and links for everything inside them into the real tree.
     private func linkNatives(home: String) throws {
         let real = AgentSelfTest.realHomeDirectory() + "/.omp/natives"
         var isDirectory: ObjCBool = false
         guard FileManager.default.fileExists(atPath: real, isDirectory: &isDirectory), isDirectory.boolValue else {
             throw AgentLaunch.Failure("omp has not unpacked its native addon yet. Run \"omp models\" once in a terminal, then try again.")
         }
-        let dot = URL(fileURLWithPath: home).appendingPathComponent(".omp", isDirectory: true)
-        try FileManager.default.createDirectory(at: dot, withIntermediateDirectories: true)
-        let link = dot.appendingPathComponent("natives")
-        if let current = try? FileManager.default.destinationOfSymbolicLink(atPath: link.path), current == real { return }
-        try? FileManager.default.removeItem(at: link)
-        try FileManager.default.createSymbolicLink(atPath: link.path, withDestinationPath: real)
+        let natives = URL(fileURLWithPath: home).appendingPathComponent(".omp/natives", isDirectory: true)
+        try AgentLaunch.mirrorNatives(real: URL(fileURLWithPath: real, isDirectory: true), into: natives)
     }
 
     /// Everything of a finished process's folder except what the app still has to collect.

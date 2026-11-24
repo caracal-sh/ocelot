@@ -229,15 +229,17 @@ export const THEME_TOOLS: ToolDef[] = [
     title: 'Create a theme for this document',
     readOnly: false,
     description:
-      'Derives the document\'s own, task-specific system and applies it as ONE undo step: a named theme (e.g. "Ferrule") with the palette, type families and scale, radii, shadows, spacing and motion this brief calls for, written as --theme-* tokens on every artboard so layers use var(--theme-…) and the person can adjust the system later in Assets > Styles. ' +
-      'Use it when the document has no theme or design system and the person named no style: before the first write. tokens is { "color-canvas": "#F4EDE1", "color-ink": "#2A1B12", "color-accent": "#B4451F", "font-display": "Fraunces", "font-sans": "Geist", "radius-lg": "6px", "text-5xl": "72px", … } (names without --theme-; same names as apply_theme overrides; get_theme lists them). ' +
+      'Derives the document\'s own, task-specific system and applies it as ONE undo step: a named theme with the palette, type families and scale, radii, shadows, spacing and motion this brief calls for, written as --theme-* tokens on every artboard so layers use var(--theme-…) and the person can adjust the system later in Assets > Styles. The person sees the system as a card in the chat (name, mood, direction, swatches, type), so mood and direction are worth one honest line each. ' +
+      'Use it when the document has no theme or design system and the person named no style: before the first write. tokens is { "color-canvas": "<ground>", "color-ink": "<ink>", "color-accent": "<accent>", "font-display": "<family>", "font-sans": "<family>", "radius-lg": "<px>", "text-5xl": "<px>", "text-5xl--weight": "<100-900>", … } with values from your brief (names without --theme-; same names as apply_theme overrides; get_theme lists them). ' +
       'color-canvas, color-ink and color-accent are required. Every other colour (surface, surface-2, ink-2, ink-3, accent-ink, accent-text, accent-soft, accent-hover, line, line-subtle, focus, danger, success) is derived from them so that every text pair passes (ink 7:1, other text 4.5:1, borders, focus and the accent 3:1), or you set it yourself and it is measured. ' +
-      'It refuses a palette that fails contrast and names the pair. A bare font family ("Fraunces") becomes a stack; bundled families (list_fonts) render everywhere. Everything you leave out comes from based_on (a catalog id from list_themes; default the neutral Ocelot Default, or its dark twin when scheme is "dark" or the canvas is dark): its type scale, radii, shadows, spacing, motion and extra tokens. ' +
+      'It refuses a palette that fails contrast and names the pair. A bare font family ("Geist") becomes a stack; bundled families (list_fonts) render everywhere. Everything you leave out comes from based_on (a catalog id from list_themes; default the neutral Ocelot Default, or its dark twin when scheme is "dark" or the canvas is dark): its type scale, radii, shadows, spacing, motion and extra tokens. ' +
       'Calling it again replaces the document\'s theme (also a stock one); change single tokens later with apply_theme using the theme\'s id and overrides. The person picks a stock theme or design system themselves: then use that one, not this. Not for product UI built from components (create_design_system).',
     inputSchema: {
       type: 'object',
       properties: {
-        name: { type: 'string', description: 'The system\'s name, 2-40 characters, for this task: "Ferrule". Its slug is the theme id.' },
+        name: { type: 'string', description: 'The system\'s name, 2-40 characters, taken from this client\'s world (a place, material or ritual of theirs). Its slug is the theme id.' },
+        mood: { type: 'string', description: 'Optional, at most 40 characters: the mood word the palette comes from, a physical condition or register ("tidal", "signage", "chalky"), not an adjective like "modern".' },
+        direction: { type: 'string', description: 'Optional, at most 240 characters: the direction in one sentence, the layout idea and the one distinctive move.' },
         tokens: {
           type: 'object',
           additionalProperties: { type: 'string' },
@@ -253,9 +255,13 @@ export const THEME_TOOLS: ToolDef[] = [
       const name = str(args, 'name', {});
       const raw = args['tokens'];
       if (typeof raw !== 'object' || raw === null || Array.isArray(raw) || !Object.values(raw).every((v) => typeof v === 'string')) {
-        throw new ToolError('tokens must be an object of token name to CSS value, e.g. {"color-canvas": "#F4EDE1", "color-ink": "#2A1B12", "color-accent": "#B4451F"}.');
+        throw new ToolError('tokens must be an object of token name to CSS value, e.g. {"color-canvas": "#FFFFFF", "color-ink": "#111111", "color-accent": "#0047FF"}.');
       }
       const basedOn = str(args, 'based_on', { optional: true });
+      const mood = str(args, 'mood', { optional: true })?.trim();
+      const direction = str(args, 'direction', { optional: true })?.trim();
+      if (mood !== undefined && mood.length > 40) throw new ToolError(`mood is one word or a short phrase (at most 40 characters); got ${mood.length}. Put the sentence in direction.`);
+      if (direction !== undefined && direction.length > 240) throw new ToolError(`direction is one sentence (at most 240 characters); got ${direction.length}. Keep the layout idea and the one distinctive move.`);
       const scheme = str(args, 'scheme', { optional: true });
       if (scheme !== undefined && scheme !== 'light' && scheme !== 'dark') throw new ToolError('scheme is "light" or "dark".');
       try {
@@ -269,6 +275,8 @@ export const THEME_TOOLS: ToolDef[] = [
         const tokens = groupTokens(themeTokens(plan.theme, plan.ref.overrides));
         return json({
           ...describeApplied(report),
+          ...(mood ? { mood } : {}),
+          ...(direction ? { direction } : {}),
           derived_colors: plan.derived,
           tokens: { colors: tokens.colors, fonts: tokens.fonts, radii: tokens.radii },
           contrast: contrastSummary(plan.report),

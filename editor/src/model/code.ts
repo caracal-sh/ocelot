@@ -6,6 +6,8 @@
 
 import * as Y from 'yjs';
 import { CODE_LIBRARIES, ModelError, type CodeData, type CodeLibrary } from './types';
+import { cloneShader, normalizeShader, readShaderSpec, sameShader, type ShaderInput } from '../shader/spec';
+import { generateShaderSource } from '../shader/source';
 
 /** Upper bound for one module's source. Keeps documents and tool results sane. */
 export const MAX_CODE_CHARS = 200_000;
@@ -14,8 +16,15 @@ export function isCodeLibrary(v: unknown): v is CodeLibrary {
   return typeof v === 'string' && (CODE_LIBRARIES as readonly string[]).includes(v);
 }
 
-/** Validates and normalizes a code payload. `what` names the caller in error messages. */
-export function normalizeCode(input: { source?: unknown; libraries?: unknown }, what = 'code'): CodeData {
+/**
+ * Validates and normalizes a code payload. `what` names the caller in error messages. A `shader` spec makes it a shader layer: the
+ * source is generated from the spec (any given `source` or `libraries` is ignored), so the two can never disagree.
+ */
+export function normalizeCode(input: { source?: unknown; libraries?: unknown; shader?: unknown }, what = 'code'): CodeData {
+  if (input.shader !== undefined && input.shader !== null) {
+    const shader = normalizeShader(input.shader as ShaderInput, what);
+    return { source: generateShaderSource(shader), libraries: [], shader };
+  }
   const source = input.source;
   if (typeof source !== 'string') {
     throw new ModelError('invalid_argument', `${what}: "source" must be a string holding an ES module whose default export is mount(el, ctx).`);
@@ -41,9 +50,11 @@ export function readCode(map: unknown): CodeData | null {
   if (!(map instanceof Y.Map)) return null;
   const source = map.get('source');
   const libs = map.get('libraries');
+  const shader = readShaderSpec(map.get('shader'));
   return {
     source: typeof source === 'string' ? source : '',
     libraries: Array.isArray(libs) ? libs.filter(isCodeLibrary) : [],
+    ...(shader ? { shader } : {}),
   };
 }
 
@@ -57,10 +68,15 @@ export function writeCode(n: Y.Map<unknown>, code: CodeData): void {
   if (m.get('source') !== code.source) m.set('source', code.source);
   const prev = m.get('libraries');
   if (!Array.isArray(prev) || prev.join(',') !== code.libraries.join(',')) m.set('libraries', [...code.libraries]);
+  if (code.shader) {
+    if (!sameShader(readShaderSpec(m.get('shader')) ?? undefined, code.shader)) m.set('shader', cloneShader(code.shader));
+  } else if (m.has('shader')) {
+    m.delete('shader');
+  }
 }
 
 export function cloneCode(code: CodeData): CodeData {
-  return { source: code.source, libraries: [...code.libraries] };
+  return { source: code.source, libraries: [...code.libraries], ...(code.shader ? { shader: cloneShader(code.shader) } : {}) };
 }
 
 /** A working three.js scene: a spinning, lit torus knot that follows the layer's size. */

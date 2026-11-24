@@ -111,7 +111,10 @@ describe('guide topics', () => {
     // product-guide: its own topic (1,700 words) because the design-guide is at its cap; agents fetch it only for app screens.
     // design-system-guide: +400 words for "Pick the component by the job" and "Draw the behaviour" (toast stacks, drawers, command menus), which
     // the ds-hand-built check points to; agents fetch it only for design-system work.
-    const budget: Record<string, number> = { 'design-guide': 5950, 'motion-guide': 2900, 'slides-guide': 1900, 'video-guide': 2300, 'theme-guide': 1470, 'design-system-guide': 1950, 'product-guide': 1750 };
+    // design-guide: the property-to-tool table moved to its own topic, tool-map (fetched on demand), so the guide every agent reads first
+    // shrank by about 480 words while it gained the register, weight and ground rules; its cap came down with it. tool-map grows by a row
+    // per new tool family (shader layers added one).
+    const budget: Record<string, number> = { 'design-guide': 5500, 'motion-guide': 2900, 'slides-guide': 1900, 'video-guide': 2300, 'theme-guide': 1470, 'design-system-guide': 1950, 'product-guide': 1750, 'tool-map': 1200 };
     for (const [topic, max] of Object.entries(budget)) expect(words(readGuide(topic)), topic).toBeLessThanOrEqual(max);
     expect(words(SERVER_INSTRUCTIONS)).toBeLessThanOrEqual(1250);
   });
@@ -169,7 +172,7 @@ describe('slides, video and theme guides', () => {
     expect(SERVER_INSTRUCTIONS).toMatch(/Settle it in your reasoning, never in chat/);
     const theme = readGuide('theme-guide');
     expect(theme).toContain('## 2. Your own theme');
-    for (const s of ['color-canvas, color-ink and color-accent are required', 'derived', 'refused', 'apply_theme({ theme_id: "ferrule"', 'Assets > Styles']) expect(theme, s).toContain(s);
+    for (const s of ['color-canvas, color-ink and color-accent are required', 'derived', 'refused', 'apply_theme({ theme_id: "<the id create_theme returned>"', 'Assets > Styles']) expect(theme, s).toContain(s);
     expect(readGuide('design-system-guide')).toMatch(/never the stock defaults/);
   });
 
@@ -241,9 +244,11 @@ describe('reuse: components', () => {
     expect(design).not.toMatch(/For repeated items, create the container and the first item, then duplicate_nodes/);
   });
 
-  it('the property-to-tool map has the component tools and points duplicate_nodes at one screen\'s filler', () => {
-    expect(design).toMatch(/\| Reusable part \(component\)[^|]*\| make_component, place_instance, set_instance, reset_instance, detach_instance, update_component, remove_component; list_doc_components, get_doc_component/);
-    expect(design).toMatch(/\| Duplicate \(one screen's filler; a part that repeats across screens is a component\)/);
+  it('the tool map has the component tools and points duplicate_nodes at one screen\'s filler', () => {
+    const map = readGuide('tool-map');
+    expect(map).toMatch(/\| Reusable part \(component\)[^|]*\| make_component, place_instance, set_instance, reset_instance, detach_instance, update_component, remove_component; list_doc_components, get_doc_component/);
+    expect(map).toMatch(/\| Duplicate \(one screen's filler; a part that repeats across screens is a component\)/);
+    expect(design).toContain('get_guide({ topic: "tool-map" })');
   });
 
   it('the design-system-guide tells agents not to wrap a design-system component again', () => {

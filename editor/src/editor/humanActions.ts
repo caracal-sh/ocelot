@@ -8,6 +8,7 @@ import { ModelError, type CodeLibrary, type NodeLink, type NodeSpec, type StateN
 import { setAssetOnNode } from '../assets/place';
 import type { OcelotDocument } from '../model/document';
 import type { ArrangePlan } from '../model/arrange';
+import type { ShaderKind, ShaderParamValue } from '../shader/spec';
 import type { SlidePatch } from '../model/deck';
 import { errorMessage } from '../bridge/rpc';
 import { applyPlan, gatherItems, planAlign, planDistribute, type AlignMode, type AlignPlan, type AlignTo, type ArrangeItem, type DistributeAxis } from './align';
@@ -69,6 +70,11 @@ export class HumanActions {
   /** Replaces a code layer's source and/or libraries (one undo step). */
   setCode(id: string, patch: { source?: string; libraries?: CodeLibrary[] }): void {
     this.run([id], () => this.editor.human.setCode(id, patch));
+  }
+
+  /** Retunes a shader layer's colours and parameters. `gesture`: a slider or picker drag in progress (merged into one undo step; end it with endGesture). */
+  setShader(id: string, patch: { kind?: ShaderKind; colors?: readonly string[]; params?: Readonly<Record<string, ShaderParamValue>> }, opts: { gesture?: boolean } = {}): void {
+    this.run([id], () => this.editor.human.setShader(id, patch), { endStep: !opts.gesture });
   }
 
   // ---------- images ----------

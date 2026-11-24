@@ -8,6 +8,7 @@ import { styleMapToText } from '../model/styles';
 import { ARTBOARD_BASE_CSS } from './frameDocument';
 import { artboardMotionCss } from './motionCss';
 import { CODE_LAYER_CSS, CODE_READY_TRACKER, codeFrameSrcdoc, type CodeFrameOptions } from './codeLayer';
+import { customPropsAt, varNamesIn } from './customProps';
 import { exportRuntimeScripts, frameSeed, type ExportRuntimeConfig } from './exportRuntime';
 import type { CodeData } from '../model/types';
 import { exportedLink, type LinkTargets } from '../export/links';
@@ -74,7 +75,7 @@ export function nodeToHtml(doc: OcelotDocument, id: string, opts: SerializeOptio
   let inner: string;
   if (n.type === 'text') inner = n.html || escapeText(n.text);
   else if (n.type === 'svg') inner = n.html;
-  else if (n.type === 'code') inner = opts.codeFrames && n.code ? codeFrameIframe(n.id, n.code, opts.codeFrames.vendorBase, opts) : '';
+  else if (n.type === 'code') inner = opts.codeFrames && n.code ? codeFrameIframe(n.id, n.code, opts.codeFrames.vendorBase, opts, customPropsAt(doc, n.id, varNamesIn(n.code.source))) : '';
   else {
     const kids = n.children.map((c) => nodeToHtml(doc, c, opts, depth + 1)).join('');
     return kids ? `${pad}${open}${nl}${kids}${pad}</${tag}>${nl}` : `${pad}${open}</${tag}>${nl}`;
@@ -131,10 +132,10 @@ export function artboardDocumentHtml(doc: OcelotDocument, artboardId: string, op
 }
 
 /** A code frame for standalone pages: reproducible (`exportRuntime`), free-running (`live`) or snapshot (motion state never applied: not paused, no reduced motion). */
-function codeFrameIframe(nodeId: string, code: CodeData, vendorBase: string, opts: SerializeOptions): string {
+function codeFrameIframe(nodeId: string, code: CodeData, vendorBase: string, opts: SerializeOptions, vars: Record<string, string>): string {
   const frameOpts: CodeFrameOptions = opts.exportRuntime
-    ? { vendorBase, mode: 'export', paused: false, reducedMotion: false, fps: opts.exportRuntime.fps, seed: frameSeed(nodeId) }
-    : { vendorBase, mode: opts.live ? 'live' : 'snapshot', paused: false, reducedMotion: false };
+    ? { vendorBase, mode: 'export', paused: false, reducedMotion: false, fps: opts.exportRuntime.fps, seed: frameSeed(nodeId), vars }
+    : { vendorBase, mode: opts.live ? 'live' : 'snapshot', paused: false, reducedMotion: false, vars };
   const srcdoc = codeFrameSrcdoc(code, frameOpts);
   return `<iframe data-ocelot-code-frame sandbox="allow-scripts" tabindex="-1" aria-hidden="true" title="Code layer" srcdoc="${escapeAttr(srcdoc)}"></iframe>`;
 }

@@ -15,6 +15,8 @@ const PATHS = {
   artboard: <rect x="2.5" y="2.5" width="11" height="11" rx="1.5" />,
   vector: <path d="M8 2.5 13.5 8 8 13.5 2.5 8z" />,
   code: <path d="M6 4.5 2.5 8 6 11.5M10 4.5 13.5 8 10 11.5" />,
+  // A screen of dots that grow: a shader (generated texture) layer.
+  shader: <path d="M3.5 3.5h.01M8 3.5h.01M12.5 3.5h.01M3.5 8h.01M8 8h.01M12.5 8h.01M3.5 12.5h.01M8 12.5h.01M12.5 12.5h.01" strokeWidth="1.5" />,
   undo: <path d="M6 3.5 3 6.5l3 3M3 6.5h6.5a3.5 3.5 0 0 1 0 7H7" />,
   redo: <path d="m10 3.5 3 3-3 3M13 6.5H6.5a3.5 3.5 0 0 0 0 7H9" />,
   minus: <path d="M3.5 8h9" />,

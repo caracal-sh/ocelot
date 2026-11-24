@@ -49,6 +49,11 @@ enum AgentLaunch {
     /// order also tries snapcompact (history as bitmap images: more image bytes). Keep in sync with editor/e2e/agent-sandbox.mjs.
     static let compactionYml = "compaction:\n  enabled: true\n  thresholdPercent: 70\n  methodOrder:\n    - shake\n    - soft\n"
 
+    /// omp's automated tool-issue reporting adds a built-in `report_issue` tool to every session (on by default since omp 19.1)
+    /// and pushes reports to a remote endpoint. The sidebar agent keeps only Ocelot's tools and `task` and refuses to start with
+    /// any other, so it is switched off. Keep in sync with editor/e2e/agent-sandbox.mjs.
+    static let autoQaOffYml = "dev:\n  autoqa: false\n"
+
     /// Overlay `config.yml`: MCP tools exposed directly (no `xd://` devices), blocking subagents (the sidebar's turn waits for
     /// them), only the Ocelot server, auto-compaction, and the default model (the private agent dir has no user settings).
     static func configOverlay(defaultModel: String? = nil, thinkingLevel: String? = nil, extraDisabled: [String] = []) -> String {
@@ -56,6 +61,7 @@ enum AgentLaunch {
             + bundledAgentsOff.map { "    - \($0)\n" }.joined()
             + "disabledProviders:\n" + (disabledProviders + extraDisabled).map { "  - \($0)\n" }.joined()
             + compactionYml
+            + autoQaOffYml
         if let defaultModel, !defaultModel.isEmpty { text += "modelRoles:\n  default: \(quoted(defaultModel))\n" }
         if let thinkingLevel, !thinkingLevel.isEmpty { text += "defaultThinkingLevel: \(quoted(thinkingLevel))\n" }
         return text
@@ -168,6 +174,38 @@ enum AgentLaunch {
             "HOME": home, "PI_CODING_AGENT_DIR": agentDir, "TMPDIR": temporaryDirectory,
             "PATH": "/usr/bin:/bin", "LANG": "en_US.UTF-8", gatewayTokenEnv: token, mcpTokenEnv: mcpToken,
         ]
+    }
+
+    /// The confined agent's `~/.omp/natives` from the host's (the real `~/.omp/natives`, read-only to the agent): real directories
+    /// for its entries (`19.1.1/`, `grammars/`), which omp 19.1+ creates and stamps on every start, and links for everything inside
+    /// them (`embedded-<hash>/`, grammar files). Idempotent across sessions; replaces the earlier single link to the whole tree.
+    /// Mirrored by `mirrorNatives` in editor/e2e/omp-runner.mjs.
+    static func mirrorNatives(real: URL, into target: URL) throws {
+        let fm = FileManager.default
+        if (try? fm.destinationOfSymbolicLink(atPath: target.path)) != nil { try fm.removeItem(at: target) }
+        try fm.createDirectory(at: target, withIntermediateDirectories: true)
+        for name in try fm.contentsOfDirectory(atPath: real.path) {
+            let from = real.appendingPathComponent(name)
+            let to = target.appendingPathComponent(name)
+            var isDirectory: ObjCBool = false
+            guard fm.fileExists(atPath: from.path, isDirectory: &isDirectory) else { continue }
+            guard isDirectory.boolValue else {
+                try link(to: from, at: to)
+                continue
+            }
+            if (try? fm.destinationOfSymbolicLink(atPath: to.path)) != nil { try fm.removeItem(at: to) }
+            try fm.createDirectory(at: to, withIntermediateDirectories: true)
+            for child in try fm.contentsOfDirectory(atPath: from.path) {
+                try link(to: from.appendingPathComponent(child), at: to.appendingPathComponent(child))
+            }
+        }
+    }
+
+    private static func link(to destination: URL, at path: URL) throws {
+        let fm = FileManager.default
+        if let current = try? fm.destinationOfSymbolicLink(atPath: path.path), current == destination.path { return }
+        try? fm.removeItem(at: path)
+        try fm.createSymbolicLink(atPath: path.path, withDestinationPath: destination.path)
     }
 
     /// A YAML-safe quoted scalar (JSON strings are valid YAML).

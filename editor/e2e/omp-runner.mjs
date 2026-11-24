@@ -9,7 +9,7 @@
 
 import { execFile, spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { mkdir, realpath, rm, symlink, writeFile } from 'node:fs/promises';
+import { mkdir, readdir, realpath, rm, symlink, writeFile } from 'node:fs/promises';
 import { homedir, platform } from 'node:os';
 import { delimiter, dirname, join } from 'node:path';
 import { createHistoryStore } from './agent-history.mjs';
@@ -273,12 +273,12 @@ export function createAgentHost({ bin = 'omp', unconfined = process.env.OCELOT_A
     await writeFile(files.systemPromptFile, systemPrompt);
     await writeFile(join(session, '.mcp.json'), JSON.stringify(confinedMcpConfig(mcp), null, 2));
     await writeSubagentDefinition(session);
-    // omp's unpacked native addon (110 MB) is the host's; link it read-only instead of unpacking it per session.
+    // omp's unpacked native addon (110 MB) is the host's and stays read-only (one session cannot plant code another loads), but
+    // its version directories are the session's own: omp 19.1+ stamps their mtime on every start, which a read-only link refused.
     const readOnly = [];
     const natives = await realpath(join(homedir(), '.omp', 'natives')).catch(() => null);
     if (natives) {
-      await mkdir(join(home, '.omp'), { recursive: true });
-      await symlink(natives, join(home, '.omp', 'natives'));
+      await mirrorNatives(natives, join(home, '.omp', 'natives'));
       readOnly.push(natives);
     }
     const profileDir = join(stateDir, 'profiles');
@@ -319,6 +319,25 @@ export function createAgentHost({ bin = 'omp', unconfined = process.env.OCELOT_A
       return { url: baseUrl, mintClientToken: (opts) => gw.mintClientToken(opts), revoke: (token) => gw.revokeToken(token) };
     },
   };
+}
+
+/**
+ * Builds a session's `~/.omp/natives` from the host's: real directories down to the version level (`19.1.1/`, `grammars/`), so omp
+ * can create and stamp them, and links for everything inside them (`embedded-<hash>/`, grammar files) into the host's tree, which the
+ * sandbox profile keeps read-only.
+ */
+export async function mirrorNatives(real, target) {
+  await mkdir(target, { recursive: true });
+  for (const entry of await readdir(real, { withFileTypes: true })) {
+    const from = join(real, entry.name);
+    const to = join(target, entry.name);
+    if (!entry.isDirectory()) {
+      await symlink(from, to);
+      continue;
+    }
+    await mkdir(to, { recursive: true });
+    for (const child of await readdir(from)) await symlink(join(from, child), join(to, child));
+  }
 }
 
 /** The one agent the sidebar's `task` tool can spawn (agent-sandbox.mjs): project-level in the agent's working directory. */

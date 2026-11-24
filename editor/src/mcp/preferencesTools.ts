@@ -5,12 +5,12 @@
 // Security settings are deliberately absent: agent confinement ("Run agent unconfined"), tokens and credentials, MCP
 // access, and installing or signing in to omp are never writable by an agent.
 
-import { SIDEBAR_TABS, type SidebarTab } from '../editor/ui';
+import { ASSETS_LIBRARIES, SIDEBAR_TABS, type AssetsLibrary, type SidebarTab } from '../editor/ui';
 import { sidebarAgentOf } from '../agent/sidebarAgentRegistry';
 import type { AgentChat, AgentModel } from '../agent/AgentChat';
 import { ToolError, agentLabel, bool, json, str, type Args, type ToolContext, type ToolDef } from './toolkit';
 
-const KEYS = ['follow_agent', 'follow_agent_key', 'sidebar_open', 'sidebar_tab', 'agent_model', 'agent_effort'] as const;
+const KEYS = ['follow_agent', 'follow_agent_key', 'sidebar_open', 'sidebar_tab', 'assets_library', 'agent_model', 'agent_effort'] as const;
 
 /** The reasoning efforts the picker offers for a model: "off" and the ones it supports. */
 const effortsOf = (m: AgentModel): string[] => ['off', ...m.efforts];
@@ -39,8 +39,9 @@ async function read(ctx: ToolContext) {
     follow_agent_key: ui.followAgentKey,
     sidebar_open: ui.sidebarOpen,
     sidebar_tab: ui.sidebarTab,
+    assets_library: ui.assetsLibrary,
   };
-  const valid: Record<string, unknown> = { sidebar_tab: SIDEBAR_TABS, follow_agent_key: ctx.editor.activity.presences.map((p) => ({ key: p.key, name: p.name })) };
+  const valid: Record<string, unknown> = { sidebar_tab: SIDEBAR_TABS, assets_library: ASSETS_LIBRARIES, follow_agent_key: ctx.editor.activity.presences.map((p) => ({ key: p.key, name: p.name })) };
   if (chat) {
     const models = await knownModels(chat);
     const snap = chat.snapshot;
@@ -63,7 +64,7 @@ export const PREFERENCES_TOOLS: ToolDef[] = [
     readOnly: true,
     description:
       'Reads the person\'s editor preferences (they belong to the person\'s window, not the document): follow_agent (Zoom > Follow agent: the camera follows your work when it is off screen), follow_agent_key (with several agents at work, the one the camera follows; null follows all of them, framing their artboards together), ' +
-      'sidebar_open (⌃⌘S) and sidebar_tab (agent | layers | assets) of the left sidebar, and the in-app agent\'s default agent_model and agent_effort (the pickers under its prompt). ' +
+      'sidebar_open (⌃⌘S), sidebar_tab (agent | layers | assets) of the left sidebar and assets_library (images | styles | patterns | components: the library the Assets tab shows), and the in-app agent\'s default agent_model and agent_effort (the pickers under its prompt). ' +
       '"valid" lists what each can be set to, including the agents currently on the canvas for follow_agent_key and every model the picker offers with its efforts. null means the in-app agent\'s own default. Change them with set_preferences. ' +
       'Security settings (agent confinement, tokens, credentials, MCP access, installing omp or signing in) are never exposed to agents.',
     inputSchema: { type: 'object', properties: {}, additionalProperties: false },
@@ -77,7 +78,7 @@ export const PREFERENCES_TOOLS: ToolDef[] = [
     readOnly: false,
     description:
       'Changes the person\'s editor preferences, exactly as their menus and pickers do (they see the change). Pass any of: follow_agent (boolean; false keeps the camera where the person put it), follow_agent_key (the key of an agent on the canvas, from get_preferences "valid.follow_agent_key": the camera follows only that agent; null follows all agents, framing their artboards together), ' +
-      'sidebar_open (boolean; ⌃⌘S), sidebar_tab ("agent" | "layers" | "assets"; showing a tab opens the sidebar unless sidebar_open is false in the same call), ' +
+      'sidebar_open (boolean; ⌃⌘S), sidebar_tab ("agent" | "layers" | "assets"; showing a tab opens the sidebar unless sidebar_open is false in the same call), assets_library ("images" | "styles" | "patterns" | "components"; shows the Assets tab on that library, like the person\'s Adjust on a system card, unless sidebar_open is false), ' +
       'agent_model (a model id from get_preferences "valid.agent_model") and agent_effort ("off" or an effort that model supports). ' +
       'All-or-nothing: if anything is invalid nothing changes and the error lists the valid values. Returns the new preferences. ' +
       'These are the person\'s settings: change them only when asked, or when the task needs it (for example turning follow_agent off before a long batch the person wants to watch from a fixed view). ' +
@@ -89,6 +90,7 @@ export const PREFERENCES_TOOLS: ToolDef[] = [
         follow_agent_key: { type: ['string', 'null'], description: 'With several agents at work: the key of the one the camera follows (see get_preferences valid.follow_agent_key), or null to follow all of them together.' },
         sidebar_open: { type: 'boolean', description: 'Show (true) or hide (false) the left sidebar.' },
         sidebar_tab: { type: 'string', enum: [...SIDEBAR_TABS], description: 'Which sidebar tab is shown. Opens the sidebar unless sidebar_open is false.' },
+        assets_library: { type: 'string', enum: [...ASSETS_LIBRARIES], description: 'The library the Assets tab shows ("styles" holds the document\'s theme). Shows the Assets tab unless sidebar_open is false.' },
         agent_model: { type: 'string', description: 'The in-app agent\'s model, an id from get_preferences valid.agent_model (e.g. "anthropic/claude-haiku-4-5"). Applies to the next message.' },
         agent_effort: { type: 'string', description: 'The in-app agent\'s reasoning effort: "off" or one the chosen model supports (see get_preferences valid).' },
       },
@@ -109,9 +111,13 @@ export const PREFERENCES_TOOLS: ToolDef[] = [
       const tabName = str(args, 'sidebar_tab', { optional: true });
       if (tabName !== undefined && !(SIDEBAR_TABS as readonly string[]).includes(tabName)) throw new ToolError(`"sidebar_tab" must be one of ${SIDEBAR_TABS.join(', ')}; got "${tabName}".`);
       const tab = tabName as SidebarTab | undefined;
+      const libraryName = str(args, 'assets_library', { optional: true });
+      if (libraryName !== undefined && !(ASSETS_LIBRARIES as readonly string[]).includes(libraryName)) throw new ToolError(`"assets_library" must be one of ${ASSETS_LIBRARIES.join(', ')}; got "${libraryName}".`);
+      if (libraryName !== undefined && tab !== undefined && tab !== 'assets') throw new ToolError(`assets_library shows the Assets tab, so it cannot go with sidebar_tab "${tab}". Drop sidebar_tab, or set it to "assets".`);
+      const library = libraryName as AssetsLibrary | undefined;
       const modelName = str(args, 'agent_model', { optional: true });
       const effort = str(args, 'agent_effort', { optional: true });
-      if (follow === undefined && followKey === undefined && open === undefined && tab === undefined && modelName === undefined && effort === undefined) {
+      if (follow === undefined && followKey === undefined && open === undefined && tab === undefined && library === undefined && modelName === undefined && effort === undefined) {
         throw new ToolError(`set_preferences needs at least one of ${KEYS.join(', ')}, e.g. {"follow_agent": false}. Call get_preferences to see the current values.`);
       }
 
@@ -150,6 +156,11 @@ export const PREFERENCES_TOOLS: ToolDef[] = [
       } else if (tab !== undefined && open === undefined && !ui.sidebarOpen) {
         ui.showSidebarTab(tab);
         changes.push('sidebar shown');
+      }
+      if (library !== undefined && (library !== ui.assetsLibrary || (open !== false && (ui.sidebarTab !== 'assets' || !ui.sidebarOpen)))) {
+        if (open === false) ui.setAssetsLibrary(library);
+        else ui.showAssetsLibrary(library);
+        changes.push(`assets library ${library}`);
       }
       if (open !== undefined && open !== ui.sidebarOpen) {
         ui.setSidebarOpen(open);

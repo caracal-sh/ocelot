@@ -2,7 +2,7 @@ import { useContext, useRef, useState, useSyncExternalStore } from 'react';
 import { AgentChatContext, AgentPanel } from '../agent/AgentPanel';
 import { ConversationControls } from '../agent/ConversationControls';
 import { useEditor, useLocks, useOpenQuestions } from '../editor/context';
-import { SIDEBAR_TABS, type SidebarTab } from '../editor/ui';
+import { ASSETS_LIBRARIES, SIDEBAR_TABS, type SidebarTab } from '../editor/ui';
 import { usePresence } from '../app/usePresence';
 import { AssetsPanel } from './AssetsPanel';
 import { LayersPanel } from './LayersPanel';
@@ -44,7 +44,7 @@ export function LeftPanel({ composerRef }: { composerRef: React.RefObject<HTMLTe
   const working = useAgentWorking();
   const asking = useOpenQuestions() > 0;
   const [opened, setOpened] = useState<ReadonlySet<SidebarTab>>(() => new Set([tab]));
-  const [library, setLibrary] = useState<'images' | 'styles' | 'patterns' | 'components'>('images');
+  const library = useSyncExternalStore((cb) => editor.ui.subscribe(cb), () => editor.ui.assetsLibrary);
   if (!opened.has(tab)) setOpened(new Set([...opened, tab]));
 
   return (
@@ -82,8 +82,8 @@ export function LeftPanel({ composerRef }: { composerRef: React.RefObject<HTMLTe
       {opened.has('assets') && (
         <div className="at-tabpanel" hidden={tab !== 'assets'} role="tabpanel">
           <div className="at-subtabs" role="tablist" aria-label="Assets">
-            {(['images', 'styles', 'patterns', 'components'] as const).map((s) => (
-              <button key={s} type="button" role="tab" aria-selected={library === s} className={`at-subtab${library === s ? ' is-active' : ''}`} onClick={() => setLibrary(s)} data-tab={s === 'images' ? 'assets-images' : s === 'styles' ? 'tokens' : s}>
+            {ASSETS_LIBRARIES.map((s) => (
+              <button key={s} type="button" role="tab" aria-selected={library === s} className={`at-subtab${library === s ? ' is-active' : ''}`} onClick={() => editor.ui.showAssetsLibrary(s)} data-tab={s === 'images' ? 'assets-images' : s === 'styles' ? 'tokens' : s}>
                 {s === 'images' ? 'Images' : s === 'styles' ? 'Styles' : s === 'patterns' ? 'Patterns' : 'Components'}
               </button>
             ))}

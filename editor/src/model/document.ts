@@ -25,6 +25,8 @@ import * as Y from 'yjs';
 import { rejectAttr, toKebab } from './styles';
 import { isInternalLink, linkEquals, normalizeLink, readLink } from './links';
 import { STARTER_CODE, STARTER_LIBRARIES, cloneCode, normalizeCode, readCode, writeCode } from './code';
+import { applyShaderPatch, type ShaderKind, type ShaderParamValue } from '../shader/spec';
+import { generateShaderSource } from '../shader/source';
 import {
   DEFAULT_ROW_GAP,
   planArrangement,
@@ -1261,7 +1263,10 @@ export class DocumentOps {
     });
   }
 
-  /** Replaces a code layer's source and/or libraries. Omitted fields keep their value. */
+  /**
+   * Replaces a code layer's source and/or libraries. Omitted fields keep their value. Writing source by hand turns a shader layer
+   * into a plain code layer (its spec is dropped).
+   */
   setCode(id: string, patch: { source?: string; libraries?: CodeLibrary[] }): void {
     const n = this.doc.ynode(id);
     refuseInstanceLayer(this.doc, id, 'its code is mirrored from the main');
@@ -1272,6 +1277,23 @@ export class DocumentOps {
     const cur = readCode(n.get('code')) ?? { source: '', libraries: [] };
     const next = normalizeCode({ source: patch.source ?? cur.source, libraries: patch.libraries ?? cur.libraries }, 'Code layer');
     this.transact(() => writeCode(n, next));
+  }
+
+  /**
+   * Retunes a shader layer: `kind` switches to another kind (keeping the colours and parameters that fit), `colors` replaces the colour
+   * list, `params` changes the listed parameters and keeps the rest. The module source is regenerated from the new spec. One call is
+   * one undo step.
+   */
+  setShader(id: string, patch: { kind?: ShaderKind; colors?: readonly string[]; params?: Readonly<Record<string, ShaderParamValue>> }): void {
+    const n = this.doc.ynode(id);
+    refuseInstanceLayer(this.doc, id, 'its shader is mirrored from the main');
+    const type = n.get('type') as NodeType;
+    const cur = type === 'code' ? readCode(n.get('code')) : null;
+    if (!cur?.shader) {
+      throw new ModelError('invalid_argument', `Node "${id}" is ${type === 'code' ? 'a plain code layer' : `a ${type} node`}, not a shader layer. Create one with create_shader_layer.`);
+    }
+    const shader = applyShaderPatch(cur.shader, { kind: patch.kind, colors: patch.colors ? [...patch.colors] : undefined, params: patch.params ?? {} }, 'Shader');
+    this.transact(() => writeCode(n, { source: generateShaderSource(shader), libraries: [], shader }));
   }
 
   /**

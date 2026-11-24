@@ -41,7 +41,7 @@ export const CODE_CONTRACT =
   'Sandbox: no network (fetch/XHR/WebSocket/import of URLs fail), no external assets: use inline code, procedural textures, or data:/blob: URLs; no access to the page, storage or cookies. ' +
   'The layer is sized by its styles (width/height; default 400×300).';
 
-const SCREENSHOT_NOTE = 'Next: get_screenshot to check the rendering, and get_code_errors if it looks blank.';
+export const SCREENSHOT_NOTE = 'Next: get_screenshot to check the rendering, and get_code_errors if it looks blank.';
 
 function formatErrors(errors: readonly CodeError[]): string {
   return errors.map((e) => `- ${e.kind === 'console' ? 'console.error' : 'error'}${e.line ? ` (line ${e.line}${e.column ? `:${e.column}` : ''})` : ''}: ${e.message}`).join('\n');
@@ -63,7 +63,7 @@ function librariesArg(args: Args, key = 'libraries'): CodeLibrary[] | undefined 
 }
 
 /** Waits (briefly) for the layer's frame to render once, so the agent gets runtime errors in the same reply. */
-async function settle(ctx: ToolContext, id: string, timeoutMs = 4000): Promise<{ state: 'ready' | 'pending' | 'unmounted'; errors: CodeError[] }> {
+export async function settle(ctx: ToolContext, id: string, timeoutMs = 4000): Promise<{ state: 'ready' | 'pending' | 'unmounted'; errors: CodeError[] }> {
   const abId = ctx.editor.doc.artboardOf(id);
   const host = abId ? ctx.editor.renderers.get(abId)?.code : undefined;
   if (!host) return { state: 'unmounted', errors: [] };
@@ -79,7 +79,7 @@ async function settle(ctx: ToolContext, id: string, timeoutMs = 4000): Promise<{
   }
 }
 
-function report(id: string, state: 'ready' | 'pending' | 'unmounted', errors: CodeError[]): string {
+export function report(id: string, state: 'ready' | 'pending' | 'unmounted', errors: CodeError[]): string {
   if (state === 'unmounted') return `${id}: not rendered on the canvas yet (no runtime feedback). ${SCREENSHOT_NOTE}`;
   const head = state === 'ready' ? `${id}: mounted` : `${id}: still starting after 4 s (heavy scene or a failed import)`;
   return errors.length ? `${head} with ${errors.length} error(s):\n${formatErrors(errors)}` : `${head}, no errors.`;
@@ -187,9 +187,12 @@ export const CODE_TOOLS: ToolDef[] = [
         const libraries = librariesArg(u);
         const reload = bool(u, 'reload') ?? topReload;
         if (source === undefined && libraries === undefined && !reload) throw new ToolError(`Update for "${id}" needs "source" and/or "libraries", or reload: true to re-mount it as it is.`);
+        if (n.code!.shader && source === undefined && libraries !== undefined) {
+          throw new ToolError(`"${id}" is a shader layer: libraries only apply to hand-written code. Tune it with update_shader, or pass "source" to replace the generated module with your own (the layer then becomes plain code).`);
+        }
         const next = normalizeCode({ source: source ?? n.code!.source, libraries: libraries ?? n.code!.libraries }, `Code layer "${id}"`);
         const changed = next.source !== n.code!.source || next.libraries.join() !== n.code!.libraries.join();
-        return { id, patch: { ...(source !== undefined ? { source } : {}), ...(libraries ? { libraries } : {}) }, remount: reload && !changed };
+        return { id, patch: { ...(source !== undefined ? { source } : {}), ...(libraries ? { libraries } : {}) }, remount: reload && !changed, detaches: !!n.code!.shader && source !== undefined };
       });
       assertEditable(ctx, items.map((i) => i.id));
       const patched = items.filter((i) => Object.keys(i.patch).length > 0);
@@ -199,7 +202,7 @@ export const CODE_TOOLS: ToolDef[] = [
       const out: string[] = [];
       for (const i of items) {
         const { state, errors } = await settle(ctx, i.id);
-        out.push(report(i.id, state, errors) + lintOf(ctx, i.id));
+        out.push(report(i.id, state, errors) + lintOf(ctx, i.id) + (i.detaches ? `\nNote: ${i.id} is now a plain code layer; its shader controls and update_shader no longer apply.` : ''));
       }
       return text(out.join('\n'));
     },
@@ -215,7 +218,7 @@ export const CODE_TOOLS: ToolDef[] = [
     run(args, ctx) {
       const out = ids(args, 'node_ids').map((id) => {
         const n = codeNode(ctx, id);
-        return { id, name: n.name, libraries: n.code!.libraries, styles: n.styles, source: n.code!.source };
+        return { id, name: n.name, libraries: n.code!.libraries, styles: n.styles, ...(n.code!.shader ? { shader: n.code!.shader } : {}), source: n.code!.source };
       });
       return json(out.length === 1 ? out[0] : out);
     },

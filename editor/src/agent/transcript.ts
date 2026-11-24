@@ -14,6 +14,7 @@ import type { Attachment } from './attachments';
 import type { LayerReference } from '../editor/layerReferences';
 import { describeCall } from '../mcp/describe';
 import { patternById } from '../patterns/catalog';
+import { directionFromCall, isDirectionData, type DirectionData } from './direction';
 
 export type ToolStatus = 'running' | 'ok' | 'error';
 
@@ -49,6 +50,8 @@ export type ChatItem =
       job?: string;
       /** `task` calls: the subagents it spawned and where each one is. The step stays running until all of them are done, long after the call itself returned. */
       agents?: SubagentRow[];
+      /** `create_theme`, or `apply_theme` of a stock theme, that succeeded: what the Direction card shows (direction.ts). Stored with the transcript, so the card survives a reload. */
+      direction?: DirectionData;
     }
   | { kind: 'notice'; id: string; tone: 'info' | 'error'; text: string; action?: 'signIn' }
   /** What the person answered to an agent's question (`ask_user`): the card collapses into this row. */
@@ -203,14 +206,18 @@ export function applyEvent(state: TranscriptState, ev: Json): TranscriptState {
       return {
         ...state,
         items: dropOldImages(
-          patch(state.items, id, 'tool', (it) => ({
-            ...it,
-            status: isError ? 'error' : 'ok',
-            ...(isError ? { error: firstLine(text) || 'The tool call failed.' } : {}),
-            ...(image ? { image } : {}),
-            ...(it.tool === 'task' ? { agents: mergeAgents(it.agents, it.input, progressOf(result)) } : {}),
-            ...(!isError && IMAGE_JOB_TOOLS[it.tool] === true && startedJobId(text) ? { job: startedJobId(text) } : {}),
-          })),
+          patch(state.items, id, 'tool', (it) => {
+            const direction = isError ? undefined : directionFromCall(it.tool, it.input, text);
+            return {
+              ...it,
+              status: isError ? 'error' : 'ok',
+              ...(isError ? { error: firstLine(text) || 'The tool call failed.' } : {}),
+              ...(image ? { image } : {}),
+              ...(it.tool === 'task' ? { agents: mergeAgents(it.agents, it.input, progressOf(result)) } : {}),
+              ...(!isError && IMAGE_JOB_TOOLS[it.tool] === true && startedJobId(text) ? { job: startedJobId(text) } : {}),
+              ...(direction ? { direction } : {}),
+            };
+          }),
         ),
       };
     }
@@ -322,6 +329,15 @@ export function toolRunning(item: ToolItem): boolean {
   return item.status === 'running' || !!item.agents?.some((a) => a.status === 'running');
 }
 
+/**
+ * What the Direction card shows for a tool row, or undefined when the row is a plain step (another tool, a failed or running call).
+ * A stored `direction` wins; a transcript saved before it existed is read from the call's input.
+ */
+export function directionOfItem(item: ToolItem): DirectionData | undefined {
+  if (item.status !== 'ok') return undefined;
+  return isDirectionData(item.direction) ? item.direction : directionFromCall(item.tool, item.input);
+}
+
 const AUTH_ERROR = /authenticat|log ?in|oauth|api key|credential|unauthori[sz]ed|\b401\b/i;
 
 export function isAuthError(text: string): boolean {
@@ -390,6 +406,10 @@ export function toolLabel(item: ToolItem, nameOf?: (id: string) => string | unde
     case 'apply_theme': {
       const id = str(input?.['theme_id'])?.trim();
       return id === 'none' ? pick('Removing the theme', 'Removed the theme') : id ? pick(`Applying the theme ${id}`, `Applied the theme ${id}`) : pick('Applying a theme', 'Applied a theme');
+    }
+    case 'create_theme': {
+      const name = str(input?.['name'])?.trim();
+      return name ? pick(`Creating the system ${name}`, `Created the system ${name}`) : pick('Creating a system for this design', 'Created a system for this design');
     }
     case 'list_patterns':
       return pick('Browsing patterns', 'Browsed patterns');

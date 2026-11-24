@@ -45,6 +45,34 @@ final class AgentLaunchTests: XCTestCase {
         XCTAssertFalse(AgentLaunch.configOverlay().contains("modelRoles"))
     }
 
+    func testOverlaySwitchesOffAutoQaSoNoForeignToolAppears() {
+        XCTAssertTrue(AgentLaunch.configOverlay().contains("dev:\n  autoqa: false\n"))
+    }
+
+    func testNativesMirrorHasStampableVersionDirectoriesLinkingIntoTheHostTree() throws {
+        let fm = FileManager.default
+        let root = fm.temporaryDirectory.appendingPathComponent("natives-\(UUID().uuidString)")
+        defer { try? fm.removeItem(at: root) }
+        let real = root.appendingPathComponent("host")
+        let addon = real.appendingPathComponent("19.1.1/embedded-abc")
+        try fm.createDirectory(at: addon, withIntermediateDirectories: true)
+        try Data("addon".utf8).write(to: addon.appendingPathComponent("pi_natives.darwin-arm64.node"))
+        let target = root.appendingPathComponent("container/.omp/natives")
+        // An older container: the whole tree was one link, which omp 19.1+ could not stamp.
+        try fm.createDirectory(at: target.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try fm.createSymbolicLink(atPath: target.path, withDestinationPath: real.path)
+
+        try AgentLaunch.mirrorNatives(real: real, into: target)
+        try AgentLaunch.mirrorNatives(real: real, into: target) // idempotent
+
+        let version = target.appendingPathComponent("19.1.1")
+        XCTAssertNil(try? fm.destinationOfSymbolicLink(atPath: target.path))
+        XCTAssertNil(try? fm.destinationOfSymbolicLink(atPath: version.path))
+        XCTAssertNoThrow(try fm.setAttributes([.modificationDate: Date()], ofItemAtPath: version.path))
+        XCTAssertEqual(try fm.destinationOfSymbolicLink(atPath: version.appendingPathComponent("embedded-abc").path), addon.path)
+        XCTAssertEqual(try String(contentsOf: version.appendingPathComponent("embedded-abc/pi_natives.darwin-arm64.node"), encoding: .utf8), "addon")
+    }
+
     func testSubagentsAreCappedBlockingAndOnlyTheOcelotAgent() {
         let yml = AgentLaunch.configOverlay()
         XCTAssertTrue(yml.contains("async:\n  enabled: false\n"))

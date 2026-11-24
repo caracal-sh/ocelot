@@ -13,6 +13,9 @@
 import { CODE_FRAME_BOOTSTRAP } from './codeFrameBootstrap';
 import { frameSeed } from './exportRuntime';
 import type { CodeData, CodeLibrary } from '../model/types';
+import { sameShader } from '../shader/spec';
+import { shaderRuntimeKey } from '../shader/source';
+import { varNamesIn } from './customProps';
 
 /** Exact versions vendored by `scripts/vendor.mjs` (checked against package.json by a test). */
 export const LIBRARY_VERSIONS: Record<CodeLibrary, string> = {
@@ -83,6 +86,8 @@ export interface CodeFrameOptions {
   /** Export mode: frames per second and the seed of `Math.random`. */
   fps?: number;
   seed?: number;
+  /** Custom properties the source reads through var(--name), resolved by the host: set on the frame's root so var() works inside it. */
+  vars?: Record<string, string>;
 }
 
 /** JSON that is safe inside an inline <script>: no "</script", no "<!--", no line separators. */
@@ -100,6 +105,8 @@ export function codeFrameSrcdoc(code: CodeData, opts: CodeFrameOptions): string 
     ...(opts.reducedMotion !== undefined ? { reducedMotion: opts.reducedMotion } : {}),
     ...(opts.fps !== undefined ? { fps: opts.fps } : {}),
     ...(opts.seed !== undefined ? { seed: opts.seed } : {}),
+    ...(code.shader ? { spec: code.shader } : {}),
+    ...(opts.vars && Object.keys(opts.vars).length ? { vars: opts.vars } : {}),
   };
   return [
     '<!doctype html><html><head><meta charset="utf-8">',
@@ -158,6 +165,9 @@ interface Mounted {
   key: string;
   code: CodeData;
   status: CodeLayerStatus;
+  /** What the frame has been told since it mounted: its shader spec (JSON) and custom properties. */
+  spec: string;
+  vars: Record<string, string>;
 }
 
 const MAX_ERRORS = 20;
@@ -176,6 +186,8 @@ export class CodeLayerHost {
   #exportFps: number | null = null;
   #listeners = new Set<(nodeId: string) => void>();
   #styleInjected = false;
+  #observer: MutationObserver | null = null;
+  #refreshQueued = false;
   readonly #onMessage = (e: MessageEvent) => this.#receive(e);
   readonly #onMotion = () => this.#broadcastMotion();
 
@@ -205,11 +217,20 @@ export class CodeLayerHost {
     for (const nodeId of this.nodeIds()) this.reload(nodeId);
   }
 
-  /** Creates or updates the frame for a code node. Re-mounts only when source or libraries changed (or the element was replaced). */
+  /**
+   * Creates or updates the frame for a code node. Re-mounts only when source or libraries changed (or the element was replaced).
+   * A shader layer whose generated module is the same except for its spec keeps its frame: the new spec is posted in (live tuning).
+   */
   sync(nodeId: string, el: Element, code: CodeData): void {
-    const key = `${this.#exportFps ?? 'live'}\u0000${code.libraries.join(',')}\u0000${code.source}`;
+    const body = code.shader ? `shader:${shaderRuntimeKey(code.source)}` : code.source;
+    const key = `${this.#exportFps ?? 'live'}\u0000${code.libraries.join(',')}\u0000${body}`;
     const cur = this.#mounted.get(nodeId);
-    if (cur && cur.el === el && cur.key === key && cur.iframe.parentNode === el && !this.#forceReload.delete(nodeId)) return;
+    if (cur && cur.el === el && cur.key === key && cur.iframe.parentNode === el && !this.#forceReload.delete(nodeId)) {
+      const changed = !sameShader(cur.code.shader, code.shader);
+      cur.code = code;
+      if (changed) this.#pushUpdate(nodeId);
+      return;
+    }
     if (cur) cur.iframe.remove();
     this.#injectStyle();
     el.setAttribute('data-ocelot-code', '');
@@ -219,21 +240,26 @@ export class CodeLayerHost {
     iframe.setAttribute('title', 'Code layer');
     iframe.setAttribute('aria-hidden', 'true');
     iframe.setAttribute('data-ocelot-code-frame', '');
-    this.#mounted.set(nodeId, { el, iframe, key, code, status: { ready: false, errors: [] } });
+    const vars = this.#resolveVars(el, varNamesIn(code.source));
+    this.#mounted.set(nodeId, { el, iframe, key, code, status: { ready: false, errors: [] }, spec: JSON.stringify(code.shader ?? null), vars });
+    this.#observe(el);
     const motion = (this.#dom.defaultView as MotionWindow | null)?.__ocelotMotion;
     iframe.srcdoc = codeFrameSrcdoc(
       code,
       this.#exportFps !== null
-        ? { vendorBase: this.#vendorBase, mode: 'export', paused: false, reducedMotion: false, fps: this.#exportFps, seed: frameSeed(nodeId) }
+        ? { vendorBase: this.#vendorBase, mode: 'export', paused: false, reducedMotion: false, fps: this.#exportFps, seed: frameSeed(nodeId), vars }
         : {
             vendorBase: this.#vendorBase,
             mode: 'live',
+            vars,
             ...(motion?.paused !== undefined ? { paused: !!motion.paused } : {}),
             ...(motion?.reducedMotion !== undefined ? { reducedMotion: !!motion.reducedMotion } : {}),
           },
     );
     el.replaceChildren(iframe);
     this.#emit(nodeId);
+    // The element is usually not in the document yet while the reconciler builds it: resolve again once it is.
+    if (Object.keys(vars).length === 0 && varNamesIn(code.source).length > 0) queueMicrotask(() => this.#pushUpdate(nodeId));
   }
 
   /** Unloads the frame (its `pagehide` runs the module's cleanup). */
@@ -262,6 +288,8 @@ export class CodeLayerHost {
     const win = this.#dom.defaultView;
     win?.removeEventListener('message', this.#onMessage);
     win?.removeEventListener('ocelot-motion-changed', this.#onMotion);
+    this.#observer?.disconnect();
+    this.#observer = null;
     for (const m of this.#mounted.values()) m.iframe.remove();
     this.#mounted.clear();
     this.#listeners = new Set();
@@ -275,6 +303,50 @@ export class CodeLayerHost {
     style.setAttribute('data-ocelot-code-style', '');
     style.textContent = CODE_LAYER_CSS;
     this.#dom.head?.appendChild(style);
+  }
+
+  /** The current values of `names` at `el` (the artboard's tokens reach the layer by inheritance); {} while the element is not in the document. */
+  #resolveVars(el: Element, names: readonly string[]): Record<string, string> {
+    const win = el.ownerDocument.defaultView;
+    if (!win || !el.isConnected || names.length === 0) return {};
+    const style = win.getComputedStyle(el);
+    const out: Record<string, string> = {};
+    for (const name of names) {
+      const value = style.getPropertyValue(name).trim();
+      if (value) out[name] = value;
+    }
+    return out;
+  }
+
+  /** Tells the frame what changed since it last heard: its shader spec and any custom property whose value moved. */
+  #pushUpdate(nodeId: string, force = false): void {
+    const m = this.#mounted.get(nodeId);
+    if (!m) return;
+    const vars = this.#resolveVars(m.el, varNamesIn(m.code.source));
+    const changedVars: Record<string, string> = {};
+    for (const [k, v] of Object.entries(vars)) if (force || m.vars[k] !== v) changedVars[k] = v;
+    for (const k of Object.keys(m.vars)) if (!(k in vars)) changedVars[k] = '';
+    const spec = JSON.stringify(m.code.shader ?? null);
+    const specChanged = force ? m.code.shader !== undefined : spec !== m.spec;
+    if (!specChanged && Object.keys(changedVars).length === 0) return;
+    m.vars = vars;
+    m.spec = spec;
+    m.iframe.contentWindow?.postMessage({ type: 'ocelot:update', ...(specChanged ? { spec: m.code.shader } : {}), vars: changedVars }, '*');
+  }
+
+  /** Re-resolves every layer's custom properties when a style or class changes on one of its ancestors (a theme switch, a token edit). */
+  #observe(el: Element): void {
+    const win = this.#dom.defaultView;
+    if (!win?.MutationObserver) return;
+    this.#observer ??= new win.MutationObserver(() => {
+      if (this.#refreshQueued) return;
+      this.#refreshQueued = true;
+      queueMicrotask(() => {
+        this.#refreshQueued = false;
+        for (const id of this.#mounted.keys()) this.#pushUpdate(id);
+      });
+    });
+    for (let n: Element | null = el; n; n = n.parentElement) this.#observer.observe(n, { attributes: true, attributeFilter: ['style', 'class'] });
   }
 
   #emit(nodeId: string): void {
@@ -300,6 +372,8 @@ export class CodeLayerHost {
         m.status.ready = true;
         // A frame that mounted before the editor published its motion state missed the broadcast: tell it now.
         this.#broadcastMotion([m.iframe]);
+        // The same goes for a spec or token that changed while the frame was loading.
+        this.#pushUpdate(nodeId, true);
         this.#emit(nodeId);
       } else if (msg['type'] === 'ocelot:error' && typeof msg['message'] === 'string') {
         if (m.status.errors.length >= MAX_ERRORS) return;

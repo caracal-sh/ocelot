@@ -1,7 +1,7 @@
 import { createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type ClipboardEvent, type KeyboardEvent, type ReactNode } from 'react';
 import { useEditor } from '../editor/context';
 import type { AgentChat, AgentModel, AgentSnapshot } from './AgentChat';
-import { thumbnailAlt, toolLabel, toolRunning, type ChatItem } from './transcript';
+import { directionOfItem, thumbnailAlt, toolLabel, toolRunning, type ChatItem } from './transcript';
 import { TaskStep } from './TaskStep';
 import { ReadyGate, SignIn, Setup } from './SetupFlow';
 import { CrossfadeText } from '../app/Crossfade';
@@ -15,6 +15,7 @@ import { answerText } from './answers';
 import { QueueChips, useCommandHeld } from './QueueChips';
 import type { QueueName, QueuedItem, SendMode } from './queue';
 import { ImageJobStep, PendingImages } from './ImageJobs';
+import { DirectionCard } from './DirectionCard';
 import { relativeTime, type ConversationMeta } from './conversations';
 
 export const AgentChatContext = createContext<AgentChat | null>(null);
@@ -139,7 +140,7 @@ function Messages({ chat, snap }: { chat: AgentChat; snap: AgentSnapshot }) {
     body = (
       <>
         {snap.items.map((item) => (
-          <Item key={item.id} item={item} onSignIn={signIn} onCopy={copy} />
+          <Item key={item.id} item={item} chat={chat} snap={snap} onSignIn={signIn} onCopy={copy} />
         ))}
         {snap.turn && <Working turn={snap.turn} thinking={snap.thinking} items={snap.items} />}
         {!snap.turn && <PendingImages />}
@@ -176,9 +177,10 @@ function Empty({ ready, onSuggestion, last, onContinue }: { ready: boolean; onSu
   );
 }
 
-function Item({ item, onSignIn, onCopy }: { item: ChatItem; onSignIn: () => void; onCopy: (text: string) => Promise<void> }) {
+function Item({ item, chat, snap, onSignIn, onCopy }: { item: ChatItem; chat: AgentChat; snap: AgentSnapshot; onSignIn: () => void; onCopy: (text: string) => Promise<void> }) {
   const editor = useEditor();
   const nameOf = (id: string) => editor.doc.get(id)?.name;
+  const direction = item.kind === 'tool' ? directionOfItem(item) : undefined;
   switch (item.kind) {
     case 'user':
       return (
@@ -200,6 +202,8 @@ function Item({ item, onSignIn, onCopy }: { item: ChatItem; onSignIn: () => void
       if ((item.tool === 'ask_user' || item.tool === 'get_answers') && item.status !== 'error') return null;
       if (item.tool === 'end_edit' && item.status === 'ok') return null;
       if (item.job) return <ImageJobStep item={item} jobId={item.job} />;
+      // A system the agent chose (create_theme, or a stock theme applied as is) is a card; a failed or still-running call stays a step.
+      if (direction) return <DirectionCard data={direction} chat={chat} working={!!snap.turn} available={snap.availability.kind === 'ready'} />;
       if (item.agents?.length) return <TaskStep item={item} agents={item.agents} />;
       return (
         <div className={`at-step at-step--${item.status}${item.tool === 'begin_edit' ? ' at-step--edit' : ''}`} data-testid="agent-step" title={item.intent}>

@@ -116,6 +116,39 @@ describe('frame rules', () => {
     expect(ids(await inspect(avatars, 1440, 600))).not.toContain('overlap');
   });
 
+  it('covered-text: a sticker painted over a headline trips it; one behind the words, or the text on its own card, does not', async () => {
+    const page = (sticker) => doc(`<div style="position:relative;width:1440px;height:700px;padding:160px 120px;box-sizing:border-box">${H('Every screw, by hand.')}${P(BODY, 'max-width:520px;margin-top:24px')}${sticker}</div>`);
+    const over = await inspect(page('<div style="position:absolute;left:380px;top:150px;width:220px;height:120px;background:#ffd21f;transform:rotate(-6deg)"></div>'), 1440, 700);
+    expect(ids(over)).toContain('covered-text');
+    expect(over.findings.find((f) => f.rule_id === 'covered-text').level).toBe('fix');
+    expect(ids(await inspect(page('<div style="position:absolute;left:380px;top:150px;width:220px;height:120px;background:#ffd21f;z-index:-1"></div>'), 1440, 700))).not.toContain('covered-text');
+    const onCard = doc(`<div style="position:relative;width:1440px;height:700px;padding:120px;box-sizing:border-box"><img alt="" style="display:block;width:800px;height:460px;background:#345"><div style="position:absolute;left:760px;top:420px;width:320px;padding:24px;background:#fff">${P('Riders leave the bakery at six.')}</div></div>`);
+    expect(ids(await inspect(onCard, 1440, 700))).not.toContain('covered-text');
+  });
+
+  it('text-straddles-picture: a headline half on a picture asks; one wholly on it, or set on its own card across the edge, does not', async () => {
+    const pic = '<div style="position:absolute;left:640px;top:100px;width:680px;height:500px;background-image:linear-gradient(#456,#123)"></div>';
+    const half = doc(`<div style="position:relative;width:1440px;height:700px">${pic}${H('Counsel for ships in trouble', 'position:absolute;left:400px;top:260px;width:560px;z-index:1')}</div>`);
+    const r = await inspect(half, 1440, 700);
+    expect(ids(r)).toContain('text-straddles-picture');
+    expect(r.findings.find((f) => f.rule_id === 'text-straddles-picture').level).toBe('check');
+    const inside = doc(`<div style="position:relative;width:1440px;height:700px">${pic}${H('Counsel', 'position:absolute;left:720px;top:260px;z-index:1;color:#fff')}</div>`);
+    expect(ids(await inspect(inside, 1440, 700))).not.toContain('text-straddles-picture');
+    const carded = doc(`<div style="position:relative;width:1440px;height:700px">${pic}<div style="position:absolute;left:520px;top:440px;width:300px;padding:20px;background:#fff;z-index:1">${P('Tow connected at 04:18', 'font-size:24px')}</div></div>`);
+    expect(ids(await inspect(carded, 1440, 700))).not.toContain('text-straddles-picture');
+  });
+
+  it('one-sided-bleed: a hero picture running to one edge under a nav that keeps its margin asks; a true split and an aligned picture do not', async () => {
+    const nav = `<div style="display:flex;justify-content:space-between;padding:24px 120px">${P('Low Gear Bakery')}${P('Order for tomorrow')}</div>`;
+    const hero = (picture) => doc(`<div style="width:1440px">${nav}<div style="display:flex;padding:64px 0 64px 120px;gap:48px"><div style="width:520px">${H('Slow dough.', 'font-size:64px')}${P(BODY, 'margin-top:20px')}</div>${picture}</div></div>`);
+    const r = await inspect(hero('<div style="flex:1;height:420px;background:#2a3f8f"></div>'), 1440, 700);
+    expect(ids(r)).toContain('one-sided-bleed');
+    expect(r.findings.find((f) => f.rule_id === 'one-sided-bleed').measured).toMatch(/runs to the right edge; the content keeps a 120px margin there/);
+    expect(ids(await inspect(hero('<div style="flex:1;height:420px;margin-right:120px;background:#2a3f8f"></div>'), 1440, 700))).not.toContain('one-sided-bleed');
+    const split = doc(`<div style="display:flex;width:1440px;height:700px"><div style="width:700px;padding:100px 0 0 120px;box-sizing:border-box">${H('Lamps', 'font-size:60px')}${P('Warm light.')}${P(BODY)}</div><div style="flex:1;background:#e0a070"></div></div>`);
+    expect(ids(await inspect(split, 1440, 700))).not.toContain('one-sided-bleed');
+  });
+
   it('blank-gap: 240px of nothing between two blocks trips it; trailing space and an image band do not', async () => {
     const block = (extra = '') => `<div style="margin:0 120px;height:200px;background:#cde;${extra}"></div>`;
     const gap = doc(`<div style="padding-top:60px">${block()}<div style="height:300px"></div>${block()}</div>`);

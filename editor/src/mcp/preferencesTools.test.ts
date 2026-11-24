@@ -107,6 +107,18 @@ describe('set_preferences', () => {
     expect((await t.call('set_preferences', { sidebar_tab: 'assets' })).json!['preferences']).toMatchObject({ sidebar_open: true, sidebar_tab: 'assets' });
   });
 
+  it('opens the Assets tab on a library, the agent side of a system card\'s Adjust, and refuses another tab with it', async () => {
+    const t = await setup();
+    t.editor.ui.setSidebarTab('layers');
+    const r = await t.call('set_preferences', { assets_library: 'styles' });
+    expect(r.json).toMatchObject({ changed: ['assets library styles'], preferences: { sidebar_open: true, sidebar_tab: 'assets', assets_library: 'styles' } });
+    expect(t.editor.ui.assetsLibrary).toBe('styles');
+    expect((await t.call('get_preferences')).json!['valid']['assets_library']).toEqual(['images', 'styles', 'patterns', 'components']);
+    const clash = await t.call('set_preferences', { assets_library: 'images', sidebar_tab: 'layers' });
+    expect(clash.text).toMatch(/cannot go with sidebar_tab "layers"/);
+    expect(t.editor.ui.assetsLibrary).toBe('styles');
+  });
+
   it('sets the in-app agent model and effort like the pickers (persisted, effort clamped to the model)', async () => {
     const t = await setup();
     await t.chat.refreshStatus();

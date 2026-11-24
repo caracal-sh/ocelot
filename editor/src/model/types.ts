@@ -1,5 +1,7 @@
 // Plain (non-Yjs) shapes of the document. The Yjs layout lives in document.ts.
 
+import type { ShaderSpec } from '../shader/spec';
+
 export type NodeType = 'artboard' | 'frame' | 'text' | 'image' | 'svg' | 'code';
 
 export const NODE_TYPES: readonly NodeType[] = ['artboard', 'frame', 'text', 'image', 'svg', 'code'];
@@ -12,6 +14,8 @@ export type CodeLibrary = (typeof CODE_LIBRARIES)[number];
 export interface CodeData {
   source: string;
   libraries: CodeLibrary[];
+  /** Present on shader layers: `source` is generated from this spec (shader/source.ts). Editing the source by hand drops it. */
+  shader?: ShaderSpec;
 }
 
 /** CSS properties in kebab-case ("background-color", "--brand"), values as CSS text. */

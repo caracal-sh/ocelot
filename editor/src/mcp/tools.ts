@@ -36,6 +36,7 @@ import { CANVAS_TOOLS } from './canvasTools';
 import { FILL_TOOLS } from './fillTools';
 import { ARRANGE_TOOLS } from './arrangeTools';
 import { CODE_TOOLS } from './codeTools';
+import { SHADER_TOOLS } from './shaderTools';
 import { TIMELINE_TOOLS, fpsOfArtboard, resolveVideoShot } from './timelineTools';
 import { ASSET_TOOLS } from './assetTools';
 import { ASSET_MANAGE_TOOLS } from './assetManageTools';
@@ -193,6 +194,7 @@ const CORE_TOOLS: ToolDef[] = [
         attrs: n.attrs,
         ...(n.type === 'text' ? (n.html ? { html: n.html } : { text: n.text }) : {}),
         ...(n.type === 'svg' ? { svg_markup: n.html } : {}),
+        ...(n.code?.shader ? { shader: n.code.shader } : {}),
         ...(n.frame ? { frame: n.frame } : {}),
         rendered_box: liveRect(ctx.editor, n.id),
         hidden: n.hidden,
@@ -376,13 +378,13 @@ const CORE_TOOLS: ToolDef[] = [
     readOnly: true,
     description:
       'Font families you can use in font-family. bundled_fonts ship with Ocelot (SIL OFL, Latin subsets): they render identically on every machine and in exports. ' +
-      'The Geist family (Geist = Geist Sans, Geist Serif, Geist Mono, Geist Pixel) is listed first and Geist is the default: each entry\'s "use" says what it is for. Keep Geist for UI and body text; choose another display family once, for the document\'s system, when the voice calls for it (editorial, warm, historic, playful, loud) or the user\'s brand does, and say why. The themes use the other bundled fonts (list_themes). ' +
+      'The Geist family (Geist = Geist Sans, Geist Serif, Geist Mono, Geist Pixel) is listed first and Geist is the default for UI and body text. Every bundled entry\'s "use" names the voice and the subjects it fits: choose the display family once, for the document\'s system, whose use matches this brief\'s voice and subject (or the user\'s brand), and say why; never the same face for every brief. ' +
       'Also listed: fonts installed on this Mac and fonts already used in the document (those render on this Mac only). Web fonts (<link>) are not loaded. ' +
       'Pass query to filter (case-insensitive substring). Always include a generic fallback, e.g. "Geist, system-ui, sans-serif".',
     inputSchema: {
       type: 'object',
       properties: {
-        query: { type: 'string', description: 'Filter, e.g. "mono" or "serif".' },
+        query: { type: 'string', description: 'Filter on the family name or its use, e.g. "mono", "serif" or a voice such as "industrial" or "children".' },
         limit: { type: 'integer', minimum: 1, maximum: 1000, default: 200 },
       },
       additionalProperties: false,
@@ -403,12 +405,12 @@ const CORE_TOOLS: ToolDef[] = [
       }
       const filter = (list: string[]) => (q ? list.filter((f) => f.toLowerCase().includes(q)) : list);
       const sys = filter(system);
-      const bundled = BUNDLED_FONTS.filter((f) => !q || f.family.toLowerCase().includes(q)).map((f) => ({
+      const bundled = BUNDLED_FONTS.filter((f) => !q || f.family.toLowerCase().includes(q) || f.use.toLowerCase().includes(q)).map((f) => ({
         family: f.family,
         weights: [...new Set(f.faces.map((x) => x.weight))].join(', '),
         ...(f.faces.some((x) => x.style === 'italic') ? { italic: true } : {}),
         license: 'SIL OFL 1.1',
-        ...(f.use ? { use: f.use } : {}),
+        use: f.use,
       }));
       return json({
         bundled_fonts: bundled,
@@ -943,7 +945,7 @@ const CORE_TOOLS: ToolDef[] = [
 ];
 
 /** Every tool, in the order agents see them: guide first, then read, write, structure. */
-export const TOOLS: ToolDef[] = [...QUERY_TOOLS.slice(0, 1), ...CORE_TOOLS, ...HANDOFF_TOOLS, ...INSPECT_TOOLS, ...QUERY_TOOLS.slice(1), ...PAGE_TOOLS, ...DECK_TOOLS, ...EDIT_TOOLS, ...FILL_TOOLS, ...CANVAS_TOOLS, ...ARRANGE_TOOLS, ...MOTION_TOOLS, ...LINK_TOOLS, ...PRESENT_TOOLS, ...CODE_TOOLS, ...TIMELINE_TOOLS, ...THEME_TOOLS, ...DESIGN_SYSTEM_TOOLS, ...COMPONENT_TOOLS, ...PATTERN_TOOLS, ...ASSET_TOOLS, ...ASSET_MANAGE_TOOLS, ...COLOR_TOOLS, ...EXPORT_TOOLS, ...DECK_EXPORT_TOOLS, ...VIDEO_TOOLS, ...CLIPBOARD_TOOLS, ...HISTORY_TOOLS, ...PREFERENCES_TOOLS, ...SIDEBAR_AGENT_TOOLS, ...ASK_TOOLS];
+export const TOOLS: ToolDef[] = [...QUERY_TOOLS.slice(0, 1), ...CORE_TOOLS, ...HANDOFF_TOOLS, ...INSPECT_TOOLS, ...QUERY_TOOLS.slice(1), ...PAGE_TOOLS, ...DECK_TOOLS, ...EDIT_TOOLS, ...FILL_TOOLS, ...CANVAS_TOOLS, ...ARRANGE_TOOLS, ...MOTION_TOOLS, ...LINK_TOOLS, ...PRESENT_TOOLS, ...CODE_TOOLS, ...SHADER_TOOLS, ...TIMELINE_TOOLS, ...THEME_TOOLS, ...DESIGN_SYSTEM_TOOLS, ...COMPONENT_TOOLS, ...PATTERN_TOOLS, ...ASSET_TOOLS, ...ASSET_MANAGE_TOOLS, ...COLOR_TOOLS, ...EXPORT_TOOLS, ...DECK_EXPORT_TOOLS, ...VIDEO_TOOLS, ...CLIPBOARD_TOOLS, ...HISTORY_TOOLS, ...PREFERENCES_TOOLS, ...SIDEBAR_AGENT_TOOLS, ...ASK_TOOLS];
 
 /**
  * Runs a tool by name, converting failures into agent-readable tool errors. Every result of the calling agent carries, once,

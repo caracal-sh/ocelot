@@ -1,0 +1,7 @@
+/* Shader section: a label, a slider and an editable value per parameter. */
+.at-ishader__row { display: grid; grid-template-columns: 68px minmax(0, 1fr) 52px; align-items: center; gap: 6px; min-height: 24px; }
+.at-ishader__label { font: var(--at-type-small); color: var(--at-text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.at-ishader__range { width: 100%; margin: 0; accent-color: var(--at-accent); }
+.at-ishader__value { height: 24px; padding: 0 4px; text-align: right; background: var(--at-bg); border-radius: var(--at-radius-s); }
+.at-ishader__value:focus { box-shadow: 0 0 0 3px color-mix(in srgb, var(--at-accent) 25%, transparent); }
+.at-ishader__toggle { align-self: flex-start; }

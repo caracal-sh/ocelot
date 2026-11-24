@@ -256,8 +256,11 @@ export function probeSlop(opts: ProbeOptions): ProbeResult {
       const diff = Math.abs(left - right);
       const limit = Math.max(mobile ? 14 : 40, 0.045 * W);
       if (span >= 0.6 * W && diff >= limit && Math.max(left, right) >= 0.07 * W) {
-        const widest = frameBoxes.reduce((a, b) => (b.w > a.w ? b : a));
-        add('off-centre', widest.el, `left margin ${round(left)}px, right margin ${round(right)}px (${round(diff)}px apart)`, `margins within ${round(limit)}px of each other`);
+        // Name the layer that sets the short margin (the widest box is usually a container that is itself centred, which reads as a false alarm).
+        const rightShort = right < left;
+        const culprit = rightShort ? frameBoxes.reduce((a, b) => (b.x + b.w > a.x + a.w ? b : a)) : frameBoxes.reduce((a, b) => (b.x < a.x ? b : a));
+        const edgeAt = rightShort ? culprit.x + culprit.w : culprit.x;
+        add('off-centre', culprit.el, `left margin ${round(left)}px, right margin ${round(right)}px (${round(diff)}px apart): “${nameOf(culprit.el).slice(0, 28)}” sets the ${rightShort ? 'right' : 'left'} one, its ${rightShort ? 'right' : 'left'} edge at x=${round(edgeAt)}`, `margins within ${round(limit)}px of each other`);
       }
     }
 
@@ -331,6 +334,104 @@ export function probeSlop(opts: ProbeOptions): ProbeResult {
               add('overlap', kids[i]!, `“${nameOf(kids[i]!).slice(0, 28)}” overlaps “${nameOf(kids[j]!).slice(0, 28)}” (${round(iw)}×${round(ih)}px) inside “${nameOf(parent).slice(0, 24)}”`, 'siblings that do not collide');
             }
           }
+        }
+      }
+    }
+
+    // ---- covered text: a card, sticker, picture or panel painted over part of a text run (positioned layers paint above in-flow
+    //      text; among positioned layers the higher z-index, then the later one in the document, paints on top)
+    //      text-straddles-picture: text that sits half on a picture and half off it, so the ground changes under the letters
+    {
+      /** The stacking a layer paints with, relative to `stop` (the two layers' closest shared ancestor): its z-index or 0, and whether it is positioned. */
+      const stackOf = (el: Element, stop: Element) => {
+        let z = 0, positioned = false;
+        for (let a: Element | null = el; a && a !== stop; a = a.parentElement) {
+          const s = cs(a);
+          const pos = s.position !== 'static' || s.transform !== 'none';
+          if (pos) positioned = true;
+          if (s.position !== 'static' && s.zIndex !== 'auto') z = parseInt(s.zIndex, 10) || 0;
+        }
+        return { z, positioned };
+      };
+      const shared = (a: Element, b: Element) => {
+        let p = a.parentElement;
+        while (p && !p.contains(b)) p = p.parentElement;
+        return p ?? root;
+      };
+      const above = (box: Element, text: Element) => {
+        const stop = shared(box, text);
+        const b = stackOf(box, stop), t = stackOf(text, stop);
+        if (b.z !== t.z) return b.z > t.z;
+        if (b.positioned !== t.positioned) return b.positioned;
+        return !!(text.compareDocumentPosition(box) & 4); // the later one paints on top
+      };
+      const opaque = (b: Box) => {
+        if (b.pictorial) return true;
+        const bg = parseColor(cs(b.el).backgroundColor);
+        return !!bg && bg[3] >= 0.6;
+      };
+      /** Text set on a surface of its own (a card or button between it and the picture) has that surface as its ground. */
+      const ownGround = (text: Element, picture: Element) => {
+        for (let a: Element | null = text; a && a !== root && !a.contains(picture); a = a.parentElement) {
+          const bg = parseColor(cs(a).backgroundColor);
+          if ((bg && bg[3] >= 0.6) || cs(a).backgroundImage !== 'none') return true;
+        }
+        return false;
+      };
+      const boxes = painted.filter((b) => !isGround(b) && !isBleed(b) && (MEDIA.has(b.el.tagName.toUpperCase()) || surfaceOf(b.el)) && opaque(b));
+      let covered = 0, straddled = 0;
+      for (const r of runs.slice(0, 400)) {
+        if (covered >= 3 && straddled >= 2) break;
+        const trim = Math.min(0.22 * r.size, 0.3 * r.h);
+        const ix = r.x, iy = r.y + trim, iw0 = r.w, ih0 = r.h - 2 * trim;
+        const area = iw0 * ih0;
+        if (area < 40) continue;
+        for (const b of boxes) {
+          if (b.el === r.el || b.el.contains(r.el) || r.el.contains(b.el)) continue;
+          const iw = Math.min(ix + iw0, b.x + b.w) - Math.max(ix, b.x);
+          const ih = Math.min(iy + ih0, b.y + b.h) - Math.max(iy, b.y);
+          if (iw <= 2 || ih <= 2) continue;
+          const share = (iw * ih) / area;
+          if (above(b.el, r.el)) {
+            if (share < 0.06 || covered >= 3) continue;
+            covered++;
+            add('covered-text', b.el, `“${nameOf(b.el).slice(0, 28)}” covers ${round(100 * share)}% of “${r.text.slice(0, 28)}”`, 'no layer painted over text');
+            break;
+          }
+          if (b.pictorial && r.size >= 20 && share >= 0.12 && share <= 0.88 && straddled < 2 && !ownGround(r.el, b.el)) {
+            straddled++;
+            add('text-straddles-picture', r.el, `“${r.text.slice(0, 28)}” is ${round(100 * share)}% on “${nameOf(b.el).slice(0, 24)}”, the rest off it`, 'text wholly on its picture or wholly beside it');
+            break;
+          }
+        }
+      }
+    }
+
+    // ---- one-sided bleed: a picture or panel runs to one side edge of the artboard while the content keeps a margin on that side.
+    //      A true split is fine: the panel fills the full height of a full-width row (wrappers of the same width are looked through).
+    if (!slide && !mobile) {
+      const trueSplit = (b: Box) => {
+        let row = b.el.parentElement;
+        while (row && row !== root) {
+          const r = rectOf(row);
+          if (Math.abs(r.x - b.x) > 2 || Math.abs(r.w - b.w) > 2) break;
+          row = row.parentElement;
+        }
+        const r = row && row !== root ? rectOf(row) : { x: 0, y: 0, w: W, h: H };
+        return r.w >= 0.97 * W && Math.abs(b.y - r.y) <= 2 && Math.abs(b.y + b.h - (r.y + r.h)) <= 2;
+      };
+      const bleeders = painted.filter((b) => !isGround(b) && !isBleed(b) && b.w >= 0.25 * W && b.h >= 160 && b.y < H && (b.x <= 1) !== (b.x + b.w >= W - 1));
+      const inner = painted.filter((b) => !isGround(b) && !isBleed(b) && b.x > 1 && b.x + b.w < W - 1 && !bleeders.some((bl) => bl.el.contains(b.el)));
+      if (bleeders.length && inner.length >= 3) {
+        const marginL = Math.min(...inner.map((b) => b.x));
+        const marginR = W - Math.max(...inner.map((b) => b.x + b.w));
+        const outer = bleeders.filter((b) => !bleeders.some((o) => o !== b && o.el.contains(b.el)) && !trueSplit(b));
+        for (const b of outer) {
+          const right = b.x + b.w >= W - 1;
+          const m = right ? marginR : marginL;
+          if (m < Math.max(48, 0.04 * W)) continue;
+          add('one-sided-bleed', b.el, `“${nameOf(b.el).slice(0, 28)}” runs to the ${right ? 'right' : 'left'} edge; the content keeps a ${round(m)}px margin there`, 'aligned with the content edge, or bleeding on both sides');
+          break;
         }
       }
     }

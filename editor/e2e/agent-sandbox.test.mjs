@@ -60,6 +60,9 @@ describe('picker models', () => {
     expect(yml).toContain('modelRoles:\n  default: "anthropic/a"\n');
     expect(yml).toContain('defaultThinkingLevel: "auto"');
   });
+  it('switches off omp\'s auto-QA, whose report_issue tool would make the sidebar refuse to start', () => {
+    expect(agentConfigYml({ disabledProviders: ['native'] })).toContain('dev:\n  autoqa: false\n');
+  });
 });
 
 describe('subagents', () => {

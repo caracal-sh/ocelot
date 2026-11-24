@@ -21,8 +21,8 @@ export interface BundledFont {
   license: string;
   /** First line of that licence file. */
   copyright: string;
-  /** What the face is for; `list_fonts` hands it to agents. Only set where the bundle has a policy for the family. */
-  use?: string;
+  /** What the face is for and the voice it carries; `list_fonts` hands it to agents, so every family has one (a family without one was chosen from the model's own priors, which converge). */
+  use: string;
 }
 
 const variable = (file: string, weight: string): BundledFace => ({ file, weight, style: 'normal' });
@@ -58,32 +58,34 @@ export const BUNDLED_FONTS: readonly BundledFont[] = [
     // One weight; `ELSH` (0-100) picks the pixel shape: 0-1 square, 20 circle, 40 grid, 60 triangle, 80 line.
     use: 'Geist family: only retro, game or terminal-flavoured work, at 24px and up. One weight. font-variation-settings "ELSH" picks the pixel shape: 0 square, 20 circle, 40 grid, 60 triangle, 80 line.',
   },
-  { family: 'Inter', faces: [variable('Inter-Variable.woff2', '100 900')], license: 'Inter-OFL.txt', copyright: 'Copyright 2016 The Inter Project Authors' },
-  { family: 'Inter Tight', faces: [variable('InterTight-Variable.woff2', '100 900')], license: 'InterTight-OFL.txt', copyright: 'Copyright 2022 The Inter Project Authors' },
-  { family: 'Roboto Flex', faces: [variable('RobotoFlex-Variable.woff2', '100 1000')], license: 'RobotoFlex-OFL.txt', copyright: 'Copyright 2017 The Roboto Flex Project Authors' },
-  { family: 'Manrope', faces: [variable('Manrope-Variable.woff2', '200 800')], license: 'Manrope-OFL.txt', copyright: 'Copyright 2019 The Manrope Project Authors' },
-  { family: 'Fredoka', faces: [variable('Fredoka-Variable.woff2', '300 700')], license: 'Fredoka-OFL.txt', copyright: 'Copyright 2016 The Fredoka Project Authors' },
-  { family: 'Nunito', faces: [variable('Nunito-Variable.woff2', '200 1000')], license: 'Nunito-OFL.txt', copyright: 'Copyright 2014 The Nunito Project Authors' },
-  { family: 'Archivo', faces: [variable('Archivo-Variable.woff2', '100 900')], license: 'Archivo-OFL.txt', copyright: 'Copyright 2020 The Archivo Project Authors' },
+  { family: 'Inter', faces: [variable('Inter-Variable.woff2', '100 900')], license: 'Inter-OFL.txt', copyright: 'Copyright 2016 The Inter Project Authors', use: 'Neutral and exact: UI and long text for software, tools and finance. Body 400 at -0.01em, headings 500-600; pairs with Inter Tight for headlines.' },
+  { family: 'Inter Tight', faces: [variable('InterTight-Variable.woff2', '100 900')], license: 'InterTight-OFL.txt', copyright: 'Copyright 2022 The Inter Project Authors', use: 'Inter cut for display: precise, quiet headlines from 40px, weight 500-600, -0.015 to -0.025em. Product marketing, software, finance, institutions.' },
+  { family: 'Roboto Flex', faces: [variable('RobotoFlex-Variable.woff2', '100 1000')], license: 'RobotoFlex-OFL.txt', copyright: 'Copyright 2017 The Roboto Flex Project Authors', use: 'Grotesque with width and grade axes: condensed headlines (font-stretch 50-75%) for news, sport, transport, timetables and signage; wide for a statement. 400-700.' },
+  { family: 'Manrope', faces: [variable('Manrope-Variable.woff2', '200 800')], license: 'Manrope-OFL.txt', copyright: 'Copyright 2019 The Manrope Project Authors', use: 'Open, modern semi-geometric sans: calm technology, health, fintech, public services. Headlines 500-700, body 400.' },
+  { family: 'Fredoka', faces: [variable('Fredoka-Variable.woff2', '300 700')], license: 'Fredoka-OFL.txt', copyright: 'Copyright 2016 The Fredoka Project Authors', use: 'Rounded and soft: children, families, games, playful consumer products. Headlines 500-600; body in Nunito or Figtree.' },
+  { family: 'Nunito', faces: [variable('Nunito-Variable.woff2', '200 1000')], license: 'Nunito-OFL.txt', copyright: 'Copyright 2014 The Nunito Project Authors', use: 'Rounded sans for friendly body and UI text: education, care, family services. 400-700.' },
+  { family: 'Archivo', faces: [variable('Archivo-Variable.woff2', '100 900')], license: 'Archivo-OFL.txt', copyright: 'Copyright 2020 The Archivo Project Authors', use: 'Sturdy grotesque with an industrial edge: tools, machinery, outdoor gear, sport, construction. Headlines 500-600; 800-900 only for one loud poster line. Not a neutral default, and not for crafts with a printed tradition.' },
   {
     family: 'Space Mono',
     faces: [variable('SpaceMono-Regular.woff2', '400'), variable('SpaceMono-Bold.woff2', '700')],
     license: 'SpaceMono-OFL.txt',
     copyright: 'Copyright 2016 The Space Mono Project Authors',
+    use: 'Retro-technical monospace with quirky forms: zines, music, indie tech, a terminal flavour. Labels and short headlines, never long text.',
   },
-  { family: 'Sora', faces: [variable('Sora-Variable.woff2', '100 800')], license: 'Sora-OFL.txt', copyright: 'Copyright 2019 The Sora Project Authors' },
+  { family: 'Sora', faces: [variable('Sora-Variable.woff2', '100 800')], license: 'Sora-OFL.txt', copyright: 'Copyright 2019 The Sora Project Authors', use: 'Wide-set geometric sans with a technical, forward voice: science, engineering, energy, crypto. Headlines 500-600, body 400.' },
   {
     family: 'Instrument Serif',
     faces: [variable('InstrumentSerif-Regular.woff2', '400'), { file: 'InstrumentSerif-Italic.woff2', weight: '400', style: 'italic' }],
     license: 'InstrumentSerif-OFL.txt',
     copyright: 'Copyright 2022 The Instrument Serif Project Authors',
+    use: 'Condensed display serif, regular weight only (italic for one word): fashion, culture, galleries, editorial and luxury headlines at 48px and up, with a neutral sans for text.',
   },
-  { family: 'Newsreader', faces: [variable('Newsreader-Variable.woff2', '200 800')], license: 'Newsreader-OFL.txt', copyright: 'Copyright 2020 The Newsreader Project Authors' },
-  { family: 'Unbounded', faces: [variable('Unbounded-Variable.woff2', '200 900')], license: 'Unbounded-OFL.txt', copyright: 'Copyright 2022 The Unbounded Project Authors' },
-  { family: 'DM Sans', faces: [variable('DMSans-Variable.woff2', '100 1000')], license: 'DMSans-OFL.txt', copyright: 'Copyright 2014 The DM Sans Project Authors' },
-  { family: 'JetBrains Mono', faces: [variable('JetBrainsMono-Variable.woff2', '100 800')], license: 'JetBrainsMono-OFL.txt', copyright: 'Copyright 2020 The JetBrains Mono Project Authors' },
-  { family: 'Fraunces', faces: [variable('Fraunces-Variable.woff2', '100 900')], license: 'Fraunces-OFL.txt', copyright: 'Copyright 2020 The Fraunces Project Authors' },
-  { family: 'Figtree', faces: [variable('Figtree-Variable.woff2', '300 900')], license: 'Figtree-OFL.txt', copyright: 'Copyright 2022 The Figtree Project Authors' },
+  { family: 'Newsreader', faces: [variable('Newsreader-Variable.woff2', '200 800')], license: 'Newsreader-OFL.txt', copyright: 'Copyright 2020 The Newsreader Project Authors', use: 'Serif made for reading, sober and trustworthy: law, publishing, journalism, scholarship, heritage crafts (watchmaking, bookbinding), institutions. Display 400-500, body 400 at 17-20px.' },
+  { family: 'Unbounded', faces: [variable('Unbounded-Variable.woff2', '200 900')], license: 'Unbounded-OFL.txt', copyright: 'Copyright 2022 The Unbounded Project Authors', use: 'Wide, loud geometric display: music, nightlife, events, gaming, streetwear. One line at 600-800; never body.' },
+  { family: 'DM Sans', faces: [variable('DMSans-Variable.woff2', '100 1000')], license: 'DMSans-OFL.txt', copyright: 'Copyright 2014 The DM Sans Project Authors', use: 'Low-contrast geometric sans with a warm, easy tone: consumer apps, food and hospitality, lifestyle, retail. Headlines 500-600, body 400.' },
+  { family: 'JetBrains Mono', faces: [variable('JetBrainsMono-Variable.woff2', '100 800')], license: 'JetBrainsMono-OFL.txt', copyright: 'Copyright 2020 The JetBrains Mono Project Authors', use: 'Clear, tall monospace for code and technical data: developer tools, specs, logs, coordinates, tabular figures.' },
+  { family: 'Fraunces', faces: [variable('Fraunces-Variable.woff2', '100 900')], license: 'Fraunces-OFL.txt', copyright: 'Copyright 2020 The Fraunces Project Authors', use: 'Soft, characterful old-style serif: crafts with a printed tradition (bakery, roaster, brewery, bookshop), food and drink, children\'s books. Display 400-600.' },
+  { family: 'Figtree', faces: [variable('Figtree-Variable.woff2', '300 900')], license: 'Figtree-OFL.txt', copyright: 'Copyright 2022 The Figtree Project Authors', use: 'Clean, friendly geometric sans: consumer products, health, education, family services. Headlines 500-600, body 400.' },
 ];
 
 const BY_FAMILY = new Map(BUNDLED_FONTS.map((f) => [f.family.toLowerCase(), f]));

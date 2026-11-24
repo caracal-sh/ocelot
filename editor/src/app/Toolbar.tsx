@@ -4,6 +4,9 @@ import { useCurrentPageId, useEditor, useHistoryState, useLocks, useOpenQuestion
 import { importImageFiles, insertAssets } from '../panels/assetActions';
 import type { Host } from '../host/host';
 import { ARTBOARD_PRESETS, type ArtboardPreset } from '../model/types';
+import { normalizeCode } from '../model/code';
+import { SHADER_DEFS, SHADER_KINDS, defaultColors, type ShaderKind } from '../shader/spec';
+import { definedNamesAt } from '../render/customProps';
 import { AgentChatContext } from '../agent/AgentPanel';
 import { ContextMenu, type ContextMenuItem } from './ContextMenu';
 import { Icon, type IconName } from './Icon';
@@ -64,6 +67,7 @@ function ToolButtons() {
   const previewing = usePreviewing();
   const fileRef = useRef<HTMLInputElement>(null);
   const artboards = useAnchoredMenu();
+  const shaders = useAnchoredMenu();
   const onFile = async (file: File | undefined) => {
     if (!file) return;
     const [record] = await importImageFiles(editor, [file]);
@@ -74,6 +78,17 @@ function ToolButtons() {
     const created = editor.actions.insertNearSelection([{ type: 'code', name: 'Code', styles: { width: '480px', height: '320px' } }]);
     if (created.length) editor.selection.set(created);
   };
+  // A shader layer is a generated texture (grain gradient, mesh gradient, halftone, dither, film grain); tune it in the inspector's Shader section.
+  const addShader = (kind: ShaderKind) => {
+    // The colours come from the theme tokens at the spot the layer lands, else the neutral set.
+    const anchor = editor.selection.ids[editor.selection.ids.length - 1] ?? editor.pageArtboardIds[0];
+    const colors = defaultColors(kind, anchor ? definedNamesAt(editor.doc, anchor) : []);
+    const created = editor.actions.insertNearSelection([
+      { type: 'code', name: SHADER_DEFS[kind].label, styles: { width: '480px', height: '320px' }, code: normalizeCode({ shader: { kind, colors } }, 'Shader layer') },
+    ]);
+    if (created.length) editor.selection.set(created);
+  };
+  const shaderItems: ContextMenuItem[] = SHADER_KINDS.map((k) => ({ id: `shader-${k}`, label: SHADER_DEFS[k].label, onSelect: () => addShader(k) }));
   const addArtboard = (preset: ArtboardPreset) => {
     const id = editor.human.createArtboard({ preset, pageId: editor.currentPageId });
     editor.history.breakHumanStep();
@@ -108,6 +123,10 @@ function ToolButtons() {
       <button type="button" className="at-tool" onClick={addCode} disabled={previewing} data-tip="Code layer (three.js, GSAP, Motion)" aria-label="Code layer" data-tool="code">
         <Icon name="code" />
       </button>
+      <button type="button" className="at-tool" onClick={shaders.open} disabled={previewing} data-tip="Shader layer (grain gradient, mesh gradient, halftone, dither, film grain)" aria-label="Shader layer" aria-haspopup="menu" aria-expanded={!!shaders.at} data-tool="shader" data-testid="shader-menu">
+        <Icon name="shader" />
+      </button>
+      {shaders.at && <ContextMenu x={shaders.at.x} y={shaders.at.y} items={shaderItems} onClose={shaders.close} label="New shader layer" />}
       {artboards.at && <ContextMenu x={artboards.at.x} y={artboards.at.y} items={artboardItems} onClose={artboards.close} label="New artboard" />}
     </div>
   );
