@@ -6,6 +6,22 @@
     <description>Ocelot updates</description>
     <language>en</language>
     <item>
+      <title>Ocelot 0.3.15</title>
+      <pubDate>Fri, 27 Nov 2026 14:20:07 +0000</pubDate>
+      <sparkle:version>1026</sparkle:version>
+      <sparkle:shortVersionString>0.3.15</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <description><![CDATA[<ul>
+<li>Hand off a design as a front end or as a full app. In Export &gt; Hand off to an agent, choose Build: &quot;Front end only&quot; (a Vite + React app, as before) or &quot;Full app&quot; (TanStack Start). For a full app the brief also lists the parts of the design that need a server, such as forms, sign-in and data lists, and how to build them safely.</li>
+<li>Handed-off screens fill the window. The instructions now tell the coding agent to make the page full height, so a screen shorter than the window no longer ends in a white band.</li>
+<li>React exports of halftone and dither layers that print a picture keep the picture as an image file next to the code instead of embedding it in the component, and React exports with code layers no longer fail a strict TypeScript check.</li>
+<li>The agent keeps its connection when the local model connection restarts while a chat is still closing its old connections; before, it could move to a new address and the chat stopped.</li>
+<li>Design inspection no longer asks about empty space below a screen whose content is centred.</li>
+<li>Lists in the agent's replies no longer show a stray dash or number while the reply is still being written.</li>
+</ul>]]></description>
+      <enclosure url="https://github.com/caracal-sh/ocelot/releases/download/v0.3.15/Ocelot-0.3.15.dmg" length="17567121" type="application/octet-stream" sparkle:edSignature="FW+NYWOOR8vR//LyC5z5thw4/BlDb6tDtPsWs3/MLzX6L51wPv0mcOjT4/LHggMg24VYphvpKCgopCiG0JCWBA=="/>
+    </item>
+    <item>
       <title>Ocelot 0.3.14</title>
       <pubDate>Fri, 27 Nov 2026 10:36:29 +0000</pubDate>
       <sparkle:version>1025</sparkle:version>
