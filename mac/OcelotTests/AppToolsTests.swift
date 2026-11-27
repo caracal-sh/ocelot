@@ -33,8 +33,24 @@ final class AppToolServerTests: XCTestCase {
         let result = reply["result"] as? [String: Any]
         XCTAssertEqual(result?["protocolVersion"] as? String, "2025-06-18")
         XCTAssertTrue((result?["instructions"] as? String ?? "").contains("open_project"))
+        let capabilities = result?["capabilities"] as? [String: Any]
+        XCTAssertNotNil(capabilities?["tools"])
+        XCTAssertNotNil(capabilities?["prompts"], "clients only ask for prompts when initialize declares them")
         let notification = await server.handle(body: #"{"jsonrpc":"2.0","method":"notifications/initialized"}"#, client: nil, readOnly: false)
         XCTAssertNil(notification)
+    }
+
+    /// Prompts belong to a document; the app endpoint has none: an empty list (clients list on connect) and an actionable error.
+    func testPromptsAreEmptyAndPromptsGetSaysToOpenAProjectFirst() async throws {
+        let list = object(await server.handle(body: rpc("prompts/list"), client: nil, readOnly: false))
+        XCTAssertEqual(((list["result"] as? [String: Any])?["prompts"] as? [Any])?.count, 0)
+        XCTAssertNil(list["error"])
+        let get = object(await server.handle(body: rpc("prompts/get", params: ["name": "critique"]), client: nil, readOnly: true))
+        let error = try XCTUnwrap(get["error"] as? [String: Any])
+        XCTAssertEqual(error["code"] as? Int, -32602)
+        let message = error["message"] as? String ?? ""
+        XCTAssertTrue(message.contains("open_project") && message.contains("/mcp/p/"), message)
+        XCTAssertTrue(control.calls.isEmpty)
     }
 
     func testToolsListHasTheAppToolsAndAReadOnlyConnectionSeesOnlyReaders() async {

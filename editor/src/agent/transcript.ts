@@ -31,7 +31,7 @@ export interface SubagentRow {
 
 export type ChatItem =
   /** `attachments` are what the person attached; the bubble shows them as chips, never the envelope text the agent received. */
-  | { kind: 'user'; id: string; text: string; /** The external agent that sent it through the sidebar_agent tool ("Claude Code"); absent when the person typed it. */ from?: string; context?: string; /** What the person chose on Home before this first message ("Plan first", "Design system: Luma"); quiet tags on the bubble. */ tags?: string[]; attachments?: Attachment[]; /** Layers the person pointed at with a note; the bubble shows them as chips. */ references?: LayerReference[]; /** Delivered at the agent's next step while it worked (sent with ⌘↩). */ steered?: boolean }
+  | { kind: 'user'; id: string; text: string; /** The external agent that sent it through the sidebar_agent tool ("Claude Code"); absent when the person typed it. */ from?: string; context?: string; /** What the person chose on Home before this first message ("Plan first", "Design system: Luma"); quiet tags on the bubble. */ tags?: string[]; attachments?: Attachment[]; /** Layers the person pointed at with a note; the bubble shows them as chips. */ references?: LayerReference[]; /** Delivered at the agent's next step while it worked (sent with ⌘↩). */ steered?: boolean; /** The slash command the person typed ("critique"): `text` is what they typed, the agent received the expanded prompt; the bubble marks the command name. */ command?: string }
   | { kind: 'assistant'; id: string; text: string; streaming: boolean }
   | {
       kind: 'tool';

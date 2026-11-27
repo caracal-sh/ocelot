@@ -20,7 +20,7 @@ import { inspectArtboard, openFixesNote, slopNote } from './slop';
 import { INSPECT_TOOLS } from './inspectTools';
 import { htmlToSpecs } from './htmlToSpec';
 import { createDsHtmlHook, loadComponentSet } from '../designsystem/components';
-import { assetNote, exportNode, exportScreensHtml, reactOptions } from '../export/assets';
+import { assetNote, codeLayerFiles, exportNode, exportScreensHtml, reactOptions } from '../export/assets';
 import { REACT_EXPORT_NOTES } from '../export/react';
 import { referencedAssetIds } from '../assets/refs';
 import { jobNote } from '../assets/jobs';
@@ -938,7 +938,11 @@ const CORE_TOOLS: ToolDef[] = [
       const r = exportNode(ctx.editor.doc, id, 'react', ctx.editor.assets, await reactOptions(ctx.editor.doc, enumArg(args, 'components', ['ui', 'inline'] as const)));
       const note = assetNote(r);
       // Document components are separate files the screen imports: the agent needs their source too.
-      const files = (r.components ?? []).map((c) => `\n\n// ${c.path} (imported as "@/components/${c.name}")\n${c.code}`).join('');
+      const files = [
+        ...(r.components ?? []).map((c) => `\n\n// ${c.path} (imported as "@/components/${c.name}")\n${c.code}`),
+        // A screen (or component) with code layers: its layers module, the types of it and the typed runtime the component imports.
+        ...codeLayerFiles(r).map((f) => `\n\n// ${f.path}\n${f.text}`),
+      ].join('');
       return text(`// ${r.componentName}.tsx: ${REACT_EXPORT_NOTES}${note ? `\n// ${note}` : ''}\n${r.code}${files}`);
     },
   },

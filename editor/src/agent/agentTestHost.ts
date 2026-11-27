@@ -1,7 +1,7 @@
 // A host with a working agent process for tests: it answers the handshake and `get_state`, records every command the
 // sidebar sends, answers request commands (`q-…` ids) from `replies`, and lets a test emit omp frames.
 
-import type { AgentEventParams } from '../bridge/schema.gen';
+import type { AgentCommandFile, AgentEventParams } from '../bridge/schema.gen';
 import { Editor } from '../editor/Editor';
 import { editorEndpoint, type Host } from '../host/host';
 import { AgentChat } from './AgentChat';
@@ -36,6 +36,12 @@ export interface AgentTestHost {
   exit: (processId: string) => Promise<unknown>;
   /** Ids of every process started, in order. */
   processIds: () => string[];
+  /** The files `host.agentCommands` lists (the person's Commands folder); `failWith` makes the listing fail with that message; `listed` counts the listings. */
+  commandFiles: { files: AgentCommandFile[]; failWith: string | null; listed: number };
+  /** How many times the person asked to open the Commands folder (`host.agentCommandsReveal`). */
+  reveals: { count: number };
+  /** The models `host.agentStatus` reports (omp's `models --json` entries); fill before `chat.refreshStatus()`. */
+  modelCatalog: unknown[];
 }
 
 export function createAgentTestHost(opts: { codec?: ImageCodec } = {}): AgentTestHost {
@@ -45,6 +51,9 @@ export function createAgentTestHost(opts: { codec?: ImageCodec } = {}): AgentTes
   const stopped: string[] = [];
   const stored = new Map<string, { meta: string; transcript?: string; projectId?: string; files?: Map<string, string> }>();
   const failWrites: { message: string | null } = { message: null };
+  const commandFiles: AgentTestHost['commandFiles'] = { files: [], failWith: null, listed: 0 };
+  const reveals = { count: 0 };
+  const modelCatalog: unknown[] = [];
   let processId = '';
   const emitFor = (id: string, frames: unknown[]) =>
     editorEndpoint.dispatch(JSON.stringify({ v: 1, id: `e-${Math.random()}`, method: 'editor.agentEvent', params: { processId: id, lines: frames.map((f) => JSON.stringify(f)), done: false } satisfies AgentEventParams }));
@@ -52,7 +61,16 @@ export function createAgentTestHost(opts: { codec?: ImageCodec } = {}): AgentTes
     kind: 'browser',
     call: async (method: string, params: unknown) => {
       const p = (params ?? {}) as Record<string, unknown>;
-      if (method === 'host.agentStatus') return { available: true, loggedIn: true };
+      if (method === 'host.agentCommands') {
+        commandFiles.listed += 1;
+        if (commandFiles.failWith) throw new Error(commandFiles.failWith);
+        return { files: commandFiles.files };
+      }
+      if (method === 'host.agentCommandsReveal') {
+        reveals.count += 1;
+        return {};
+      }
+      if (method === 'host.agentStatus') return { available: true, loggedIn: true, ...(modelCatalog.length ? { models: { models: modelCatalog } } : {}) };
       if (method === 'host.agentStop') {
         stopped.push(p['processId'] as string);
         return {};
@@ -110,6 +128,9 @@ export function createAgentTestHost(opts: { codec?: ImageCodec } = {}): AgentTes
     replies,
     emit: (frames) => emitFor(processId, frames),
     emitFor,
+    commandFiles,
+    modelCatalog,
+    reveals,
     exit: (id) => editorEndpoint.dispatch(JSON.stringify({ v: 1, id: `e-${Math.random()}`, method: 'editor.agentEvent', params: { processId: id, lines: [], done: true, exitCode: 0 } satisfies AgentEventParams })),
     starts,
     stopped,

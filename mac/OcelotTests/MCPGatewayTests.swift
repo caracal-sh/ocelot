@@ -71,6 +71,32 @@ final class MCPGatewayTests: XCTestCase {
         XCTAssertEqual(closed.status, 404)
     }
 
+    /// Prompts (`/ocelot:critique` ...) are answered by the document's editor, so `prompts/list` and `prompts/get` travel exactly
+    /// like `tools/call`: same routes, same scope checks, same errors. The gateway filters no method.
+    func testPromptsAreForwardedLikeToolCalls() async {
+        func body(_ method: String, _ params: String = "{}") -> String { #"{"jsonrpc":"2.0","id":1,"method":"\#(method)","params":\#(params)}"# }
+        for method in ["prompts/list", "prompts/get"] {
+            let params = method == "prompts/get" ? #"{"name":"critique"}"# : "{}"
+            _ = await gateway.handle(request(body: body(method, params)), port: 7420)
+            XCTAssertEqual(backend.forwarded.last?.windowId, "W2", "/mcp: the key window")
+            XCTAssertTrue(backend.forwarded.last?.body.contains(method) == true)
+            _ = await gateway.handle(request(path: "/mcp/p/P1", body: body(method, params)), port: 7420)
+            XCTAssertEqual(backend.forwarded.last?.windowId, "W1", "/mcp/p/<project>")
+            _ = await gateway.handle(request(path: "/mcp/w/W2", body: body(method, params)), port: 7420)
+            XCTAssertEqual(backend.forwarded.last?.windowId, "W2", "/mcp/w/<window>")
+            let remote = await gateway.handle(request(path: "/mcp/p/R1", body: body(method, params)), port: 7420)
+            XCTAssertEqual(remote.status, 200)
+            XCTAssertEqual(backend.proxied.last?.remote, "headless-9", "a project on another host is proxied")
+            let unknown = await gateway.handle(request(path: "/mcp/p/nope", body: body(method, params)), port: 7420)
+            XCTAssertEqual(unknown.status, 404, "same errors as a tool call")
+            XCTAssertTrue(backend.appCalls.isEmpty, "prompts never come from the app tools")
+        }
+        // A window-scoped token reaches prompts of its window only.
+        let token = tokens.issue(scope: .window("W1"), readOnly: false, ttl: nil)
+        let refused = await gateway.handle(request(path: "/mcp/w/W2", body: body("prompts/list"), token: token), port: 7420)
+        XCTAssertEqual(refused.status, 403)
+    }
+
     func testLegacyWindowHeaderPinsLikeTheWindowRoute() async {
         _ = await gateway.handle(request(headers: [MCPHeader.window: "W1"]), port: 7420)
         XCTAssertEqual(backend.forwarded.last?.windowId, "W1")

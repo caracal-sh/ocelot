@@ -22,11 +22,12 @@ enum ProbeProcess {
 
     /// Runs a command and drains both pipes while it runs: a probe that leaks (`cat` of a big file) writes more
     /// than a pipe holds, and waiting for exit first would block forever. A command still running after
-    /// `timeout` seconds is killed and reported as timed out.
-    static func exec(_ command: String, _ args: [String], timeout: TimeInterval) -> Outcome {
+    /// `timeout` seconds is killed and reported as timed out. `path`, when given, is the child's PATH (else it inherits the caller's).
+    static func exec(_ command: String, _ args: [String], timeout: TimeInterval, path: String? = nil) -> Outcome {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: command)
         process.arguments = args
+        if let path { process.environment = ["PATH": path, "HOME": NSHomeDirectory(), "LANG": "en_US.UTF-8"] } // as the agent runs: its HOME is the container
         let out = Pipe(), err = Pipe()
         process.standardOutput = out
         process.standardError = err

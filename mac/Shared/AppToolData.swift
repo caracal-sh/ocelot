@@ -17,11 +17,14 @@ enum AppToolData {
     static func initializeResult(requested: String?) -> [String: Any] {
         [
             "protocolVersion": requested.flatMap { protocolVersions.contains($0) ? $0 : nil } ?? protocolVersions.first ?? "2025-06-18",
-            "capabilities": ["tools": ["listChanged": false]],
+            "capabilities": ["tools": ["listChanged": false], "prompts": ["listChanged": false]],
             "serverInfo": serverInfo,
             "instructions": instructions,
         ]
     }
+
+    /// `prompts/get` on the app endpoint: it fronts no document, and prompts (the slash commands) come only from one.
+    static let noDocumentPromptMessage = "The app endpoint has no prompts: they come from a project's document. Open a project first (open_project, or new_project to start one), then use its URL (/mcp/p/<project_id>), or `ocelot mcp`, which forwards them."
 
     static func hasTool(_ name: String) -> Bool { tools.contains { $0["name"] as? String == name } }
 

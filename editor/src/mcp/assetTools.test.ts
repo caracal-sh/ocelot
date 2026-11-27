@@ -293,6 +293,26 @@ describe('screenshots and exports through the tools', () => {
   });
 });
 
+describe('export_react with code layers', () => {
+  it('returns the component and its layers module, the types of it and the typed runtime, and says so', async () => {
+    const { call, textOf, editor, ab } = await withFrame();
+    editor.agent.insertNodes(ab, [{ type: 'code', name: 'Glow', code: { source: 'export default function mount(el) { el.dataset.on = "1"; }', libraries: [] } }]);
+    const text = textOf(await call('export_react', { node_id: ab }));
+    const name = /^\/\/ (\w+)\.tsx:/.exec(text)![1]!;
+    expect(text).toContain('comes as four files');
+    expect(text).toContain(`Code layers are separate files (ocelot-code-layer.tsx, ${name}.layers.js, ${name}.layers.d.ts)`);
+    expect(text).not.toContain('ts-nocheck');
+    for (const path of ['ocelot-code-layer.tsx', `${name}.layers.js`, `${name}.layers.d.ts`]) expect(text, path).toContain(`\n\n// ${path}\n`);
+    expect(text).toContain('export const mountLayer1 = ');
+    expect(text).toContain('export declare const mountLayer1: CodeLayerMount;');
+    expect(text).toContain('export function CodeLayer(');
+    // no code layer, no extra files
+    const plain = textOf(await call('export_react', { node_id: editor.doc.childIds(ab)[0]! }));
+    expect(plain).not.toContain('// ocelot-code-layer.tsx');
+    expect(plain).not.toContain('Code layers are separate files');
+  });
+});
+
 describe('guide', () => {
   it('serves the image guide', async () => {
     const { call, textOf } = setupMcp();

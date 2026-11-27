@@ -8,6 +8,11 @@ struct OmpCLI: Sendable {
     /// Absolute path with symlinks resolved. The sandbox grants access to real paths only.
     var resolvedPath: String { URL(fileURLWithPath: path).resolvingSymlinksInPath().path }
 
+    /// The folders the sandboxed agent needs ahead of `/usr/bin:/bin` (omp's own and bun's), see `OmpExecutable.searchPath`.
+    var agentSearchPath: [String] {
+        OmpExecutable.searchPath(command: path, personPath: environment["PATH"] ?? "", isExecutable: FileManager.default.isExecutableFile(atPath:))
+    }
+
     struct Captured: Sendable {
         let status: Int32
         let stdout: String

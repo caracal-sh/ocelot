@@ -228,6 +228,7 @@ final class StdioProxyTests: XCTestCase {
         XCTAssertEqual(initialize["protocolVersion"] as? String, "2025-06-18")
         XCTAssertEqual((initialize["serverInfo"] as? [String: Any])?["name"] as? String, "ocelot")
         XCTAssertTrue((initialize["instructions"] as? String ?? "").contains("get_screenshot"))
+        XCTAssertNotNil((initialize["capabilities"] as? [String: Any])?["prompts"], "the manifest's initialize declares prompts, so clients ask for them")
         let tools = try XCTUnwrap((out[1]["result"] as? [String: Any])?["tools"] as? [[String: Any]])
         XCTAssertTrue(tools.contains { $0["name"] as? String == "get_document_info" })
         XCTAssertEqual(tools.count, ToolManifestData.tools.count + AppToolData.tools.count, "document tools and app tools in one flat list")
@@ -336,6 +337,74 @@ final class StdioProxyTests: XCTestCase {
         proxy.handle(line: rpc("tools/call", id: 2, params: ["name": "get_document_info", "arguments": [:]]))
         XCTAssertEqual((((out[1]["result"] as? [String: Any])?["content"] as? [[String: Any]])?.first?["text"]) as? String, "doc /mcp/p/pinned")
         XCTAssertEqual(seen.compactMap { $0 }, [], "an explicit --project is never overridden")
+    }
+
+    /// The editor answers prompts; the proxy forwards them to the document endpoint (never merged with app tools). With no host
+    /// running `prompts/list` answers the built-ins itself and never starts the app.
+    func testPromptsAreForwardedToTheDocumentEndpointAndListNeverStartsTheApp() throws {
+        let host = FakeHost(); defer { host.stop() }
+        host.handler = { request in
+            let body = JSON.object(request.body)
+            switch body?["method"] as? String {
+            case "initialize": return .init(headers: ["Mcp-Session-Id": "s"], body: #"{"jsonrpc":"2.0","id":"ocelot-init","result":{}}"#)
+            case "notifications/initialized": return .init(status: 202)
+            case "prompts/list": return .init(body: #"{"jsonrpc":"2.0","id":2,"result":{"prompts":[{"name":"critique"}]}}"#)
+            case "prompts/get": return .init(body: #"{"jsonrpc":"2.0","id":3,"result":{"messages":[{"role":"user","content":{"type":"text","text":"from \#(request.path)"}}]}}"#)
+            default: return .init(status: 500)
+            }
+        }
+        var out: [[String: Any]] = []
+        var launched = 0
+        var running = false
+        let proxy = StdioProxy(target: Target(project: "p1"), resolve: { _ in launched += 1; return self.endpoint(host) }, resolveApp: { self.appEndpoint(host) },
+                               resolveRunning: { _ in running ? self.endpoint(host) : nil }, write: { out.append(JSON.object($0)!) })
+        proxy.handle(line: rpc("initialize", params: ["protocolVersion": "2025-06-18", "clientInfo": ["name": "claude-code"]]))
+
+        // Ocelot is closed: the six built-in design prompts from the manifest, nothing started, nothing contacted.
+        proxy.handle(line: rpc("prompts/list", id: 2))
+        let offline = try XCTUnwrap((out[1]["result"] as? [String: Any])?["prompts"] as? [[String: Any]])
+        XCTAssertEqual(offline.compactMap { $0["name"] as? String }, ["critique", "polish", "variants", "responsive", "flow", "copy"])
+        XCTAssertEqual(offline.first?["title"] as? String, "/critique")
+        XCTAssertNotNil((offline.first?["arguments"] as? [[String: Any]])?.first?["name"], "each prompt takes the optional args argument")
+        XCTAssertEqual(launched, 0)
+        XCTAssertTrue(host.requests.isEmpty)
+
+        // Ocelot runs: the list comes from the document endpoint, as the real client.
+        running = true
+        proxy.handle(line: rpc("prompts/list", id: 2))
+        XCTAssertEqual(((out[2]["result"] as? [String: Any])?["prompts"] as? [[String: Any]])?.first?["name"] as? String, "critique")
+        XCTAssertEqual(host.requests.last?.path, "/mcp/p/p1")
+        XCTAssertEqual(launched, 0, "listing prompts never starts the app")
+        let upstreamInit = host.requests.first { JSON.object($0.body)?["method"] as? String == "initialize" }
+        XCTAssertEqual(((JSON.object(upstreamInit!.body)?["params"] as? [String: Any])?["clientInfo"] as? [String: Any])?["name"] as? String, "claude-code")
+
+        proxy.handle(line: rpc("prompts/get", id: 3, params: ["name": "critique", "arguments": ["args": "the hero"]]))
+        let message = (((out[3]["result"] as? [String: Any])?["messages"] as? [[String: Any]])?.first?["content"] as? [String: Any])?["text"] as? String
+        XCTAssertEqual(message, "from /mcp/p/p1")
+        let forwarded = JSON.object(try XCTUnwrap(host.requests.last { JSON.object($0.body)?["method"] as? String == "prompts/get" }).body)
+        XCTAssertEqual((forwarded?["params"] as? [String: Any])?["name"] as? String, "critique")
+        XCTAssertEqual(((forwarded?["params"] as? [String: Any])?["arguments"] as? [String: Any])?["args"] as? String, "the hero")
+        XCTAssertNil(host.requests.first { $0.path == "/mcp/app" }, "prompts never touch the app endpoint")
+    }
+
+    func testPromptsGetStartsTheAppLikeAToolCallAndErrorsAreProtocolErrorsWithTheNextStep() throws {
+        var out: [[String: Any]] = []
+        let proxy = StdioProxy(target: Target(), resolve: { _ in throw CLIError(message: "No open project matches \"x\". Run `ocelot ls`.") }, write: { out.append(JSON.object($0)!) })
+        proxy.handle(line: rpc("prompts/get", params: ["name": "critique"]))
+        let error = try XCTUnwrap(out[0]["error"] as? [String: Any])
+        XCTAssertTrue((error["message"] as? String ?? "").contains("ocelot ls"))
+        XCTAssertNil(out[0]["result"], "a prompt has no isError result: a protocol error")
+
+        // A gateway error on the list (here: no project open) keeps its message.
+        let host = FakeHost(); defer { host.stop() }
+        host.handler = { request in
+            if JSON.object(request.body)?["method"] as? String == "initialize" { return .init(headers: ["Mcp-Session-Id": "s"], body: "{}") }
+            if JSON.object(request.body)?["method"] as? String == "notifications/initialized" { return .init(status: 202) }
+            return .init(status: 503, body: #"{"jsonrpc":"2.0","id":null,"error":{"code":-32000,"message":"No project is open."}}"#)
+        }
+        let listing = StdioProxy(target: Target(), resolve: { _ in self.endpoint(host) }, resolveRunning: { _ in self.endpoint(host) }, write: { out.append(JSON.object($0)!) })
+        listing.handle(line: rpc("prompts/list", id: 5))
+        XCTAssertEqual((out[1]["error"] as? [String: Any])?["message"] as? String, "No project is open.")
     }
 
     func testFailuresBecomeToolErrorsTheAgentCanReadAndUnknownToolsAreProtocolErrors() throws {

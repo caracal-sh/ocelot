@@ -11,9 +11,10 @@ import { componentName, jsxAttr, jsxAttrName, jsxStyle, jsxStyleEntries, jsxStyl
 import { stylesToTailwind } from './tailwind';
 import { NO_THEME_UTILITIES, THEME_CLASS, reactThemeCss, splitThemeStyles, themeUtilities, usedBundledFonts, type ReactThemeFile, type ThemeUtilities } from './themeCss';
 import { MOTION_ROOT_CLASS, createMotionExport, stateClasses, styleBlockJsx, type MotionExport } from './motion';
-import { addCodeLayer, createCodeExport, reactCodePrelude, CODE_LAYERS_NOCHECK, type CodeExport, type PictureUrl } from './code';
+import { addCodeLayer, createCodeExport, reactCodeModules, type CodeExport, type CodeFile, type PictureUrl } from './code';
 import { artboardSlugs, exportedLink, reactLinkTargets, type LinkTargets } from './links';
 import {
+  COMPONENT_DIR,
   COMPONENT_IMPORT,
   Tables,
   analyzeInstance,
@@ -45,6 +46,8 @@ export interface DocComponentFile {
   path: string;
   code: string;
   props: PropSummary[];
+  /** Present when the component has code layers: the files its imports name (`components/<Name>.layers.js`, `.layers.d.ts`, `components/ocelot-code-layer.tsx`), paths relative to the screen's folder. */
+  extraFiles?: CodeFile[];
 }
 
 export interface ReactExport {
@@ -56,6 +59,8 @@ export interface ReactExport {
   ui?: UiReport;
   /** The document components the screen uses (instances become `<Name … />`), one file each; absent when it uses none. */
   components?: DocComponentFile[];
+  /** Present when the screen has code layers: `ocelot-code-layer.tsx`, `<Name>.layers.js` and `<Name>.layers.d.ts`, which its imports name (paths relative to the screen's file). */
+  extraFiles?: CodeFile[];
   /** What the export has to say about components: instances (and nested instances) that stayed inline, and why. */
   componentNotes?: string[];
 }
@@ -143,22 +148,23 @@ export function exportReact(doc: OcelotDocument, id: string, opts: ReactExportOp
   for (let i = 0; i < docs.used.length; i++) files.push(componentFile(shared, docs.plans.get(docs.used[i]!)!, uiOut));
   files.sort((a, b) => a.name.localeCompare(b.name));
 
-  const prelude = codeExport.layers.length ? reactCodePrelude(codeExport) : '';
-  const nocheck = codeExport.layers.length ? CODE_LAYERS_NOCHECK : '';
   // The exported function must not shadow a component it imports (exporting a Button layer: `Button` -> `ButtonDesign`).
   const imported = new Set([...(uiOut ? importedNames(uiOut) : []), ...[...links.imports].map((c) => docs.plans.get(c)!.name)]);
   const name = imported.has(baseName) ? `${baseName}Design` : baseName;
+  // Code layers are plain JavaScript: they go in their own file (typed by a .d.ts) so this one stays fully typed.
+  const codeModules = codeExport.layers.length ? reactCodeModules(codeExport, name) : null;
   const roots = [id, ...docs.used.map((c) => docs.plans.get(c)!.def.root)];
   const themeCss = reactThemeCss(name, theme, usedBundledFonts(doc, roots, theme), themed && doc.theme() ? `Theme: ${doc.theme()!.id}` : undefined);
   const css = ds ? { path: `${name}.css`, text: `${designSystemCss(ds)}\n${themeCss?.text ?? ''}` } : themeCss;
   const cssNote = css ? `// Needs ./${css.path}: @import it in your Tailwind stylesheet after @import "tailwindcss" (${ds ? `the "${ds.name}" design system tokens, theme aliases, ` : 'theme variables, '}@theme, @font-face).\n` : '';
-  const code = `${nocheck}${uiOut ? importLines(uiOut) : ''}${docImportLines(links.imports, docs)}${prelude}${cssNote}${uiOut ? uiNote(ds!.name, uiOut) : ''}${links.usedInternal ? REACT_ROUTES_NOTE : ''}${uiOut ? helperLines(uiOut) : ''}export default function ${name}() {\n  return (\n${screen.body}  );\n}\n`;
+  const code = `${uiOut ? importLines(uiOut) : ''}${docImportLines(links.imports, docs)}${codeModules?.prelude ?? ''}${cssNote}${uiOut ? uiNote(ds!.name, uiOut) : ''}${links.usedInternal ? REACT_ROUTES_NOTE : ''}${uiOut ? helperLines(uiOut) : ''}export default function ${name}() {\n  return (\n${screen.body}  );\n}\n`;
   return {
     componentName: name,
     code,
     ...(css ? { css } : {}),
     ...(uiOut ? { ui: uiReport(uiOut) } : {}),
     ...(files.length ? { components: files } : {}),
+    ...(codeModules ? { extraFiles: codeModules.files } : {}),
     ...(docs.notes.length ? { componentNotes: docs.notes } : {}),
   };
 }
@@ -247,14 +253,13 @@ function componentFile(sh: Shared, plan: ComponentPlan, screenUi: UiExport | nul
   }
   const tables = links.tables!;
   const react = `import type { ComponentPropsWithoutRef${tables.usesStyle ? ', CSSProperties' : ''} } from "react";\n`;
-  const prelude = codeExport.layers.length ? reactCodePrelude(codeExport) : '';
-  const nocheck = codeExport.layers.length ? CODE_LAYERS_NOCHECK : '';
+  const codeModules = codeExport.layers.length ? reactCodeModules(codeExport, plan.name, `${COMPONENT_DIR}/`) : null;
   const note = `// The “${plan.def.name}” component of the Ocelot document: write it once, use <${plan.name} … /> for every instance (props below; className and style place it).\n`;
   const code =
-    `${nocheck}${react}${uiOut ? importLines(uiOut) : ''}${docImportLines(links.imports, docs)}${prelude}${note}${uiOut ? uiNote(sh.ds!.name, uiOut) : ''}${links.usedInternal ? REACT_ROUTES_NOTE : ''}${uiOut ? helperLines(uiOut) : ''}\n` +
+    `${react}${uiOut ? importLines(uiOut) : ''}${docImportLines(links.imports, docs)}${codeModules?.prelude ?? ''}${note}${uiOut ? uiNote(sh.ds!.name, uiOut) : ''}${links.usedInternal ? REACT_ROUTES_NOTE : ''}${uiOut ? helperLines(uiOut) : ''}\n` +
     `${propsDeclaration(plan)}\n${tables.lines.length ? `${tables.lines.join('\n\n')}\n\n` : ''}` +
     `export function ${plan.name}(${propsParams(plan)}) {\n  return (\n${body}  );\n}\n`;
-  return { id: plan.def.id, name: plan.name, path: plan.file, code, props: plan.def.props.map((p) => propSummary(doc, p)) };
+  return { id: plan.def.id, name: plan.name, path: plan.file, code, props: plan.def.props.map((p) => propSummary(doc, p)), ...(codeModules ? { extraFiles: codeModules.files } : {}) };
 }
 
 function noteOnce(docs: DocExport, note: string): void {
@@ -524,4 +529,4 @@ function parseInlineStyle(text: string): Record<string, string> {
   return out;
 }
 
-export const REACT_EXPORT_NOTES = `Requires Tailwind CSS v4 (default preflight). The canvas uses the same reset, so spacing and typography match. Default font: ${DEFAULT_FONT_STACK}. A design with a theme or bundled fonts also exports <Name>.css (theme variables, Tailwind @theme, @font-face): @import it after "tailwindcss" in your stylesheet and copy public/fonts. Document components export once each as components/<Name>.tsx (imported as "@/components/<Name>"): instances are <Name … /> with their props.`;
+export const REACT_EXPORT_NOTES = `Requires Tailwind CSS v4 (default preflight). The canvas uses the same reset, so spacing and typography match. Default font: ${DEFAULT_FONT_STACK}. A design with a theme or bundled fonts also exports <Name>.css (theme variables, Tailwind @theme, @font-face): @import it after "tailwindcss" in your stylesheet and copy public/fonts. Document components export once each as components/<Name>.tsx (imported as "@/components/<Name>"): instances are <Name … /> with their props. A screen (or component) with code layers comes as four files: <Name>.tsx (fully typed; imports <Name>.layers.js and ocelot-code-layer), <Name>.layers.js (the layers, plain JavaScript), <Name>.layers.d.ts (their types) and ocelot-code-layer.tsx (the typed runtime, one copy per folder): keep them together.`;

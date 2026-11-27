@@ -51,6 +51,7 @@ final class LiveAppControl: AppControl {
             activity.record(client: client, did: "opened Home")
             return ["shown": true]
         case "open_settings": return try openSettings(tab: try string(a, "tab"), client: client)
+        case "reveal_commands_folder": return try revealCommandsFolder(client: client)
         case "list_windows": return ["windows": windows().map(\.json)]
         case "focus_window": return try focusWindow(a, client: client)
         case "arrange_windows": return try arrangeWindows(a, client: client)
@@ -691,10 +692,30 @@ final class LiveAppControl: AppControl {
             guard let t = SettingsTab(rawValue: tab) else { throw AppToolError("\"tab\" must be one of \(SettingsTab.allCases.map(\.rawValue).joined(separator: ", ")).") }
             SettingsRouter.shared.tab = t
         }
-        NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
         NSApp.activate()
+        // The app menu's "Settings…" item (⌘,) is what the person uses. `showSettingsWindow:` alone does nothing until that
+        // window has been opened once in this launch (seen on macOS 27: the tool said shown, no window appeared).
+        if let appMenu = NSApp.mainMenu?.items.first?.submenu,
+           let index = appMenu.items.firstIndex(where: { $0.keyEquivalent == "," && $0.keyEquivalentModifierMask.intersection(.deviceIndependentFlagsMask) == .command }) {
+            appMenu.performActionForItem(at: index)
+        } else {
+            NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
+        }
         activity.record(client: client, did: "opened Settings")
         return ["shown": true, "tab": SettingsRouter.shared.tab.rawValue]
+    }
+
+    /// The Settings > Agent "Open Folder" button: creates the folder of the person's own slash commands when missing and shows it.
+    private func revealCommandsFolder(client: String?) throws -> Any {
+        let folder = AgentCommandFolder.standard()
+        do {
+            try folder.reveal()
+            let commands = try folder.commandNames()
+            activity.record(client: client, did: "showed the commands folder")
+            return ["folder": folder.url.path, "commands": commands] as [String: Any]
+        } catch let failure as BridgeFailure {
+            throw AppToolError(failure.message)
+        }
     }
 
     // MARK: Settings-adjacent

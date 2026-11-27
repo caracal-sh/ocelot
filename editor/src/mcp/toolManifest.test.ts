@@ -2,6 +2,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { promptList } from '../agent/commands';
 import { initializeResult, listTools } from './protocol';
 
 // The `ocelot` CLI answers initialize/tools/list from a manifest generated from
@@ -13,6 +14,11 @@ describe('CLI tool manifest', () => {
   it('matches the tool definitions', () => {
     expect(manifest.tools).toEqual(JSON.parse(JSON.stringify(listTools(false))));
     expect(manifest.initialize).toEqual(JSON.parse(JSON.stringify(initializeResult(''))));
+  });
+
+  it('carries the built-in design prompts, so `ocelot mcp` lists them with the app closed', () => {
+    expect(manifest.prompts).toEqual(JSON.parse(JSON.stringify(promptList([]))));
+    expect(manifest.prompts.map((p: { name: string }) => p.name)).toEqual(['critique', 'polish', 'variants', 'responsive', 'flow', 'copy']);
   });
 
   it('hides write tools from read-only connections', () => {

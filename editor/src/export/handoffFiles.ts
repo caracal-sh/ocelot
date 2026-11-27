@@ -1,5 +1,5 @@
 // The handoff folder: HANDOFF.md, README.md, flows.json, screens/<slug>@2x.png, code/ (React + Tailwind, with the design system's
-// components when the document has one, the document's own components in code/components/, plus public/assets and public/fonts), prototype/ (the screens as linked static HTML) and
+// components when the document has one, the document's own components in code/components/, the files of live code layers (<Name>.layers.js, <Name>.layers.d.ts and one ocelot-code-layer.tsx per folder), plus public/assets and public/fonts), prototype/ (the screens as linked static HTML) and
 // design-system/ (the shadcn registry).
 // The popover saves it through `host.exportSave`; `get_handoff { files: true }` returns it for `ocelot handoff --out`.
 
@@ -76,7 +76,8 @@ async function codeFiles(editor: Editor, h: Handoff): Promise<{ files: ExportFil
     for (let n = 2; names.has(name); n++) name = `${base}${n}`;
     names.add(name);
     const rename = (path: string): string => (name !== base && path.startsWith(`${base}.`) ? `${name}${path.slice(base.length)}` : path);
-    const tsx = name === base ? result.code : result.code.replaceAll(`./${base}.css`, `./${name}.css`);
+    // The file's own companions (`<Name>.css`, `<Name>.layers.js`) are renamed with it; `ocelot-code-layer.tsx` is shared and keeps its name.
+    const tsx = name === base ? result.code : result.code.replaceAll(`./${base}.css`, `./${name}.css`).replaceAll(`./${base}.layers.js`, `./${name}.layers.js`);
     files.set(`code/${name}.tsx`, { path: `code/${name}.tsx`, text: tsx });
     code.push({ screenId: s.id, file: `${name}.tsx` });
     for (const f of exportFiles(result)) {

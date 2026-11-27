@@ -28,6 +28,8 @@ export function ConversationControls({ chat }: { chat: AgentChat }) {
   useEffect(() => {
     if (!working) setConfirm(null);
   }, [working]);
+  // `/new` sent while the agent works asks the same question as "+".
+  useEffect(() => chat.onNewChatRequest(() => setConfirm({ kind: 'new' })), [chat]);
 
   const startNew = () => {
     if (working) setConfirm({ kind: 'new' });

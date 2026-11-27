@@ -79,6 +79,27 @@ describe('/mcp/app on a headless host', () => {
     expect(unknown.json.error.message).toContain('/mcp/p/');
   });
 
+  it('declares prompts and has none itself: they come from the document route, which the gateway passes through', async () => {
+    const init = await post(appUrl, { jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-06-18', clientInfo: { name: 'claude-code' } } });
+    expect(init.json.result.capabilities.prompts).toEqual({ listChanged: false });
+    const list = await post(appUrl, { jsonrpc: '2.0', id: 2, method: 'prompts/list' });
+    expect(list.json.result).toEqual({ prompts: [] });
+    const get = await post(appUrl, { jsonrpc: '2.0', id: 3, method: 'prompts/get', params: { name: 'critique' } });
+    expect(get.json.error.code).toBe(-32602);
+    expect(get.json.error.message).toContain('open_project');
+    expect(get.json.error.message).toContain('/mcp/p/');
+    // The document route reaches the editor's own prompts, on /mcp and on a project URL.
+    for (const url of [host.url, host.mcpUrl({ project: host.projectId() })]) {
+      const docInit = await post(url, { jsonrpc: '2.0', id: 4, method: 'initialize', params: { protocolVersion: '2025-06-18', clientInfo: { name: 'claude-code' } } });
+      expect(docInit.json.result.capabilities.prompts).toEqual({ listChanged: false });
+      const session = { 'mcp-session-id': docInit.headers.get('mcp-session-id') };
+      const prompts = await post(url, { jsonrpc: '2.0', id: 5, method: 'prompts/list' }, host.token, session);
+      expect(prompts.json.result.prompts.map((p) => p.name)).toContain('critique');
+      const got = await post(url, { jsonrpc: '2.0', id: 6, method: 'prompts/get', params: { name: 'critique', arguments: { args: 'the hero' } } }, host.token, session);
+      expect(got.json.result.messages[0].content.text).toContain('the hero');
+    }
+  });
+
   it('needs the master token: scoped tokens stay inside their document', async () => {
     const windowToken = host.issueToken({ scope: 'window', id: host.windowId });
     const refused = await post(appUrl, { jsonrpc: '2.0', id: 1, method: 'ping' }, windowToken);

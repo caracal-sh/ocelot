@@ -11,6 +11,7 @@ import { SERVER_INSTRUCTIONS, TOOLS, callTool, type ToolContext } from './tools'
 import type { McpSession } from './toolkit';
 import { toolLabel } from '../agent/transcript';
 import { isOmpClient } from '../editor/questions';
+import { loadYourCommands, promptGet, promptList } from '../agent/commands';
 
 export const SUPPORTED_PROTOCOL_VERSIONS = ['2025-11-25', '2025-06-18', '2025-03-26', '2024-11-05'];
 export const SERVER_NAME = 'ocelot';
@@ -53,7 +54,7 @@ function overrides(): McpTextOverrides {
 export function initializeResult(requestedVersion: string): Record<string, unknown> {
   return {
     protocolVersion: SUPPORTED_PROTOCOL_VERSIONS.includes(requestedVersion) ? requestedVersion : SUPPORTED_PROTOCOL_VERSIONS[0],
-    capabilities: { tools: { listChanged: false } },
+    capabilities: { tools: { listChanged: false }, prompts: { listChanged: false } },
     serverInfo: { name: SERVER_NAME, title: 'Ocelot', version: SERVER_VERSION },
     instructions: overrides().instructions ?? SERVER_INSTRUCTIONS,
   };
@@ -197,8 +198,19 @@ export class McpServer {
         for (const cb of this.#listeners) cb(record);
         return { jsonrpc: '2.0', id, result };
       }
+      // The design commands of the sidebar and the person's own (their Commands folder, read through the host on every
+      // request; a host that cannot read it leaves just the design commands) are offered as prompts: /ocelot:critique in a client.
+      case 'prompts/list':
+        return { jsonrpc: '2.0', id, result: { prompts: promptList((await loadYourCommands(this.deps.host)).commands) } };
+      case 'prompts/get': {
+        const name = params['name'];
+        if (typeof name !== 'string') return errorResponse(id, INVALID_PARAMS, 'prompts/get needs params.name. Call prompts/list for available prompts.');
+        const given = (params['arguments'] as Record<string, unknown> | undefined)?.['args'];
+        const prompt = promptGet(name, typeof given === 'string' ? given : '', (await loadYourCommands(this.deps.host)).commands);
+        return prompt ? { jsonrpc: '2.0', id, result: prompt } : errorResponse(id, INVALID_PARAMS, `Unknown prompt "${name}". Call prompts/list for available prompts.`);
+      }
       default:
-        return errorResponse(id, METHOD_NOT_FOUND, `Method "${req.method}" is not supported. This server implements initialize, ping, tools/list and tools/call.`);
+        return errorResponse(id, METHOD_NOT_FOUND, `Method "${req.method}" is not supported. This server implements initialize, ping, tools/list, tools/call, prompts/list and prompts/get.`);
     }
   }
 }

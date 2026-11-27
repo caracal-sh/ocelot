@@ -522,3 +522,32 @@ describe('buildHandoff: the stack', () => {
     expect(describeHandoff(full)).toMatch(/ · full app$/);
   });
 });
+
+describe('the copy instructions for code layers', () => {
+  const layout = { code: [], hasRegistry: false, hasPrototype: false, hasScreenshots: false };
+
+  it('a design without code layers copies the .tsx and .css files, as before', () => {
+    const { editor } = flow();
+    for (const stack of ['frontend', 'full-app'] as const) {
+      const h = buildHandoff(src(editor), { scope: 'document', stack });
+      const adapt = h.steps.find((s) => s.startsWith('Adapt'))!;
+      expect(adapt).toContain('copy its .tsx and .css files into src/');
+      expect(adapt).not.toMatch(/\.layers\.|ocelot-code-layer/);
+      const md = folderMarkdown(h, layout);
+      expect(md).toContain('`code/*.tsx` and `code/*.css` into');
+      expect(md).not.toMatch(/\.layers\.|ocelot-code-layer/);
+    }
+  });
+
+  it('with code layers it also copies the .layers.js and .layers.d.ts files and the runtime, in both stacks', () => {
+    const { editor, home } = flow();
+    editor.human.insertNodes(home, [{ type: 'code', name: 'Glow', code: { source: 'export default function mount(el) {}', libraries: [] } }]);
+    for (const [stack, folder] of [['frontend', 'src/pages/'], ['full-app', 'src/screens/']] as const) {
+      const h = buildHandoff(src(editor), { scope: 'document', stack });
+      const adapt = h.steps.find((s) => s.startsWith('Adapt'))!;
+      expect(adapt).toContain(`copy its .tsx, .css, .layers.js and .layers.d.ts files (ocelot-code-layer.tsx included) into ${folder}`);
+      const md = folderMarkdown(h, layout);
+      expect(md).toContain(`\`code/*.tsx\` (\`ocelot-code-layer.tsx\` included), \`code/*.css\`, \`code/*.layers.js\` and \`code/*.layers.d.ts\` into \`${folder}\``);
+    }
+  });
+});

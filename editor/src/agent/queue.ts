@@ -21,6 +21,8 @@ export interface QueuedMeta {
   context?: string;
   attachments: Attachment[];
   references?: LayerReference[];
+  /** The slash command the person typed (`text` starts with it); `key` holds its expansion. */
+  command?: string;
 }
 
 export interface QueuedItem {

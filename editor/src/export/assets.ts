@@ -54,7 +54,7 @@ export interface ExportResult {
   fileName: string;
   code: string;
   assets: ExportAssetPlan;
-  /** Files that belong next to the main file: the React export's stylesheet (theme variables, `@theme`, `@font-face`) and its document components (`components/<Name>.tsx`). */
+  /** Files that belong next to the main file: the React export's stylesheet (theme variables, `@theme`, `@font-face`), its document components (`components/<Name>.tsx`) and the files of its code layers (`<Name>.layers.js`, `<Name>.layers.d.ts`, `ocelot-code-layer.tsx`). */
   extraFiles?: Array<{ path: string; text: string }>;
   /** React only. */
   componentName?: string;
@@ -187,7 +187,11 @@ export function exportNode(doc: OcelotDocument, id: string, kind: ExportKind, as
   // A copy with the image URLs is only needed when an image (not just a shader picture, which the module carries) is referenced.
   const source = plan.files.some((f) => !f.picture) || plan.missing.length ? withAssetUrls(doc, roots, plan.urlOf) : doc;
   const r = exportReact(source, id, { ...react, ...pictureOpt(pictureUrlOf(plan, assets)) });
-  const extraFiles = [...(r.css ? [r.css] : []), ...(r.components ?? []).map((c) => ({ path: c.path, text: c.code }))];
+  // The stylesheet, the document components and the files of code layers (screen and components share one runtime file per folder).
+  const extraFiles: Array<{ path: string; text: string }> = [];
+  for (const f of [...(r.css ? [r.css] : []), ...(r.extraFiles ?? []), ...(r.components ?? []).flatMap((c) => [{ path: c.path, text: c.code }, ...(c.extraFiles ?? [])])]) {
+    if (!extraFiles.some((e) => e.path === f.path)) extraFiles.push(f);
+  }
   return {
     kind,
     fileName: `${r.componentName}.tsx`,
@@ -263,6 +267,11 @@ export function exportFiles(result: ExportResult): ExportFile[] {
   ];
 }
 
+/** The files of a React export's code layers (`<Name>.layers.js`, `<Name>.layers.d.ts`, `ocelot-code-layer.tsx`; for a screen and its components): the part of `extraFiles` that is neither a stylesheet nor a component. */
+export function codeLayerFiles(result: ExportResult): Array<{ path: string; text: string }> {
+  return (result.extraFiles ?? []).filter((f) => !f.path.endsWith('.css') && !result.components?.some((c) => c.path === f.path));
+}
+
 /** One-line summary for tool results and toasts. */
 export function assetNote(result: ExportResult): string {
   const { found, missing: lostPictures, as } = result.assets.pictures;
@@ -291,8 +300,10 @@ export function assetNote(result: ExportResult): string {
     if (ui.fallbacks.length) parts.push(`${ui.fallbacks.length} instance${ui.fallbacks.length === 1 ? '' : 's'} stayed inline (${ui.fallbacks.map((f) => `${f.name}: ${f.reason}`).join('; ')}).`);
     if (ui.warnings.length) parts.push(`Not exported: ${[...new Set(ui.warnings)].join(' ')}`);
   }
-  const styleFiles = (result.extraFiles ?? []).filter((f) => !result.components?.some((c) => c.path === f.path));
+  const styleFiles = (result.extraFiles ?? []).filter((f) => f.path.endsWith('.css'));
   if (styleFiles.length) parts.push(`Also exported: ${styleFiles.map((f) => f.path).join(', ')} (theme variables, Tailwind @theme, @font-face): @import it after "tailwindcss" in your stylesheet.`);
+  const layerFiles = codeLayerFiles(result);
+  if (layerFiles.length) parts.push(`Code layers are separate files (${layerFiles.map((f) => f.path).join(', ')}): the component imports them, so keep them next to it; save_export writes them.`);
   if (result.components?.length) parts.push(`Document components: ${result.components.map((c) => c.name).join(', ')} are separate files (${result.components.map((c) => c.path).join(', ')}), imported as "@/components/<Name>"; save_export writes them next to the screen.`);
   if (result.componentNotes?.length) parts.push(...result.componentNotes);
   return parts.join(' ');

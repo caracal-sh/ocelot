@@ -216,6 +216,14 @@ export const APP_TOOLS: readonly AppToolDef[] = [
     readOnly: false,
   },
   {
+    name: 'reveal_commands_folder',
+    title: 'Show the commands folder',
+    description:
+      'Shows the folder of the person\'s own sidebar slash commands in Finder, creating it if missing. One Markdown file per command (name.md, lowercase letters, digits and dashes; optional frontmatter description and argument-hint; the body is the prompt; $ARGUMENTS and $1..$9 take the arguments). Returns { folder, commands: [names] }.',
+    inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+    readOnly: false,
+  },
+  {
     name: 'list_windows',
     title: 'List windows',
     description: 'The app\'s windows: id, kind (editor, home, settings), title, project id, frame, and whether each is focused, minimized or full screen.',

@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from 'vitest';
 import { setupMcp as setup } from './testSetup';
+import { McpServer } from './protocol';
 
 describe('MCP protocol', () => {
   it('initializes with negotiated version and instructions', async () => {
@@ -143,5 +144,88 @@ describe('MCP tools: the design loop', () => {
     expect(r.bundled_fonts.slice(0, 4).map((f: { family: string }) => f.family)).toEqual(['Geist', 'Geist Serif', 'Geist Mono', 'Geist Pixel']);
     expect(r.bundled_fonts[0].use).toMatch(/^DEFAULT/);
     expect(r.bundled_fonts[1].use).toMatch(/ELSH/);
+  });
+});
+
+describe('MCP prompts', () => {
+  /** The same editor and host, with the person's Commands folder listing `files` (or failing). */
+  function withCommandFiles(files: Array<{ name: string; text: string }> | Error) {
+    const base = setup();
+    const host = {
+      ...base.host,
+      call: (async (method: string, params: unknown, opts: unknown) => {
+        if (method === 'host.agentCommands') {
+          if (files instanceof Error) throw files;
+          return { files };
+        }
+        return base.host.call(method as never, params as never, opts as never);
+      }) as typeof base.host.call,
+    };
+    const server = new McpServer({ editor: base.editor, locks: base.editor.locks, host });
+    let id = 0;
+    const rpc = async (method: string, params?: unknown) => JSON.parse((await server.handle(JSON.stringify({ jsonrpc: '2.0', id: ++id, method, params })))!);
+    return { rpc };
+  }
+
+  it('declares the prompts capability next to tools', async () => {
+    const { rpc } = setup();
+    const r = await rpc('initialize', { protocolVersion: '2025-11-25', capabilities: {}, clientInfo: { name: 'claude-code', version: '9' } });
+    expect(r.result.capabilities).toEqual({ tools: { listChanged: false }, prompts: { listChanged: false } });
+  });
+
+  it('prompts/list offers the six design commands, with a title and one optional "args" argument', async () => {
+    const { rpc } = setup();
+    const { prompts } = (await rpc('prompts/list')).result;
+    expect(prompts.map((p: { name: string }) => p.name)).toEqual(['critique', 'polish', 'variants', 'responsive', 'flow', 'copy']);
+    expect(prompts[0]).toEqual({
+      name: 'critique',
+      title: '/critique',
+      description: expect.stringContaining('Review the design'),
+      arguments: [{ name: 'args', description: '[focus]', required: false }],
+    });
+    expect(prompts.find((p: { name: string }) => p.name === 'flow').arguments).toEqual([{ name: 'args', description: 'Optional text', required: false }]);
+    expect(prompts.map((p: { name: string }) => p.name)).not.toContain('new'); // conversation commands are sidebar-only
+  });
+
+  it("prompts/list adds the person's commands from their folder, and survives a host that cannot read it", async () => {
+    const { rpc } = withCommandFiles([
+      { name: 'brand-check.md', text: '---\ndescription: Check the brand\nargument-hint: [screen]\n---\nCheck $ARGUMENTS' },
+      { name: 'critique.md', text: 'Replaces nothing: built-in names win' },
+      { name: 'Bad Name.md', text: 'x' },
+    ]);
+    const { prompts } = (await rpc('prompts/list')).result;
+    expect(prompts.map((p: { name: string }) => p.name)).toEqual(['critique', 'polish', 'variants', 'responsive', 'flow', 'copy', 'brand-check']);
+    expect(prompts.at(-1)).toEqual({ name: 'brand-check', title: '/brand-check', description: 'Check the brand', arguments: [{ name: 'args', description: '[screen]', required: false }] });
+
+    const broken = withCommandFiles(new Error('no folder'));
+    expect((await broken.rpc('prompts/list')).result.prompts).toHaveLength(6);
+  });
+
+  it('prompts/get returns the expanded prompt as one user message', async () => {
+    const { rpc } = setup();
+    const r = (await rpc('prompts/get', { name: 'critique', arguments: { args: 'the pricing table' } })).result;
+    expect(r.description).toContain('Review the design');
+    expect(r.messages).toHaveLength(1);
+    expect(r.messages[0]).toMatchObject({ role: 'user', content: { type: 'text', text: expect.stringContaining('Focus (empty means everything): the pricing table') } });
+    expect(r.messages[0].content.text).toContain('inspect_design');
+    const bare = (await rpc('prompts/get', { name: 'flow' })).result;
+    expect(bare.messages[0].content.text).toContain('set_link');
+  });
+
+  it("prompts/get expands the person's command with its placeholders", async () => {
+    const { rpc } = withCommandFiles([{ name: 'brand-check.md', text: 'Check $1, then $2.' }]);
+    const r = (await rpc('prompts/get', { name: 'brand-check', arguments: { args: 'hero "the footer"' } })).result;
+    expect(r.messages[0].content.text).toBe('Check hero, then the footer.');
+  });
+
+  it('prompts/get with an unknown name is -32602 and names prompts/list', async () => {
+    const { rpc } = setup();
+    const missing = await rpc('prompts/get', { name: 'nope' });
+    expect(missing.error.code).toBe(-32602);
+    expect(missing.error.message).toMatch(/Unknown prompt "nope".*prompts\/list/);
+    expect((await rpc('prompts/get', { name: 'new' })).error.code).toBe(-32602); // a conversation command
+    const noName = await rpc('prompts/get', {});
+    expect(noName.error.code).toBe(-32602);
+    expect(noName.error.message).toMatch(/prompts\/list/);
   });
 });

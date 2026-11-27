@@ -37,8 +37,14 @@ import Foundation
 
 struct AgentServiceStart: Codable, Sendable {
     var sessionId: String
-    /// Absolute, symlink-free path of the omp executable the app resolved.
+    /// Absolute, symlink-free path of the omp executable the app resolved: a binary, a version file of a managed install
+    /// (`…/omp/versions/19.2.1`) or, for a bun or npm install, the package's script (`…/pi-coding-agent/dist/cli.js`).
     var ompPath: String
+    /// The path the app found omp at before resolving symlinks (`~/.bun/bin/omp`, `~/.local/bin/omp`): it must be named omp.
+    var ompCommand: String
+    /// Directories put ahead of `/usr/bin:/bin` on the agent's PATH: where omp and its runtime (bun) live, so an omp that is a
+    /// script (`#!/usr/bin/env bun`) starts. Nothing secret is on a PATH; whether a directory is readable is the sandbox's call.
+    var searchPath: [String]
     var systemPrompt: String
     var model: String?
     var thinking: String?
@@ -68,11 +74,17 @@ struct AgentScratchInfo: Codable, Sendable, Equatable {
     var modified: Double?
 }
 
-/// A path of the app's own that the agent must not be able to read, with the command that tries (`ls` for folders, `cat` for files).
+/// A path the self-test tries from inside the sandbox. Without `run`: a path of the app's own that the agent must not be able to
+/// read, with the command that tries (`ls` for folders, `cat` for files). With `run`: a program the agent needs (omp), first checked
+/// like a chat start checks it (`command`, the path it was found at, see `OmpExecutable.problem`), then started with these
+/// arguments and `searchPath` ahead of `/usr/bin:/bin` (as the agent itself starts), which must work.
 struct AgentProbeTarget: Codable, Sendable, Equatable {
     var label: String
     var path: String
     var list: Bool
+    var run: [String]? = nil
+    var searchPath: [String]? = nil
+    var command: String? = nil
 }
 
 struct AgentProbeResult: Codable, Sendable, Equatable {

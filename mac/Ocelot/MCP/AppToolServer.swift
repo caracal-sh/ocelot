@@ -7,7 +7,7 @@ protocol AppControl: AnyObject {
     func call(tool: String, arguments: [String: Any], client: String?) async throws -> Any
 }
 
-/// The JSON-RPC side of `/mcp/app`: `initialize`, `ping`, `tools/list`, `tools/call` over the generated app tool list
+/// The JSON-RPC side of `/mcp/app`: `initialize`, `ping`, `tools/list`, `tools/call` (and an empty `prompts/list`, since prompts belong to a document) over the generated app tool list
 /// (`AppToolManifest`, from editor/src/mcp/appTools.ts). The host answers these itself; no editor window is involved, so the
 /// tools work with no project open (and with the app just started). The behaviour of each tool is `AppControl`.
 @MainActor
@@ -63,8 +63,13 @@ final class AppToolServer {
             } catch {
                 return Self.result(id: id, Self.failure("\(name) failed: \(error.localizedDescription)"))
             }
+        case "prompts/list":
+            // Prompts come from a document; this endpoint has none, so the list is empty (not an error: clients list on connect).
+            return Self.result(id: id, ["prompts": [Any]()])
+        case "prompts/get":
+            return Self.error(id: id, code: -32602, message: AppToolData.noDocumentPromptMessage)
         default:
-            return Self.error(id: id, code: -32601, message: "Method \"\(method)\" is not supported. This server implements initialize, ping, tools/list and tools/call.")
+            return Self.error(id: id, code: -32601, message: "Method \"\(method)\" is not supported. This server implements initialize, ping, tools/list, tools/call, prompts/list and prompts/get.")
         }
     }
 

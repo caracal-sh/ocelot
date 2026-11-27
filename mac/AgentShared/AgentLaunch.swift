@@ -168,12 +168,18 @@ enum AgentLaunch {
         return selectors.first { $0.hasPrefix("anthropic/") } ?? selectors.first ?? ""
     }
 
-    /// Environment of the confined omp: nothing inherited from the host.
-    static func confinedEnvironment(home: String, agentDir: String, temporaryDirectory: String, token: String, mcpToken: String) -> [String: String] {
+    /// Environment of the confined omp: nothing inherited from the host. `searchPath` (omp's folder and its runtime's, see
+    /// `OmpExecutable.searchPath`) goes ahead of `/usr/bin:/bin` so an omp that is a script finds bun.
+    static func confinedEnvironment(home: String, agentDir: String, temporaryDirectory: String, token: String, mcpToken: String, searchPath: [String] = []) -> [String: String] {
         [
             "HOME": home, "PI_CODING_AGENT_DIR": agentDir, "TMPDIR": temporaryDirectory,
-            "PATH": "/usr/bin:/bin", "LANG": "en_US.UTF-8", gatewayTokenEnv: token, mcpTokenEnv: mcpToken,
+            "PATH": confinedPath(searchPath), "LANG": "en_US.UTF-8", gatewayTokenEnv: token, mcpTokenEnv: mcpToken,
         ]
+    }
+
+    /// `searchPath` (absolute folders without `:` only) ahead of `/usr/bin:/bin`.
+    static func confinedPath(_ searchPath: [String]) -> String {
+        (searchPath.filter { $0.hasPrefix("/") && !$0.contains(":") } + ["/usr/bin", "/bin"]).reduce(into: [String]()) { if !$0.contains($1) { $0.append($1) } }.joined(separator: ":")
     }
 
     /// The confined agent's `~/.omp/natives` from the host's (the real `~/.omp/natives`, read-only to the agent): real directories

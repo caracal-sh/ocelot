@@ -299,6 +299,9 @@ export function createAppEndpoint(host) {
     async reveal_project() {
       throw macOnly('showing a package in Finder');
     },
+    async reveal_commands_folder() {
+      throw macOnly('showing the commands folder in Finder (this host lists its own with the commandsDir option of startHeadlessHost)');
+    },
     async remove_recent_projects() {
       throw macOnly('the recent documents list');
     },
@@ -464,6 +467,9 @@ export function createAppEndpoint(host) {
 
   // ---------- JSON-RPC ----------
 
+  const NO_DOCUMENT_PROMPT_MESSAGE =
+    'The app endpoint has no prompts: they come from a project\'s document. Open a project first (open_project, or new_project to start one), then use its URL (/mcp/p/<project_id>), or `ocelot mcp`, which forwards them.';
+
   const rpcResult = (id, result) => ({ jsonrpc: '2.0', id, result });
   const rpcError = (id, code, message) => ({ jsonrpc: '2.0', id, error: { code, message } });
   const failure = (message) => ({ isError: true, content: [{ type: 'text', text: message }] });
@@ -478,7 +484,7 @@ export function createAppEndpoint(host) {
         const requested = params.protocolVersion;
         return rpcResult(msg.id, {
           protocolVersion: MANIFEST.protocolVersions.includes(requested) ? requested : MANIFEST.protocolVersions[0],
-          capabilities: { tools: { listChanged: false } },
+          capabilities: { tools: { listChanged: false }, prompts: { listChanged: false } },
           serverInfo: MANIFEST.serverInfo,
           instructions: MANIFEST.instructions,
         });
@@ -503,8 +509,13 @@ export function createAppEndpoint(host) {
           return rpcResult(msg.id, failure(err instanceof AppToolError ? err.message : `${name} failed: ${err?.message ?? err}`));
         }
       }
+      // Prompts (the slash commands) come from a document; this endpoint has none: an empty list, and an error that says what to do.
+      case 'prompts/list':
+        return rpcResult(msg.id, { prompts: [] });
+      case 'prompts/get':
+        return rpcError(msg.id, -32602, NO_DOCUMENT_PROMPT_MESSAGE);
       default:
-        return rpcError(msg.id, -32601, `Method "${msg.method}" is not supported. This server implements initialize, ping, tools/list and tools/call.`);
+        return rpcError(msg.id, -32601, `Method "${msg.method}" is not supported. This server implements initialize, ping, tools/list, tools/call, prompts/list and prompts/get.`);
     }
   }
 

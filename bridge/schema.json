@@ -227,6 +227,14 @@
       "transcript": "string?",
       "files": "AgentHistoryFile[]?"
     },
+    "AgentCommandFile": {
+      "name": "string",
+      "text": "string"
+    },
+    "AgentCommandFiles": {
+      "folder": "string?",
+      "files": "AgentCommandFile[]"
+    },
     "AgentSendParams": {
       "processId": "string",
       "command": "json"
@@ -558,6 +566,14 @@
     },
     "host.agentHistoryDelete": {
       "params": "AgentHistoryKey",
+      "result": "Empty"
+    },
+    "host.agentCommands": {
+      "params": "Empty",
+      "result": "AgentCommandFiles"
+    },
+    "host.agentCommandsReveal": {
+      "params": "Empty",
       "result": "Empty"
     },
     "host.assetsList": {

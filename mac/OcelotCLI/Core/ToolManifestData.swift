@@ -6,6 +6,8 @@ enum ToolManifestData {
     static let protocolVersions: [String] = root["protocolVersions"] as? [String] ?? ["2025-06-18"]
     nonisolated(unsafe) static let initialize: [String: Any] = root["initialize"] as? [String: Any] ?? [:]
     nonisolated(unsafe) static let tools: [[String: Any]] = root["tools"] as? [[String: Any]] ?? []
+    /// The built-in design prompts (`/critique`, ...), the same list the editor serves; the person's own commands only come from a running editor.
+    nonisolated(unsafe) static let prompts: [[String: Any]] = root["prompts"] as? [[String: Any]] ?? []
 
     /// `initialize` result for the protocol version a client asked for (falls back to the newest we support).
     static func initializeResult(requested: String?) -> [String: Any] {

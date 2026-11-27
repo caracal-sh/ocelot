@@ -95,6 +95,11 @@ final class AgentLaunchTests: XCTestCase {
         XCTAssertEqual(env, ["HOME": "/h", "PI_CODING_AGENT_DIR": "/h/a", "TMPDIR": "/h/tmp", "PATH": "/usr/bin:/bin", "LANG": "en_US.UTF-8", "OCELOT_GATEWAY_TOKEN": "t", "OCELOT_MCP_TOKEN": "m"])
     }
 
+    func testConfinedPathPutsOmpAndBunFoldersFirstAndDropsAnythingElse() {
+        let env = AgentLaunch.confinedEnvironment(home: "/h", agentDir: "/h/a", temporaryDirectory: "/h/tmp", token: "t", mcpToken: "m", searchPath: ["/h/.bun/bin", "relative", "/x:/y", "/usr/bin"])
+        XCTAssertEqual(env["PATH"], "/h/.bun/bin:/usr/bin:/bin")
+    }
+
     func testArgumentsExposeOnlyMCPToolsAndTask() {
         let args = AgentLaunch.ompArguments(configFile: "/c", systemPromptFile: "/p", model: "anthropic/a", thinking: "low", sessionDirectory: "/s/p1/c1", resume: false)
         XCTAssertFalse(args.contains("--no-tools"))

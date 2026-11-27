@@ -9,6 +9,9 @@ enum McpCommand: Subcommand {
     A stdio MCP server: agents launch it, it answers initialize and tools/list from a built-in manifest even
     when Ocelot is closed, starts the app (and reopens a known project) on the first tool call, and forwards
     calls to the project's pinned endpoint (/mcp/p/<id>). If the app restarts, the next call reconnects.
+    The sidebar's slash commands (/critique, /polish, plus the person's own command files) are MCP prompts, served by the
+    project like its tools: clients show them as /ocelot:<name>. prompts/list never starts the app (with Ocelot closed it
+    lists the six built-in commands from the manifest; a running Ocelot adds the person's own); prompts/get does start it.
     Two kinds of tools in one list: app tools (list_projects, open_project, new_project, save_project, close_project,
     windows, settings, check_for_updates, quit_app; served at /mcp/app, they need no open project and start the app)
     and document tools (get_document_info, write_html, ...). Without --project/--window the document tools follow the
@@ -25,7 +28,10 @@ enum McpCommand: Subcommand {
         let proxy = StdioProxy(target: target, resolve: { opened in
             // Not pinned: the project the agent opened last (open_project / new_project), else the key window.
             try resolver.ensure(opened.map { Target(project: $0, instance: target.instance) } ?? target)
-        }, resolveApp: { try resolver.ensureApp(target) }, write: { data in
+        }, resolveApp: { try resolver.ensureApp(target) }, resolveRunning: { opened in
+            // prompts/list: clients list prompts on connect, so it must not start a closed app.
+            try resolver.find(opened.map { Target(project: $0, instance: target.instance) } ?? target)
+        }, write: { data in
             lock.lock()
             defer { lock.unlock() }
             FileHandle.standardOutput.write(data + Data("\n".utf8))

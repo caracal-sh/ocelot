@@ -215,9 +215,27 @@ const STACKS: Record<HandoffStack, { template: 'vite' | 'start'; screens: string
   'full-app': { template: 'start', screens: 'src/screens', newApp: 'a new TanStack Start app', newAppTitle: '# a new full app (TanStack Start + Tailwind v4)' },
 };
 
+/** True when a screen in the handoff has live code layers: its code comes with `.layers.js` and `.layers.d.ts` files and `ocelot-code-layer.tsx`. */
+function hasCodeLayers(h: Handoff): boolean {
+  return h.screens.some((s) => (s.motion?.code_layers.length ?? 0) > 0);
+}
+
+/** Which of the screen files `code/` holds are copied: worded for a tool step (`markdown` false) or for HANDOFF.md. Only a handoff with code layers has more than the `.tsx` and `.css` files. */
+function screenFilesNote(codeLayers: boolean, markdown: boolean): string {
+  if (!codeLayers) return markdown ? '`code/*.tsx` and `code/*.css`' : 'its .tsx and .css files';
+  return markdown
+    ? '`code/*.tsx` (`ocelot-code-layer.tsx` included), `code/*.css`, `code/*.layers.js` and `code/*.layers.d.ts`'
+    : 'its .tsx, .css, .layers.js and .layers.d.ts files (ocelot-code-layer.tsx included)';
+}
+
 /** Where the document components go: worded for a tool step (`markdown` false) or for HANDOFF.md. Empty without components. */
-function componentsNote(has: boolean, markdown: boolean): string {
+function componentsNote(has: boolean, markdown: boolean, codeLayers: boolean): string {
   if (!has) return '';
+  if (codeLayers) {
+    return markdown
+      ? ', `code/components/` into `src/components/` (all of it, its own `ocelot-code-layer.tsx` included; the screens import it as `@/components/<Name>`)'
+      : '`code/components/` into src/components/ (all of it, its own ocelot-code-layer.tsx included; the screens import the document components as "@/components/<Name>"), ';
+  }
   return markdown
     ? ', `code/components/` into `src/components/` (the screens import it as `@/components/<Name>`)'
     : '`code/components/` into src/components/ (the screens import the document components as "@/components/<Name>"), ';
@@ -413,13 +431,14 @@ function toolSteps(h: Handoff, nodeIds: readonly string[] | undefined): string[]
   } else if (fullApp) {
     steps.push(`Create the app: \`bunx @tanstack/cli create <name> -y --package-manager bun --no-intent\` (TanStack Start with a file router and Tailwind v4). ${STARTER_DEMO}`);
   }
-  const components = componentsNote(h.components.length > 0, false);
+  const codeLayers = hasCodeLayers(h);
+  const components = componentsNote(h.components.length > 0, false, codeLayers);
   const freshCopy = `Start from those components, do not rewrite them. Only if you want a fresh copy of one screen: export_react { "node_id": "<screen id>"${ds ? ', "components": "ui"' : ''} }.`;
   if (!fullApp) {
-    steps.push(`Adapt \`code/\` into the app: copy its .tsx and .css files into ${st.screens}/, ${components}\`code/public/\` into public/, \`@import\` each stylesheet after "tailwindcss" and give \`html\`, \`body\` and \`#root\` \`height: 100%\` there (each screen's root is \`h-full\`), and wire the routes. ${freshCopy}`);
+    steps.push(`Adapt \`code/\` into the app: copy ${screenFilesNote(codeLayers, false)} into ${st.screens}/, ${components}\`code/public/\` into public/, \`@import\` each stylesheet after "tailwindcss" and give \`html\`, \`body\` and \`#root\` \`height: 100%\` there (each screen's root is \`h-full\`), and wire the routes. ${freshCopy}`);
   } else {
     steps.push(
-      `Adapt \`code/\` into the app: copy its .tsx and .css files into ${st.screens}/, ${components}\`code/public/\` into public/, \`@import\` each stylesheet in src/styles.css after "tailwindcss" (\`@import "./screens/<Name>.css";\`) and add \`html, body { height: 100%; }\` there (each screen's root is \`h-full\`), and add one file route per screen in src/routes/: \`src/routes/<slug>.tsx\` with \`export const Route = createFileRoute('/<slug>')({ component: <Screen> })\`, the screen imported from ${st.screens}/ (the routes are in the screens list).${fullAppIndex(h)} ${freshCopy}`,
+      `Adapt \`code/\` into the app: copy ${screenFilesNote(codeLayers, false)} into ${st.screens}/, ${components}\`code/public/\` into public/, \`@import\` each stylesheet in src/styles.css after "tailwindcss" (\`@import "./screens/<Name>.css";\`) and add \`html, body { height: 100%; }\` there (each screen's root is \`h-full\`), and add one file route per screen in src/routes/: \`src/routes/<slug>.tsx\` with \`export const Route = createFileRoute('/<slug>')({ component: <Screen> })\`, the screen imported from ${st.screens}/ (the routes are in the screens list).${fullAppIndex(h)} ${freshCopy}`,
     );
     if (h.server_parts.length) steps.push('Build the server parts (`server_parts`, listed in the brief): follow the server rules listed under Server parts.');
   }
@@ -585,11 +604,12 @@ export function folderMarkdown(h: Handoff, layout: FolderLayout): string {
     );
   }
   const st = STACKS[h.stack];
-  const components = componentsNote(!!layout.components?.length, true);
+  const codeLayers = hasCodeLayers(h);
+  const components = componentsNote(!!layout.components?.length, true, codeLayers);
   if (h.stack === 'full-app') {
     const steps = [
       ds && layout.hasRegistry ? 'Create a TanStack Start app with Tailwind v4 with the shadcn `init … --template start` command above (its stylesheet is `src/styles.css`).' : `Create a TanStack Start app with Tailwind v4: \`bunx @tanstack/cli create <name> -y --package-manager bun --no-intent\`. ${STARTER_DEMO}`,
-      `Copy \`code/*.tsx\` and \`code/*.css\` into \`${st.screens}/\`${components} and \`code/public/\` into \`public/\`.`,
+      `Copy ${screenFilesNote(codeLayers, true)} into \`${st.screens}/\`${components} and \`code/public/\` into \`public/\`.`,
       '`@import "./screens/<Name>.css";` in `src/styles.css` after `@import "tailwindcss";` (theme variables, `@theme`, `@font-face`), and add `html, body { height: 100%; }`: each screen\'s root is `h-full` and fills the window.',
       `Add one file route per screen in \`src/routes/\` (the table above): \`src/routes/<slug>.tsx\` with \`export const Route = createFileRoute('/<slug>')({ component: <Screen> })\`, the screen imported from \`${st.screens}/<Name>\` (its default export); the components link to each other by those paths.${fullAppIndex(h)}`,
       ...(h.server_parts.length ? ['Build the server parts above, following their rules: a server function for each form, a route `loader` for each list, a cookie session for sign-in.'] : []),
@@ -601,7 +621,7 @@ export function folderMarkdown(h: Handoff, layout: FolderLayout): string {
       '',
       '## How to run it',
       '',
-      `1. In a Vite + React + Tailwind v4 app (${ds ? 'created by the command above' : '`bun create vite`, then `bun add tailwindcss @tailwindcss/vite`'}), copy \`code/*.tsx\` and \`code/*.css\` into \`${st.screens}/\`${components} and \`code/public/\` into \`public/\`.`,
+      `1. In a Vite + React + Tailwind v4 app (${ds ? 'created by the command above' : '`bun create vite`, then `bun add tailwindcss @tailwindcss/vite`'}), copy ${screenFilesNote(codeLayers, true)} into \`${st.screens}/\`${components} and \`code/public/\` into \`public/\`.`,
       '2. `@import "./pages/<Name>.css";` in your stylesheet after `@import "tailwindcss";` (theme variables, `@theme`, `@font-face`), and give `html`, `body` and `#root` `height: 100%`: each screen\'s root is `h-full` and fills the window.',
       '3. Add a router with one route per screen (the table above); the components link to each other by those paths.',
       '4. Run the app and compare every screen with its screenshot.',

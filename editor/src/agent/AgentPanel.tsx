@@ -18,6 +18,7 @@ import { ImageJobStep, PendingImages } from './ImageJobs';
 import { DirectionCard } from './DirectionCard';
 import { relativeTime, type ConversationMeta } from './conversations';
 import { renderText } from './messageText';
+import { useCommandMenu } from './CommandMenu';
 
 export const AgentChatContext = createContext<AgentChat | null>(null);
 
@@ -182,6 +183,8 @@ function Item({ item, chat, snap, onSignIn, onCopy }: { item: ChatItem; chat: Ag
   const editor = useEditor();
   const nameOf = (id: string) => editor.doc.get(id)?.name;
   const direction = item.kind === 'tool' ? directionOfItem(item) : undefined;
+  // The command name the person typed (`/critique` of "/critique the hero"): marked in the bubble; the agent got the expanded prompt.
+  const command = item.kind === 'user' && item.command ? /^\/[A-Za-z][A-Za-z0-9-]*/.exec(item.text)?.[0] : undefined;
   switch (item.kind) {
     case 'user':
       return (
@@ -192,7 +195,7 @@ function Item({ item, chat, snap, onSignIn, onCopy }: { item: ChatItem; chat: Ag
           {item.tags?.map((tag) => <span key={tag} className="at-msg__tag" data-testid="agent-msg-tag">{tag}</span>)}
           {item.references && <ReferenceChips items={item.references} sent />}
           {item.attachments && <AttachmentChips items={item.attachments} onCopy={onCopy} sent />}
-          <div className="at-msg__bubble">{item.text}</div>
+          <div className="at-msg__bubble">{command ? <><span className="at-msg__command" data-testid="agent-msg-command">{command}</span>{item.text.slice(command.length)}</> : item.text}</div>
         </div>
       );
     case 'assistant':
@@ -285,6 +288,7 @@ const ATTACH_ACCEPT = 'image/png,image/jpeg,image/webp,image/gif,image/heic,imag
 function Composer({ chat, snap, composerRef, attachments }: { chat: AgentChat; snap: AgentSnapshot; composerRef: React.RefObject<HTMLTextAreaElement | null>; attachments: AttachmentSet }) {
   const editor = useEditor();
   const [text, setText] = useState('');
+  const [modelOpen, setModelOpen] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const selection = useSyncExternalStore(
     (cb) => editor.selection.subscribe(cb),
@@ -309,9 +313,9 @@ function Composer({ chat, snap, composerRef, attachments }: { chat: AgentChat; s
   }, [text, composerRef]);
 
   /** While the agent works Enter queues the message (after the turn) and ⌘↩ steers it (at the agent's next step); idle, both just send. */
-  const submit = async (mode: SendMode = 'queue') => {
+  const submit = async (mode: SendMode = 'queue', typed?: string) => {
     if (!canSend || snap.turn?.stopping) return;
-    const sent = text;
+    const sent = typed ?? text;
     const sentAttachments = items;
     const sentReferences = references;
     setText('');
@@ -323,6 +327,9 @@ function Composer({ chat, snap, composerRef, attachments }: { chat: AgentChat; s
       editor.references.restore(sentReferences);
     }
   };
+  const commandMenu = useCommandMenu({ chat, text, enabled: ready, setText, run: (typed) => void submit('queue', typed), inputRef: composerRef });
+  // `/model` without a name opens the model list.
+  useEffect(() => chat.onOpenModelPicker(() => setModelOpen(true)), [chat]);
   // Stop withdraws the queue: its texts come back here (after what is already typed), so nothing typed is lost.
   useEffect(
     () =>
@@ -345,6 +352,7 @@ function Composer({ chat, snap, composerRef, attachments }: { chat: AgentChat; s
     composerRef.current?.focus();
   };
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (commandMenu.onKeyDown(e)) return;
     if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
       e.preventDefault();
       void submit(e.metaKey || e.ctrlKey ? 'steer' : 'queue');
@@ -384,6 +392,7 @@ function Composer({ chat, snap, composerRef, attachments }: { chat: AgentChat; s
         void submit();
       }}
     >
+      {commandMenu.menu}
       <QueueChips queue={snap.queue} onRemove={removeQueued} onSteerNow={(item) => chat.promote(item.key)} onSendNow={(item) => chat.sendNow(item.key)} />
       {selection.length > 0 && (
         <span className="at-composer__context" data-tip="The agent sees what you have selected">
@@ -402,6 +411,7 @@ function Composer({ chat, snap, composerRef, attachments }: { chat: AgentChat; s
         onChange={(e) => setText(e.currentTarget.value)}
         onKeyDown={onKeyDown}
         onPaste={onPaste}
+        {...commandMenu.inputProps}
         aria-label="Message the agent"
         data-testid="agent-input"
       />
@@ -421,7 +431,7 @@ function Composer({ chat, snap, composerRef, attachments }: { chat: AgentChat; s
           }}
           data-testid="agent-attach-input"
         />
-        <ModelPicker chat={chat} snap={snap} />
+        <ModelPicker chat={chat} snap={snap} open={modelOpen} onOpenChange={setModelOpen} />
         <EffortPicker chat={chat} snap={snap} />
         <span className="at-composer__spacer" />
         {running && (
@@ -438,10 +448,14 @@ function Composer({ chat, snap, composerRef, attachments }: { chat: AgentChat; s
 }
 
 /** Searchable model list in a popover; providers in catalog order. */
-function ModelPicker({ chat, snap }: { chat: AgentChat; snap: AgentSnapshot }) {
-  const [open, setOpen] = useState(false);
+function ModelPicker({ chat, snap, open, onOpenChange }: { chat: AgentChat; snap: AgentSnapshot; open: boolean; onOpenChange: (open: boolean) => void }) {
+  const setOpen = onOpenChange;
   const [query, setQuery] = useState('');
   const [active, setActive] = useState(0);
+  // Opening the list (the button, or `/model`) starts on the current model.
+  useEffect(() => {
+    if (open) setActive(Math.max(0, snap.models.findIndex((m) => m.selector === snap.model)));
+  }, [open]);
   const rootRef = useRef<HTMLDivElement>(null);
   const current = snap.models.find((m) => m.selector === snap.model);
   const filtered = useMemo(() => {
@@ -487,10 +501,7 @@ function ModelPicker({ chat, snap }: { chat: AgentChat; snap: AgentSnapshot }) {
       <button
         type="button"
         className="at-picker__trigger"
-        onClick={() => {
-          setOpen((o) => !o);
-          setActive(Math.max(0, snap.models.findIndex((m) => m.selector === snap.model)));
-        }}
+        onClick={() => setOpen(!open)}
         disabled={!snap.models.length}
         aria-haspopup="listbox"
         aria-expanded={open}

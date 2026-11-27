@@ -19,6 +19,7 @@ import { LiveWriteTracker } from './liveWrite';
 import { applyEvent, emptyTranscript, isAuthError, isObj, settle, type AnswerEntry, type ChatItem, type TranscriptState } from './transcript';
 import { attachSidebarAgent } from './sidebarAgentRegistry';
 import { EMPTY_QUEUE, QueueTracker, withdrawnQueues, withdrawnTexts, type QueueName, type QueuedMeta, type QueueSnapshot, type RestoredDraft, type SendMode } from './queue';
+import { BUILT_IN_COMMANDS, expand, findModel, loadYourCommands, matchCommand, type YourCommands } from './commands';
 
 export type AgentAvailability =
   | { kind: 'checking' }
@@ -60,6 +61,13 @@ function startLead({ planFirst, designSystem }: StartOptions): StartLead {
   return { lines, tags };
 }
 
+/** What the agent receives instead of what the person typed: a slash command, expanded in the editor. */
+interface Expansion {
+  /** The command's name, without the slash. */
+  name: string;
+  text: string;
+}
+
 /** A turn whose message and working state are already on screen. */
 interface StartedTurn {
   turnId: string;
@@ -70,6 +78,8 @@ interface StartedTurn {
   references?: readonly LayerReference[];
   /** The Home window's choices for a first message. */
   lead?: StartLead;
+  /** The expanded slash command the agent gets in place of the typed text. */
+  expansion?: Expansion;
 }
 
 export interface AgentModel {
@@ -183,6 +193,9 @@ export class AgentChat {
   /** What the person typed for the messages in omp's queue, by the text omp lists. */
   #queued = new QueueTracker();
   #restoreListeners = new Set<(draft: RestoredDraft) => void>();
+  /** The composer's model picker (`/model` without a name) and the header's stop-the-agent question (`/new` while it works). */
+  #modelPickerListeners = new Set<() => void>();
+  #newChatListeners = new Set<() => void>();
   #current: Conversation = blankConversation();
   /** Host writes run one after another, so a delete never overtakes the save before it. */
   #writing: Promise<void> = Promise.resolve();
@@ -349,17 +362,134 @@ export class AgentChat {
       this.#push({ kind: 'notice', id: `n-${Date.now()}`, tone: 'error', text: problem });
       return false;
     }
+    // A slash command (never in the Home window's first message): conversation commands the person typed run here and send
+    // nothing; design and the person's own commands are expanded here, so the agent gets the prompt and the bubble the typed
+    // words. An external agent's message (sidebar_agent) expands them too, so `/critique` does the same whoever sends it; its
+    // conversation commands stay text (it has sidebar_agent's own compact and new_chat actions).
+    let expansion: Expansion | undefined;
+    if (!lead && prompt.startsWith('/')) {
+      const resolved = await this.#resolveCommand(prompt, attachments, references, from);
+      if ('handled' in resolved) return resolved.handled;
+      expansion = resolved.expansion;
+      if (this.#loading || this.#snapshot.turn?.stopping) return false;
+    }
     // While the agent works the message is queued (delivered after the turn) or steers it (delivered at its next step).
-    if (this.#snapshot.turn) return this.#sendWhileWorking(prompt, attachments, mode, from, references);
-    const started = this.#beginTurn(prompt, attachments, from, references, lead);
+    if (this.#snapshot.turn) return this.#sendWhileWorking(prompt, attachments, mode, from, references, expansion);
+    const started = this.#beginTurn(prompt, attachments, from, references, lead, expansion);
     return this.#runTurn(started, prompt, attachments);
   }
 
+  /** The person's Commands folder, read now (the picker asks each time it opens; a failure leaves none). */
+  yourCommands(): Promise<YourCommands> {
+    return loadYourCommands(this.host);
+  }
+
+  /** Creates the Commands folder if needed and shows it. */
+  async revealCommands(): Promise<void> {
+    try {
+      await this.host.call('host.agentCommandsReveal', {});
+    } catch (err) {
+      this.#push({ kind: 'notice', id: `n-${Date.now()}`, tone: 'error', text: `Could not open the Commands folder: ${errorMessage(err)}` });
+    }
+  }
+
+  #notice(tone: 'info' | 'error', text: string): void {
+    this.#push({ kind: 'notice', id: `n-cmd-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, tone, text });
+  }
+
+  /** Built-in names win; the person's files are read only for a `/name` that is not a built-in one. Unknown `/…` text is a plain message. */
+  async #resolveCommand(prompt: string, attachments: readonly Attachment[], references: readonly LayerReference[], from?: string): Promise<{ handled: boolean } | { expansion: Expansion | undefined }> {
+    let match = matchCommand(prompt, BUILT_IN_COMMANDS);
+    if (!match && /^\/[a-z][a-z0-9-]*(?:\s|$)/i.test(prompt)) match = matchCommand(prompt, (await loadYourCommands(this.host)).commands);
+    if (!match) return { expansion: undefined };
+    const { command, args } = match;
+    if (command.kind !== 'conversation') return { expansion: { name: command.name, text: expand(command.template ?? '', args) } };
+    if (from) return { expansion: undefined };
+    if (attachments.length || references.length) {
+      this.#notice('error', `/${command.name} does not take attachments or layer notes. Remove them from the message and send it again.`);
+      return { handled: false };
+    }
+    return { handled: await this.#runConversationCommand(command.name, args) };
+  }
+
+  /** True when the command did its job (the composer clears the draft); false keeps the draft so it can be fixed. */
+  async #runConversationCommand(name: string, args: string): Promise<boolean> {
+    switch (name) {
+      case 'new':
+        this.requestNewChat();
+        return true;
+      case 'compact': {
+        if (this.#snapshot.turn) {
+          this.#notice('error', 'The agent is working, and a conversation is compacted between turns. Send /compact again when it has finished.');
+          return false;
+        }
+        if (this.#snapshot.compacting) {
+          this.#notice('error', 'The conversation is already being compacted. Wait for it to finish.');
+          return false;
+        }
+        if (!this.#current.resume) {
+          this.#notice('error', 'There is nothing to compact yet. Send a message to the agent first.');
+          return false;
+        }
+        return this.compact('asked', args || undefined);
+      }
+      case 'model': {
+        if (!args) {
+          for (const cb of this.#modelPickerListeners) cb();
+          return true;
+        }
+        const { models } = this.#snapshot;
+        if (!models.length) {
+          this.#notice('error', 'The model list is not loaded yet. Try /model again in a moment, or choose a model with the model button under the message box.');
+          return false;
+        }
+        const choice = findModel(models, args);
+        if (choice.kind === 'one') {
+          this.setModel(choice.model.selector);
+          this.#notice('info', `Model set to ${choice.model.name}.`);
+          return true;
+        }
+        const names = (list: readonly { name: string }[]) => (list.length > 6 ? `${list.slice(0, 6).map((m) => m.name).join(', ')} and ${list.length - 6} more` : list.map((m) => m.name).join(', '));
+        this.#notice('error', choice.kind === 'many' ? `Several models match “${args}”: ${names(choice.models)}. Type more of the name.` : `No model matches “${args}”. Send /model alone to pick from the list, or try: ${names(models)}.`);
+        return false;
+      }
+      default:
+        return false;
+    }
+  }
+
+  /**
+   * What the header's "+" does, for `/new`: nothing on an empty conversation, a new one when the agent is idle, and while it
+   * works the header asks whether to stop it (a stray command never stops the agent unasked).
+   */
+  requestNewChat(): void {
+    const { items, turn } = this.#snapshot;
+    if (!turn) {
+      if (items.length) this.newChat();
+    } else if (this.#newChatListeners.size) {
+      for (const cb of this.#newChatListeners) cb();
+    } else {
+      this.#notice('error', 'The agent is working. Stop it first, then send /new again.');
+    }
+  }
+
+  /** The composer opens its model picker when `/model` comes without a name. Returns an unsubscribe. */
+  onOpenModelPicker(cb: () => void): () => void {
+    this.#modelPickerListeners.add(cb);
+    return () => this.#modelPickerListeners.delete(cb);
+  }
+
+  /** The header asks whether to stop the working agent when `/new` is sent. Returns an unsubscribe. */
+  onNewChatRequest(cb: () => void): () => void {
+    this.#newChatListeners.add(cb);
+    return () => this.#newChatListeners.delete(cb);
+  }
+
   /** Shows the person's message and the working state at once, before anything is checked or sent. */
-  #beginTurn(prompt: string, attachments: readonly Attachment[], from?: string, references: readonly LayerReference[] = [], lead?: StartLead): StartedTurn {
+  #beginTurn(prompt: string, attachments: readonly Attachment[], from?: string, references: readonly LayerReference[] = [], lead?: StartLead, expansion?: Expansion): StartedTurn {
     const context = from ? null : this.#selectionContext();
     const turnId = `t-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
-    const item: ChatItem = { kind: 'user', id: turnId, text: prompt || DEFAULT_ATTACHMENT_PROMPT, ...(from ? { from } : {}), ...(context ? { context: context.label } : {}), ...(lead?.tags.length ? { tags: lead.tags } : {}), ...(attachments.length ? { attachments: [...attachments] } : {}), ...(references.length ? { references: [...references] } : {}) };
+    const item: ChatItem = { kind: 'user', id: turnId, text: prompt || DEFAULT_ATTACHMENT_PROMPT, ...(from ? { from } : {}), ...(context ? { context: context.label } : {}), ...(lead?.tags.length ? { tags: lead.tags } : {}), ...(attachments.length ? { attachments: [...attachments] } : {}), ...(references.length ? { references: [...references] } : {}), ...(expansion ? { command: expansion.name } : {}) };
     this.#transcript = { ...this.#transcript, items: [...this.#transcript.items, item] };
     const conversation = this.#current;
     conversation.turns += 1;
@@ -369,7 +499,7 @@ export class AgentChat {
     this.#update({ items: this.#transcript.items, turn: { id: turnId, startedAt: Date.now(), stopping: false } });
     // A new document's empty artboard shows the agent planning from the first moment, whichever way the turn starts.
     if (!this.editor.locks.planning) this.#showPlanning();
-    return { turnId, context, ...(from ? { from } : {}), ...(references.length ? { references } : {}), ...(lead?.lines.length ? { lead } : {}) };
+    return { turnId, context, ...(from ? { from } : {}), ...(references.length ? { references } : {}), ...(lead?.lines.length ? { lead } : {}), ...(expansion ? { expansion } : {}) };
   }
 
   /** Takes back a turn that never reached the agent (omp turned out missing or signed out): the message and the working state go. */
@@ -390,7 +520,7 @@ export class AgentChat {
   }
 
   /** Starts the agent process if needed and hands it the prompt of a turn that is already on screen. */
-  async #runTurn({ turnId, context, from, references, lead }: StartedTurn, prompt: string, attachments: readonly Attachment[]): Promise<boolean> {
+  async #runTurn({ turnId, context, from, references, lead, expansion }: StartedTurn, prompt: string, attachments: readonly Attachment[]): Promise<boolean> {
     try {
       await this.#ensureProcess();
       // Fail closed: the host disables omp's other config sources by name, so verify that
@@ -405,7 +535,7 @@ export class AgentChat {
       }
       this.#checkMemory(state);
       const stored = await this.#storeImages(attachments);
-      const { message, images } = buildMessage(prompt, stored);
+      const { message, images } = buildMessage(expansion?.text ?? prompt, stored);
       if (attachments.length) this.#patchUser(turnId, stored);
       // A shake or compaction that is still running finishes first.
       await this.#upkeep;
@@ -487,12 +617,12 @@ export class AgentChat {
    * sidebar_agent call it, and a turn that failed because the conversation was too large to send (HTTP 413) runs it itself.
    * False when there is nothing to compact, it is busy, or omp refused.
    */
-  async compact(reason: 'asked' | 'too-large' = 'asked'): Promise<boolean> {
+  async compact(reason: 'asked' | 'too-large' = 'asked', instructions?: string): Promise<boolean> {
     if (this.#snapshot.turn || this.#snapshot.compacting || !this.#current.resume) return false;
     this.#update({ compacting: true });
     const run = this.#upkeep.then(async () => {
       await this.#ensureProcess();
-      return this.#request({ type: 'compact' }, COMPACT_TIMEOUT_MS);
+      return this.#request({ type: 'compact', ...(instructions ? { customInstructions: instructions } : {}) }, COMPACT_TIMEOUT_MS);
     });
     this.#upkeep = run.then(
       () => {},
@@ -1072,12 +1202,12 @@ export class AgentChat {
    * step. Images and the selection line go along as for any message. The chip comes from omp's `queue_update`, the bubble from
    * the delivery (`#onUserMessage`); a message omp refuses leaves a notice and no trace.
    */
-  async #sendWhileWorking(prompt: string, attachments: readonly Attachment[], mode: SendMode, from?: string, references: readonly LayerReference[] = []): Promise<boolean> {
+  async #sendWhileWorking(prompt: string, attachments: readonly Attachment[], mode: SendMode, from?: string, references: readonly LayerReference[] = [], expansion?: Expansion): Promise<boolean> {
     const context = from ? null : this.#selectionContext();
     const stored = await this.#storeImages(attachments);
-    const { message, images } = buildMessage(prompt, stored);
+    const { message, images } = buildMessage(expansion?.text ?? prompt, stored);
     const key = withLead(message, from, context, this.#referencesLead(references));
-    const meta = { key, text: prompt || DEFAULT_ATTACHMENT_PROMPT, ...(from ? { from } : {}), ...(context ? { context: context.label } : {}), attachments: stored, ...(references.length ? { references: [...references] } : {}) };
+    const meta = { key, text: prompt || DEFAULT_ATTACHMENT_PROMPT, ...(from ? { from } : {}), ...(context ? { context: context.label } : {}), attachments: stored, ...(references.length ? { references: [...references] } : {}), ...(expansion ? { command: expansion.name } : {}) };
     this.#queued.add(meta);
     try {
       await this.#request({ type: 'prompt', message: key, ...(images.length ? { images } : {}), streamingBehavior: mode === 'steer' ? 'steer' : 'followUp' });
@@ -1098,7 +1228,7 @@ export class AgentChat {
     const meta = this.#queued.take(text);
     if (!meta) return false;
     const id = `u-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
-    this.#push({ kind: 'user', id, text: meta.text, ...(meta.from ? { from: meta.from } : {}), ...(meta.context ? { context: meta.context } : {}), ...(meta.attachments.length ? { attachments: meta.attachments } : {}), ...(meta.references?.length ? { references: meta.references } : {}), ...(message['steering'] === true ? { steered: true } : {}) });
+    this.#push({ kind: 'user', id, text: meta.text, ...(meta.from ? { from: meta.from } : {}), ...(meta.context ? { context: meta.context } : {}), ...(meta.attachments.length ? { attachments: meta.attachments } : {}), ...(meta.references?.length ? { references: meta.references } : {}), ...(meta.command ? { command: meta.command } : {}), ...(message['steering'] === true ? { steered: true } : {}) });
     return true;
   }
 

@@ -102,6 +102,14 @@ final class AgentRunner {
             try await self.deleteConversation(projectId: params.projectId, id: params.id)
             return Empty()
         }
+        // The person's own slash commands: Markdown files in one folder. The editor parses them; the host lists, creates and shows the folder.
+        host.register(HostMethods.AgentCommands.self) { _ in
+            try await Task.detached { try AgentCommandFolder.standard().list() }.value
+        }
+        host.register(HostMethods.AgentCommandsReveal.self) { _ in
+            try AgentCommandFolder.standard().reveal()
+            return Empty()
+        }
     }
 
     /// Runs file work on the saved conversations off the main actor (transcripts can be megabytes).
@@ -309,7 +317,7 @@ final class AgentRunner {
                 // The agent never sees `Agent/conversations/`: this conversation's session files go into its private scratch.
                 let sessionFiles = try await history { try $0.packSession(projectId: params.projectId, conversationId: params.conversationId) }
                 let request = AgentServiceStart(
-                    sessionId: processId, ompPath: cli.resolvedPath, systemPrompt: params.systemPrompt,
+                    sessionId: processId, ompPath: cli.resolvedPath, ompCommand: cli.path, searchPath: cli.agentSearchPath, systemPrompt: params.systemPrompt,
                     model: params.model, thinking: params.thinking,
                     mcpConfig: String(decoding: try AgentLaunch.confinedMCPConfig(url: mcp.url(for: .window(windowId))), as: UTF8.self),
                     modelsYml: try AgentLaunch.modelsYml(baseURL: gateway.baseURL, providers: AgentModels.providers(picker.selectors)),

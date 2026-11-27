@@ -8,7 +8,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { importMapFor } from '../render/codeLayer';
-import { addCodeLayer, createCodeExport, htmlCodeScripts, reactCodePrelude, scopeOf, splitModule } from './code';
+import { CODE_LAYER_MODULE, addCodeLayer, createCodeExport, htmlCodeScripts, reactCodeModules, scopeOf, splitModule } from './code';
 import { renderImport } from './moduleImports';
 
 const THREE_SRC = `import * as THREE from 'three';
@@ -104,22 +104,23 @@ describe('splitModule / scopeOf', () => {
   });
 });
 
+/** The files of a React export's code layers by name, paths relative to the code folder. */
+function extra(out: { extraFiles?: Array<{ path: string; text: string }> }): Map<string, string> {
+  return new Map((out.extraFiles ?? []).map((f) => [f.path, f.text]));
+}
+
 describe('React export', () => {
-  it('emits useEffect-mounted components with npm imports, cleanup and isolated module scopes', () => {
+  it('keeps the screen fully typed: it imports the typed runtime and the layers module, the layers are in their own files', () => {
     const { doc, ab } = setup();
-    const { code } = exportReact(doc, ab);
-    expect(code).toContain("\nimport { useEffect, useRef } from 'react';");
-    expect(code).toContain("import * as THREE from 'three';");
-    expect(code.match(/import \* as THREE from 'three';/g)).toHaveLength(1); // deduplicated
-    expect(code).toContain("import { OrbitControls } from 'three/addons/controls/OrbitControls.js';");
-    expect(code).toContain("import { gsap } from 'gsap';");
-    expect(code).toContain('Install their libraries: three@0.187.0 gsap@3.15.1');
-    expect(code).toContain('function CodeLayer({ mount, libraries, as: Tag = \'div\', ...props })');
-    expect(code).toContain('useEffect(() => {');
-    expect(code).toContain('cleanup?.();');
-    expect(code).toContain('const mountLayer1 = (() => {');
-    expect(code).toContain('const mountLayer2 = (() => {');
+    const out = exportReact(doc, ab);
+    const { code } = out;
+    expect(code).not.toContain('ts-nocheck');
+    expect(code).toContain("import { CodeLayer } from './ocelot-code-layer';");
+    expect(code).toContain("import { mountLayer1, mountLayer2 } from './Scene.layers.js';");
     expect(code).not.toContain('mountLayer3'); // hidden layer omitted
+    expect(code).toContain('Install their libraries: three@0.187.0 gsap@3.15.1');
+    // nothing of the runtime or the layers' modules is in the screen
+    for (const gone of ["from 'react'", 'useRef', 'function ocelotCtx', 'function CodeLayer', 'const mountLayer1', "from 'three'", "from 'gsap'"]) expect(code, gone).not.toContain(gone);
     expect(code).toMatch(/<CodeLayer className="[^"]*relative[^"]*overflow-hidden[^"]*w-75[^"]*" mount=\{mountLayer1\} libraries=\{\["three"\]\} \/>/);
     // an absolutely positioned layer must not also get `relative`
     const second = code.split('\n').find((l) => l.includes('mountLayer2}'))!;
@@ -127,40 +128,84 @@ describe('React export', () => {
     expect(second).not.toContain('relative');
     expect(code).toContain('export default function Scene() {');
     expect(code).not.toContain('export default function mount'); // module default exports are rewritten
+    expect(out.components).toBeUndefined();
   });
 
-  it('leaves designs without code layers untouched', () => {
+  it('writes <Name>.layers.js: a plain module with the hoisted imports once and one exported mount per layer', () => {
+    const { doc, ab } = setup();
+    const layers = extra(exportReact(doc, ab)).get('Scene.layers.js')!;
+    const lines = layers.split('\n');
+    expect(lines[0]).toBe("// The design's live code layers, one function per layer: each is (element, ctx) and returns an optional cleanup.");
+    expect(lines[1]).toMatch(/^import /);
+    expect(layers.match(/import \* as THREE from 'three';/g)).toHaveLength(1); // deduplicated
+    expect(layers).toContain("import { OrbitControls } from 'three/addons/controls/OrbitControls.js';");
+    expect(layers).toContain("import { gsap } from 'gsap';");
+    expect(layers).toContain('export const mountLayer1 = (() => {');
+    expect(layers).toContain('export const mountLayer2 = (() => {');
+    expect(layers).not.toContain('mountLayer3');
+    expect(layers).not.toContain('export default');
+    expect(layers.endsWith(';\n')).toBe(true);
+    assertModule(layers);
+  });
+
+  it('writes <Name>.layers.d.ts so a strict TypeScript project types the import without allowJs', () => {
+    const { doc, ab } = setup();
+    expect(extra(exportReact(doc, ab)).get('Scene.layers.d.ts')).toBe(
+      "import type { CodeLayerMount } from './ocelot-code-layer';\n\nexport declare const mountLayer1: CodeLayerMount;\nexport declare const mountLayer2: CodeLayerMount;\n",
+    );
+  });
+
+  it('writes the typed runtime ocelot-code-layer.tsx: the ctx, CodeLayerMount, CodeLayer with the unchanged effect logic', () => {
+    const { doc, ab } = setup();
+    const out = exportReact(doc, ab);
+    expect(out.extraFiles!.map((f) => f.path)).toEqual(['ocelot-code-layer.tsx', 'Scene.layers.js', 'Scene.layers.d.ts']);
+    const runtime = extra(out).get('ocelot-code-layer.tsx')!;
+    expect(runtime).toBe(CODE_LAYER_MODULE);
+    expect(runtime).not.toContain('ts-nocheck');
+    expect(runtime).toContain("import { useEffect, useRef, type ElementType, type HTMLAttributes } from 'react';");
+    expect(runtime).toContain("export type CodeLibrary = 'three' | 'gsap' | 'motion';");
+    expect(runtime).toContain('export interface CodeLayerContext {');
+    for (const member of ['width: number', 'height: number', 'paused: boolean', 'reducedMotion: boolean', 'libraries: readonly CodeLibrary[]', 'onPause(cb', 'onResize(cb']) expect(runtime, member).toContain(member);
+    expect(runtime).toContain('export type CodeLayerMount = (element: HTMLElement, ctx: CodeLayerContext) => void | (() => void) | Promise<void | (() => void)>;');
+    expect(runtime).toContain('function ocelotCtx(el: HTMLElement, libraries: readonly CodeLibrary[])');
+    expect(runtime).toContain('export function CodeLayer({ mount, libraries, as = \'div\', ...props }: CodeLayerProps)');
+    expect(runtime).toContain('const ref = useRef<HTMLElement>(null);');
+    expect(runtime).toContain('Promise.resolve(mount(el, ctx)).then((result) => {');
+    expect(runtime).toContain('cleanup?.();');
+    expect(runtime).toContain('console.error(error)');
+    expect(runtime).toContain('const Tag = as as ElementType;');
+  });
+
+  it('leaves designs without code layers untouched: the same file as before, no extra files', () => {
     let n = 0;
     const doc = new OcelotDocument({ idGenerator: () => `n${++n}` });
     const ab = doc.ops(ORIGIN.human).createArtboard({ name: 'Plain' });
-    expect(exportReact(doc, ab).code.startsWith('export default function Plain()')).toBe(true);
-  });
-
-  it('starts a file with code layers with // @ts-nocheck and why (the layers are plain JavaScript), and no other file', () => {
-    const { doc, ab } = setup();
-    const lines = exportReact(doc, ab).code.split('\n');
-    expect(lines[0]).toBe('// @ts-nocheck');
-    expect(lines[1]).toBe('// Its code layers are plain JavaScript; the rest of the file is generated.');
-    expect(lines[2]).toMatch(/^import /);
-    // No code layer, no header; a hidden layer is not exported, so it earns none either.
-    let n = 0;
-    const plain = new OcelotDocument({ idGenerator: () => `p${++n}` });
+    const out = exportReact(doc, ab);
+    expect(out.code.startsWith('export default function Plain()')).toBe(true);
+    expect(out.extraFiles).toBeUndefined();
+    // A hidden layer is not exported, so it earns no file either.
+    let m = 0;
+    const plain = new OcelotDocument({ idGenerator: () => `p${++m}` });
     const ops = plain.ops(ORIGIN.human);
     const pab = ops.createArtboard({ name: 'Plain' });
-    expect(exportReact(plain, pab).code).not.toContain('ts-nocheck');
     const [layer] = ops.insertNodes(pab, [{ type: 'code', code: { source: 'export default () => {}', libraries: [] } }]);
     ops.setHidden(layer!, true);
-    expect(exportReact(plain, pab).code).not.toContain('ts-nocheck');
+    const hidden = exportReact(plain, pab);
+    expect(hidden.code.startsWith('export default function Plain()')).toBe(true);
+    expect(hidden.extraFiles).toBeUndefined();
   });
 
-  it('produces syntactically valid JS for the code parts', () => {
-    const { doc, ab } = setup();
-    const { code } = exportReact(doc, ab);
-    const prelude = code.slice(0, code.indexOf('export default function Scene'));
-    // strip imports and JSX component, keep runtime + module scopes
-    const runtime = prelude.slice(prelude.indexOf('function ocelotCtx'), prelude.indexOf('function CodeLayer'));
-    const scopes = prelude.slice(prelude.indexOf('const mountLayer1'));
-    expect(() => new Function(`${runtime}\n${scopes}`)).not.toThrow();
+  it('a layer with a custom tag passes it as `as`, and layers files follow a renamed screen', () => {
+    let n = 0;
+    const doc = new OcelotDocument({ idGenerator: () => `s${++n}` });
+    const ops = doc.ops(ORIGIN.human);
+    const ab = ops.createArtboard({ name: 'Hero page' });
+    ops.insertNodes(ab, [{ type: 'code', tag: 'section', code: { source: 'export default () => {}', libraries: [] } }]);
+    const out = exportReact(doc, ab);
+    expect(out.componentName).toBe('HeroPage');
+    expect(out.code).toContain("import { mountLayer1 } from './HeroPage.layers.js';");
+    expect(out.code).toMatch(/<CodeLayer [^>]*as="section" mount=\{mountLayer1\} libraries=\{\[\]\} \/>/);
+    expect(out.extraFiles!.map((f) => f.path)).toEqual(['ocelot-code-layer.tsx', 'HeroPage.layers.js', 'HeroPage.layers.d.ts']);
   });
 });
 
@@ -244,12 +289,17 @@ describe('code layer export with every import form', () => {
     expect(module.slice(module.indexOf('function ocelotCtx'))).not.toMatch(/^\s*import\s/m);
   });
 
-  it('produces valid import and scope code for the React export', () => {
+  it('produces a valid layers module for the React export (no duplicate declarations, imports hoisted, one export per layer)', () => {
     const ctx = exported();
-    const prelude = reactCodePrelude(ctx);
-    const imports = prelude.split('\n').filter((l) => l.startsWith('import ') && !l.includes("'react'"));
-    const scopes = prelude.slice(prelude.indexOf('const mountLayer1'));
-    assertModule(`${imports.join('\n')}\n${scopes}`);
+    const { prelude, files } = reactCodeModules(ctx, 'Home');
+    const layers = files.find((f) => f.path === 'Home.layers.js')!.text;
+    assertModule(layers);
+    expect(layers).toContain('export const mountLayer1 = ');
+    expect(layers).toContain('export const mountLayer2 = ');
+    expect(prelude).toContain("import { mountLayer1, mountLayer2 } from './Home.layers.js';");
+    expect(prelude).toContain("import { CodeLayer } from './ocelot-code-layer';");
+    // a document component's files live in components/ and import their siblings
+    expect(reactCodeModules(ctx, 'Card', 'components/').files.map((f) => f.path)).toEqual(['components/ocelot-code-layer.tsx', 'components/Card.layers.js', 'components/Card.layers.d.ts']);
   });
 
   it('maps every library the layers import, including gsap plugins and three/addons, from the same builder as the live canvas', () => {

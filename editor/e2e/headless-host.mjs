@@ -9,7 +9,7 @@
 //   bun run build
 //   node e2e/headless-host.mjs --port 7420 [--token T | --token-env VAR] [--doc file.json | package.ocelot | package.atelier]
 //        [--shots dir] [--bind 0.0.0.0] [--idle-stop-min N]  [--agent-unconfined]  [--attended]
-//        [--no-discovery] [--instance NAME]   (discovery file in the run directory)
+//        [--no-discovery] [--instance NAME]   (discovery file in the run directory)  [--commands-dir DIR]
 // --attended: a person (or a Playwright script on the page) answers the agent's questions. Without it ask_user fails fast,
 // because nobody is watching a headless host.
 // Container mode (see editor/container/): --doc /project --bind 0.0.0.0 --token-env OCELOT_PROJECT_TOKEN.
@@ -20,11 +20,14 @@
 //   omp: false (the default) finds no omp (OMP_DISABLED), like CI and Vitest: scripts and tests never reach the developer's
 //   real omp, credentials or sign-in. A script that really needs the agent passes `omp: true` (omp from OCELOT_OMP or PATH);
 //   `ompBin` names one explicitly (fake omp in tests). The command line above always runs with omp.
+//   commandsDir: the folder of the person's own sidebar slash commands (the Mac app's ~/Library/Application Support/Ocelot/Commands/):
+//   one Markdown file per command, listed by host.agentCommands. Without it a headless host has no commands folder (files: []).
+//   The command line takes it as --commands-dir DIR.
 
 import { createServer } from 'node:http';
 import { randomBytes, timingSafeEqual } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
-import { cp, mkdir, readFile, rename, stat, writeFile } from 'node:fs/promises';
+import { cp, mkdir, readdir, readFile, rename, stat, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { basename, dirname, extname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -46,6 +49,39 @@ function listSystemFonts() {
   } catch {
     return [];
   }
+}
+
+const COMMAND_FILES_MAX = 200;
+const COMMAND_FILE_BYTES_MAX = 64 * 1024;
+
+/**
+ * The commands folder like the Mac app lists it: top-level regular `*.md` files (case-insensitive, not hidden, symlinks only when
+ * they point at a regular file), at most 200, each at most 64 KB and valid UTF-8, sorted by name. A missing folder has no files.
+ * The editor parses them; the host only lists.
+ */
+async function listCommandFiles(folder) {
+  let entries;
+  try {
+    entries = await readdir(folder);
+  } catch (e) {
+    if (e.code === 'ENOENT' || e.code === 'ENOTDIR') return [];
+    throw e;
+  }
+  const names = entries.filter((n) => !n.startsWith('.') && n.toLowerCase().endsWith('.md')).sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+  const decoder = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true });
+  const files = [];
+  for (const name of names) {
+    if (files.length >= COMMAND_FILES_MAX) break;
+    try {
+      const path = join(folder, name);
+      const info = await stat(path); // follows a symlink: its target must be a regular file
+      if (!info.isFile() || info.size > COMMAND_FILE_BYTES_MAX) continue;
+      files.push({ name, text: decoder.decode(await readFile(path)) });
+    } catch {
+      // Unreadable, a dangling link, or not UTF-8: skipped, like the Mac app.
+    }
+  }
+  return files;
 }
 
 export async function startHeadlessHost(opts = {}) {
@@ -316,6 +352,14 @@ export async function startHeadlessHost(opts = {}) {
     'host.agentHistoryRead': ({ projectId, id }) => agentHost.history.read(projectId, id),
     'host.agentHistoryWrite': async ({ projectId, id, meta, transcript, files }) => (await agentHost.history.write(projectId, id, meta, transcript ?? undefined, files ?? undefined), {}),
     'host.agentHistoryDelete': async ({ projectId, id }) => (await agentHost.history.remove(projectId, id), {}),
+    // The person's own slash commands: Markdown files in `commandsDir` (the Mac app's Commands folder). The editor parses them.
+    'host.agentCommands': async () => (opts.commandsDir ? { folder: resolve(opts.commandsDir), files: await listCommandFiles(opts.commandsDir) } : { files: [] }),
+    // Nothing to show on a screen-less host: the folder is created when missing, like the Mac app does before showing it.
+    'host.agentCommandsReveal': async () => {
+      if (!opts.commandsDir) throw new Error('The headless host has no commands folder. Pass `commandsDir` to startHeadlessHost (or --commands-dir DIR), then put one Markdown file per command in it.');
+      await mkdir(opts.commandsDir, { recursive: true, mode: 0o755 });
+      return {};
+    },
     ...assetsHost.handlers,
     ...exportHost.handlers,
     ...videoHost.handlers,
@@ -668,6 +712,7 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
     attended: args.includes('--attended') || undefined,
     discovery: !args.includes('--no-discovery'),
     instance: get('--instance'),
+    commandsDir: get('--commands-dir'),
     idleStopMs: idleMin * 60_000,
     onIdle: () => void stop(),
     onQuit: () => void stop(),

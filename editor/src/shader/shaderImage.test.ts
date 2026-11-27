@@ -248,6 +248,11 @@ describe('the picture in the frames', () => {
   });
 });
 
+/** The text of a React export's `<Name>.layers.js`: the shader layers' modules (and their SPEC with the picture) live there, not in the component. */
+function layersOf(react: { extraFiles?: Array<{ path: string; text: string }> }): string {
+  return react.extraFiles!.find((f) => f.path.endsWith('.layers.js'))!.text;
+}
+
 describe('HTML and React exports', () => {
   async function withLayer(kind: 'halftone' | 'dither' = 'halftone') {
     const ctx = await setup();
@@ -278,16 +283,19 @@ describe('HTML and React exports', () => {
     const { editor, ab, asset } = await withLayer();
     const react = await exportNodeToFiles(editor.doc, ab, 'react', editor.assets);
     const file = `${asset}.png`;
-    expect(react.code).toContain(`"image":"/assets/${file}"`);
-    expect(react.code).not.toContain('asset://');
-    expect(react.code).not.toContain('base64');
+    expect(layersOf(react)).toContain(`"image":"/assets/${file}"`);
+    expect(react.code).not.toContain(file); // the component only imports the layers module
+    expect(layersOf(react)).not.toContain('asset://');
+    expect(layersOf(react)).not.toContain('base64');
     expect(react.assets.files).toEqual([{ id: asset, file, picture: true }]);
     expect(react.assets.pictures).toEqual({ found: [asset], missing: [], as: 'file' });
     expect(exportFiles(react).filter((f) => 'assetId' in f)).toEqual([{ path: `public/assets/${file}`, assetId: asset }]);
+    // save_export writes the component with its layers module, the types of it and the runtime it imports
+    expect(exportFiles(react).map((f) => f.path)).toEqual(expect.arrayContaining([react.fileName, 'ocelot-code-layer.tsx', `${react.componentName}.layers.js`, `${react.componentName}.layers.d.ts`]));
     expect(assetNote(react)).toMatch(/1 shader picture is copied to public\/assets\/.*loads it from \/assets\/<file>/);
     expect(assetNote(react)).not.toMatch(/stored image/);
     // The shader runtime accepts a path under the site root as the picture.
-    expect(react.code).toContain("ref.charAt(0) === '/'");
+    expect(layersOf(react)).toContain("ref.charAt(0) === '/'");
   });
 
   it('keep the reference in the text results (a picture is megabytes) and say what save_export does with it', async () => {
@@ -297,7 +305,7 @@ describe('HTML and React exports', () => {
     expect(html.code).not.toContain('base64');
     expect(assetNote(html)).toMatch(/1 shader picture stays an asset:\/\/ reference in this text.*save_export embeds it/s);
     const react = exportNode(editor.doc, ab, 'react', editor.assets);
-    expect(react.code).toContain(`"image":"${ref}"`);
+    expect(layersOf(react)).toContain(`"image":"${ref}"`);
     expect(react.assets.files).toEqual([]);
     expect(assetNote(react)).toMatch(/stays an asset:\/\/ reference in this text.*save_export copies it to public\/assets\//s);
   });
@@ -313,7 +321,7 @@ describe('HTML and React exports', () => {
     // React: a picture the store lost is not copied and the layer keeps its reference.
     const lostReact = await exportNodeToFiles(editor.doc, ab, 'react', editor.assets);
     expect(lostReact.assets).toMatchObject({ files: [], pictures: { found: [], missing: [asset], as: 'file' } });
-    expect(lostReact.code).toContain(`"image":"${ref}"`);
+    expect(layersOf(lostReact)).toContain(`"image":"${ref}"`);
   });
 
   it('a picture that is also an image fill is one file, counted as an image', async () => {
@@ -324,8 +332,9 @@ describe('HTML and React exports', () => {
     expect(html.code).toContain(`"image":"${dataUrl(1)}"`);
     const react = await exportNodeToFiles(editor.doc, ab, 'react', editor.assets);
     expect(react.assets.files).toEqual([{ id: asset, file: `${asset}.png` }]);
-    expect(react.code).toContain(`"image":"/assets/${asset}.png"`);
-    expect(react.code.split(`/assets/${asset}.png`).length - 1).toBeGreaterThanOrEqual(2);
+    expect(layersOf(react)).toContain(`"image":"/assets/${asset}.png"`);
+    // The image fill is in the component, the picture in the layers module.
+    expect(react.code).toContain(`/assets/${asset}.png`);
   });
 
   it('a shader layer inside a hidden subtree has no picture to preload, count, copy or fail on', async () => {

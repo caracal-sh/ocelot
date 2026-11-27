@@ -35,15 +35,17 @@ final class AgentIsolationModel: ObservableObject {
     var mode: Mode { unconfined ? .unconfined : .sandboxed }
 
     /// Runs read probes from inside the sandboxed service: your omp credentials, ~/.ssh, ~/Documents and the saved conversations
-    /// (the folder of all of them, and a conversation of another document, made for the check and removed after it) must be unreadable.
+    /// (the folder of all of them, and a conversation of another document, made for the check and removed after it) must be unreadable,
+    /// and the omp the sidebar would start must run in there (`omp --version`), else every chat would fail to start.
     func verify() async {
         verifying = true
         defer { verifying = false }
         let sentinel = AgentProbeSentinel.make()
         defer { sentinel?.remove() }
+        let cli = await Task.detached { OmpCLI.locate() }.value
+        let run = cli.map { [AgentProbeTarget(label: "Run omp in the sandbox (\(($0.path as NSString).abbreviatingWithTildeInPath) --version)", path: $0.resolvedPath, list: false, run: ["--version"], searchPath: $0.agentSearchPath, command: $0.path)] } ?? []
         do {
-            probes = try await AgentServiceConnection.shared.selfTest(targets: sentinel?.targets ?? [])
-            lastError = nil
+            probes = try await AgentServiceConnection.shared.selfTest(targets: run + (sentinel?.targets ?? []))
         } catch {
             probes = nil
             lastError = (error as? BridgeFailure)?.message ?? error.localizedDescription
@@ -54,6 +56,7 @@ final class AgentIsolationModel: ObservableObject {
 /// Settings > Agent.
 struct AgentSettingsView: View {
     @ObservedObject var model: AgentIsolationModel
+    @State private var commandsError: String?
 
     var body: some View {
         Form {
@@ -64,6 +67,18 @@ struct AgentSettingsView: View {
                     ? "The agent runs as you: it can read your files and your omp credentials. Turn this off to confine it again."
                     : "Off (recommended). The agent runs in a sandbox with no access to your files or omp credentials; its model calls go through a local gateway with a scoped token.")
                     .font(.caption).foregroundStyle(.secondary)
+            }
+            Section("Commands") {
+                HStack {
+                    Text("Your own slash commands, one Markdown file each: review.md becomes /review in the Agent sidebar.")
+                        .font(.caption).foregroundStyle(.secondary)
+                    Spacer()
+                    Button("Open Folder") { openCommandsFolder() }
+                }
+                if let commandsError {
+                    Label { Text(commandsError).fixedSize(horizontal: false, vertical: true) } icon: { Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.red) }
+                        .font(.callout)
+                }
             }
             if model.mode == .sandboxed {
                 Section("Verify") {
@@ -86,7 +101,17 @@ struct AgentSettingsView: View {
             }
         }
         .formStyle(.grouped)
-        .frame(width: 520, height: 520)
+        .frame(width: 520, height: 580)
+    }
+
+    /// Creates the folder of the person's own slash commands when missing and shows it in Finder (the `reveal_commands_folder` app tool does the same).
+    private func openCommandsFolder() {
+        do {
+            try AgentCommandFolder.standard().reveal()
+            commandsError = nil
+        } catch {
+            commandsError = (error as? BridgeFailure)?.message ?? error.localizedDescription
+        }
     }
 
     @ViewBuilder private var status: some View {

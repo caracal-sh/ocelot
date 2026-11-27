@@ -807,6 +807,8 @@ body {
 }
 .at-msg__context { font: var(--at-type-small); color: var(--at-text-2); }
 .at-msg__context::before { content: 'With '; }
+/* The slash command the person typed, marked inside their bubble. */
+.at-msg__command { padding: 0 4px; margin-left: -2px; border-radius: var(--at-radius-xs); color: var(--at-accent); font-weight: 500; background: color-mix(in srgb, var(--at-accent) 14%, transparent); }
 .at-msg--assistant { overflow-wrap: anywhere; }
 
 .at-step { display: grid; grid-template-columns: 12px 1fr; column-gap: 6px; row-gap: 6px; align-items: baseline; color: var(--at-text-2); font: var(--at-type-small); }
@@ -847,7 +849,7 @@ body {
 .at-working__time { flex: none; color: var(--at-text-2); font-variant-numeric: tabular-nums; font-weight: 400; }
 
 .at-composer {
-  flex: none; margin: 0 8px 8px; padding: 6px;
+  position: relative; flex: none; margin: 0 8px 8px; padding: 6px; /* positioned: the command menu opens above it */
   border: 1px solid var(--at-border); border-radius: calc(var(--at-radius-m) + 7px); /* inner send button radius + padding + border */
   background: var(--at-panel);
 }
@@ -1036,6 +1038,17 @@ body {
 .at-picker__option[aria-selected="true"] { color: var(--at-accent); font-weight: 500; }
 .at-picker__name { flex: none; }
 .at-picker__id { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: var(--at-type-small); color: var(--at-text-2); text-align: right; }
+/* Slash-command menu: the model list's surface, as wide as the composer; two-line rows (name and hint, then the description). */
+.at-cmd { right: 0; width: auto; bottom: calc(100% + 7px); }
+.at-cmd .at-picker__list { max-height: 280px; }
+.at-cmd__option { display: flex; flex-direction: column; gap: 1px; padding: 4px 8px; border-radius: var(--at-radius-m); color: var(--at-text); cursor: default; }
+.at-cmd__option.is-active { background: var(--at-hover); }
+.at-cmd__option--add { margin-top: 3px; }
+.at-cmd__line { display: flex; align-items: baseline; gap: 6px; min-width: 0; }
+.at-cmd__name { flex: none; font: var(--at-type-body); font-weight: 500; }
+.at-cmd__hint { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: var(--at-type-small); color: var(--at-text-2); }
+.at-cmd__desc { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: var(--at-type-small); color: var(--at-text-2); }
+.at-cmd__skipped { overflow-wrap: anywhere; }
 .at-composer__send {
   font: inherit; font-weight: 500;
   height: 26px; padding: 0 12px; border: 0; border-radius: var(--at-radius-m);

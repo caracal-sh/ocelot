@@ -8,11 +8,15 @@
 // "gsap", "motion"): in React they come from npm, in HTML from an import map you
 // point at local copies (no CDN, nothing is fetched from the network by Ocelot).
 //
+// React: the layers are plain JavaScript, so they live in their own files and the screen stays fully typed:
+// `<Name>.layers.js` (imports + `export const mountLayerN`), `<Name>.layers.d.ts` (types them) and the typed
+// `ocelot-code-layer.tsx` (ctx, CodeLayer) shared by the screens of a folder. HTML keeps one inline module.
+//
 // Not carried over: the editor's pause toggle (ctx.paused is always false) and the
 // rAF/GSAP halting done in the canvas; prefers-reduced-motion is still reported.
 
 import type { OcelotDocument } from '../model/document';
-import type { CodeData, CodeLibrary } from '../model/types';
+import { CODE_LIBRARIES, type CodeData, type CodeLibrary } from '../model/types';
 import { shaderImageId } from '../assets/refs';
 import { LIBRARY_VERSIONS, importMapFor } from '../render/codeLayer';
 import { bindingKey, renderImport, scanImports, type ImportDecl } from './moduleImports';
@@ -146,7 +150,7 @@ export function dependencyNote(libs: readonly CodeLibrary[]): string {
   return libs.map((l) => `${l}@${LIBRARY_VERSIONS[l]}`).join(' ');
 }
 
-/** Rebuilds the `ctx` argument around a real element. Plain JS, shared by the React and HTML exports. */
+/** Rebuilds the `ctx` argument around a real element. Plain JS for the HTML export (the React export's typed twin is in CODE_LAYER_MODULE: keep them in step). */
 export const CTX_RUNTIME = `function ocelotCtx(el, libraries) {
   const reduced = window.matchMedia('(prefers-reduced-motion: reduce)');
   const pauseCbs = new Set();
@@ -169,37 +173,130 @@ export const CTX_RUNTIME = `function ocelotCtx(el, libraries) {
   };
 }`;
 
-const CODE_LAYER_COMPONENT = `function CodeLayer({ mount, libraries, as: Tag = 'div', ...props }) {
-  const ref = useRef(null);
+/** The runtime file every React export with code layers writes (one per folder). */
+export const CODE_LAYER_FILE = 'ocelot-code-layer.tsx';
+/** How a file next to it imports that runtime. */
+const CODE_LAYER_IMPORT = './ocelot-code-layer';
+
+/**
+ * `ocelot-code-layer.tsx`: the typed runtime of the React export: the `ctx` a layer's `mount(element, ctx)` receives, `CodeLayer` (runs a
+ * mount in an effect, cleans up on unmount) and the `CodeLayerMount` type the layers' `.d.ts` files use. Typed to pass `tsc --strict`
+ * with `noUncheckedIndexedAccess` (React 19 types). Keep `ocelotCtx` in step with CTX_RUNTIME, which builds the same object for the HTML export.
+ */
+export const CODE_LAYER_MODULE = `// The runtime of the design's live code layers: the \`ctx\` a layer receives and the CodeLayer component that mounts it.
+// Generated: the layers themselves are in the *.layers.js files next to the screens that use them.
+import { useEffect, useRef, type ElementType, type HTMLAttributes } from 'react';
+
+export type CodeLibrary = ${CODE_LIBRARIES.map((l) => `'${l}'`).join(' | ')};
+
+/** What a layer's \`mount(element, ctx)\` can read and subscribe to. */
+export interface CodeLayerContext {
+  readonly width: number;
+  readonly height: number;
+  /** Always false: the editor's pause toggle is not carried over. */
+  readonly paused: boolean;
+  /** The visitor's prefers-reduced-motion setting. */
+  readonly reducedMotion: boolean;
+  readonly libraries: readonly CodeLibrary[];
+  onPause(cb: (paused: boolean, reducedMotion: boolean) => void): () => void;
+  onResize(cb: (width: number, height: number) => void): () => void;
+}
+
+/** One layer: runs against its element and may return a cleanup (also from a promise). */
+export type CodeLayerMount = (element: HTMLElement, ctx: CodeLayerContext) => void | (() => void) | Promise<void | (() => void)>;
+
+function ocelotCtx(el: HTMLElement, libraries: readonly CodeLibrary[]): { ctx: CodeLayerContext; dispose: () => void } {
+  const reduced = window.matchMedia('(prefers-reduced-motion: reduce)');
+  const pauseCbs = new Set<(paused: boolean, reducedMotion: boolean) => void>();
+  const sizeCbs = new Set<(width: number, height: number) => void>();
+  const observer = new ResizeObserver(() => sizeCbs.forEach((cb) => cb(el.clientWidth, el.clientHeight)));
+  observer.observe(el);
+  const onReduced = () => pauseCbs.forEach((cb) => cb(false, reduced.matches));
+  reduced.addEventListener('change', onReduced);
+  return {
+    ctx: {
+      get width() { return el.clientWidth; },
+      get height() { return el.clientHeight; },
+      get paused() { return false; },
+      get reducedMotion() { return reduced.matches; },
+      libraries,
+      onPause(cb) { pauseCbs.add(cb); return () => { pauseCbs.delete(cb); }; },
+      onResize(cb) { sizeCbs.add(cb); return () => { sizeCbs.delete(cb); }; },
+    },
+    dispose() { observer.disconnect(); reduced.removeEventListener('change', onReduced); },
+  };
+}
+
+export interface CodeLayerProps extends HTMLAttributes<HTMLElement> {
+  mount: CodeLayerMount;
+  libraries: readonly CodeLibrary[];
+  /** The element's tag name; default div. */
+  as?: string;
+}
+
+export function CodeLayer({ mount, libraries, as = 'div', ...props }: CodeLayerProps) {
+  const ref = useRef<HTMLElement>(null);
+  // Runs once per mounted element: \`mount\` and \`libraries\` are module-level constants of the exported screen.
   useEffect(() => {
     const el = ref.current;
-    if (!el) return;
+    if (!el) return undefined;
     const { ctx, dispose } = ocelotCtx(el, libraries);
-    let cleanup;
+    let cleanup: (() => void) | undefined;
     let disposed = false;
     Promise.resolve(mount(el, ctx)).then((result) => {
       if (typeof result !== 'function') return;
       if (disposed) result();
       else cleanup = result;
-    }, (error) => console.error(error));
+    }, (error: unknown) => console.error(error));
     return () => {
       disposed = true;
       cleanup?.();
       dispose();
     };
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  // The tag name is data (any element the layer was given), so TypeScript cannot enumerate it: this one cast is the only one.
+  const Tag = as as ElementType;
   return <Tag ref={ref} {...props} />;
-}`;
+}
+`;
 
-/** First lines of a React file with code layers (before its imports): the layers are plain JavaScript, so `tsc --strict` would reject them. Same convention as a generated route tree. */
-export const CODE_LAYERS_NOCHECK = '// @ts-nocheck\n// Its code layers are plain JavaScript; the rest of the file is generated.\n';
+/** One file a React export with code layers writes next to the component; `path` is relative to the code folder. */
+export interface CodeFile {
+  path: string;
+  text: string;
+}
 
-/** Everything that goes above \`export default function Component\` in the React file. */
-export function reactCodePrelude(ctx: CodeExport): string {
+/** What a React file with code layers imports (above its own code) and the files those imports name. */
+export interface ReactCodeModules {
+  /** Import lines and the note on the libraries to install: goes above `export default function Component`. */
+  prelude: string;
+  /** `ocelot-code-layer.tsx`, `<base>.layers.js`, `<base>.layers.d.ts`. */
+  files: CodeFile[];
+}
+
+/**
+ * The React export of a file's code layers: `<base>.layers.js` (a plain JavaScript module: the hoisted imports and one exported mount per
+ * layer), `<base>.layers.d.ts` (types them, so a strict TypeScript project needs no `allowJs`) and the shared `ocelot-code-layer.tsx`.
+ * `dir` is the folder of the component file below the code folder: '' for a screen, 'components/' for a document component.
+ */
+export function reactCodeModules(ctx: CodeExport, base: string, dir = ''): ReactCodeModules {
   const libs = usedLibraries(ctx);
-  const header = `// This design has live code layers. Install their libraries: ${dependencyNote(libs) || '(none)'}\n// Each layer's module runs in useEffect against its element and is cleaned up on unmount.`;
-  const layers = ctx.layers.map((l) => `const ${l.name} = ${l.scope};`).join('\n\n');
-  return `import { useEffect, useRef } from 'react';\n${ctx.imports.join('\n')}${ctx.imports.length ? '\n' : ''}\n${header}\n\n${CTX_RUNTIME}\n\n${CODE_LAYER_COMPONENT}\n\n${layers}\n\n`;
+  const names = ctx.layers.map((l) => l.name);
+  const layersFile = `${base}.layers.js`;
+  const prelude =
+    `import { CodeLayer } from '${CODE_LAYER_IMPORT}';\nimport { ${names.join(', ')} } from './${layersFile}';\n\n` +
+    `// This design has live code layers. Install their libraries: ${dependencyNote(libs) || '(none)'}\n` +
+    `// ${layersFile} holds the layers (typed by ${base}.layers.d.ts); CodeLayer runs each in useEffect against its element and cleans up on unmount.\n\n`;
+  const layers = `// The design's live code layers, one function per layer: each is (element, ctx) and returns an optional cleanup.\n${ctx.imports.join('\n')}${ctx.imports.length ? '\n\n' : '\n'}${ctx.layers.map((l) => `export const ${l.name} = ${l.scope};`).join('\n\n')}\n`;
+  const types = `import type { CodeLayerMount } from '${CODE_LAYER_IMPORT}';\n\n${names.map((n) => `export declare const ${n}: CodeLayerMount;`).join('\n')}\n`;
+  return {
+    prelude,
+    files: [
+      { path: `${dir}${CODE_LAYER_FILE}`, text: CODE_LAYER_MODULE },
+      { path: `${dir}${layersFile}`, text: layers },
+      { path: `${dir}${base}.layers.d.ts`, text: types },
+    ],
+  };
 }
 
 /** `<script>` blocks for the standalone HTML export (import map + the layers' module). */

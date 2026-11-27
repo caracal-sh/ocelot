@@ -5,6 +5,12 @@ import Foundation
 /// - `initialize`, `ping` and `tools/list` are answered from the generated manifests, so agents see the tools (and
 ///   Ocelot's instructions) even when the app is closed. The list is flat: the app tools (`list_projects`, `open_project`,
 ///   `new_project`, settings, windows...) next to the document tools. Their names never collide (a TS test enforces it).
+/// - `prompts/list` and `prompts/get` (the sidebar's slash commands, `/ocelot:critique` in a client) come from the document,
+///   never from the app tools: they are forwarded to the same endpoint as the document tools. The `initialize` the client
+///   sees declares `prompts` (the manifest embeds the editor's own `initialize` result). `prompts/get` resolves the endpoint
+///   like `tools/call` (starting the app); `prompts/list` does NOT start the app, because clients list prompts when they
+///   connect and a closed app must not launch every time an agent starts: a running host answers it (so the person's own
+///   command files show up), with none the proxy answers the built-in design prompts embedded in the manifest.
 /// - The first `tools/call` resolves the endpoint (starting the app and opening a known project if needed),
 ///   initializes an upstream session as the same client, and forwards. After an app restart the next call
 ///   re-initializes transparently. App tools go to the app endpoint (`/mcp/app`), which needs no open project and
@@ -17,6 +23,8 @@ final class StdioProxy {
     private let resolve: (_ openedProject: String?) throws -> Endpoint
     /// App endpoint (`/mcp/app`); starts the app without opening a project.
     private let resolveApp: (() throws -> Endpoint)?
+    /// Document endpoint of a host that is already running, without starting anything (nil = none is running). For `prompts/list`.
+    private let resolveRunning: ((_ openedProject: String?) throws -> Endpoint?)?
     private var connection: MCPConnection?
     private var appConnection: MCPConnection?
     /// The project the agent opened or created through the app tools, while the proxy is not pinned.
@@ -26,10 +34,11 @@ final class StdioProxy {
     private let write: (Data) -> Void
 
     /// `resolve` finds (and if needed starts) the endpoint; `write` receives one JSON line per message.
-    init(target: Target, resolve: @escaping (_ openedProject: String?) throws -> Endpoint, resolveApp: (() throws -> Endpoint)? = nil, write: @escaping (Data) -> Void) {
+    init(target: Target, resolve: @escaping (_ openedProject: String?) throws -> Endpoint, resolveApp: (() throws -> Endpoint)? = nil, resolveRunning: ((_ openedProject: String?) throws -> Endpoint?)? = nil, write: @escaping (Data) -> Void) {
         self.target = target
         self.resolve = resolve
         self.resolveApp = resolveApp
+        self.resolveRunning = resolveRunning
         self.write = write
     }
 
@@ -71,8 +80,38 @@ final class StdioProxy {
             reply(id: id, result: ["tools": ToolManifestData.tools + AppToolData.tools])
         case "tools/call":
             forwardToolCall(id: id, object: object, params: params)
+        case "prompts/list", "prompts/get":
+            forwardPrompt(id: id, object: object, method: method)
         default:
-            reply(id: id, error: -32601, message: "Method \"\(method)\" is not supported. This server implements initialize, ping, tools/list and tools/call.")
+            reply(id: id, error: -32601, message: "Method \"\(method)\" is not supported. This server implements initialize, ping, tools/list, tools/call, prompts/list and prompts/get.")
+        }
+    }
+
+    /// Prompts live in the document (the editor answers them, with the person's own command files), so they follow the document
+    /// tools' endpoint and nothing is merged from the app tools. `prompts/list` never starts the app (see the type comment).
+    private func forwardPrompt(id: Any, object: [String: Any], method: String) {
+        do {
+            guard let conn = try (method == "prompts/get" ? ensureConnection() : runningConnection()) else {
+                reply(id: id, result: ["prompts": ToolManifestData.prompts])
+                return
+            }
+            guard let upstream = try conn.send(JSON.encode(object)) else {
+                reply(id: id, error: -32603, message: "Ocelot sent no answer to \(method).")
+                return
+            }
+            if upstream.status != 200 {
+                reply(id: id, error: -32603, message: MCPConnection.rpcMessage(upstream.body) ?? "Ocelot answered HTTP \(upstream.status).")
+                return
+            }
+            if let json = try? JSONSerialization.jsonObject(with: upstream.body) {
+                write(JSON.encode(json))
+            } else {
+                reply(id: id, error: -32603, message: "Ocelot sent an unreadable answer.")
+            }
+        } catch let error as CLIError {
+            reply(id: id, error: -32603, message: error.message)
+        } catch {
+            reply(id: id, error: -32603, message: error.localizedDescription)
         }
     }
 
@@ -133,7 +172,18 @@ final class StdioProxy {
 
     private func ensureConnection() throws -> MCPConnection {
         if let connection { return connection }
-        let conn = MCPConnection(endpoint: try resolve(openedProject), clientInfo: clientInfo, protocolVersion: protocolVersion, reconnect: { [weak self] in
+        return try connect(to: try resolve(openedProject))
+    }
+
+    /// The document connection when a host already runs, else nil: nothing is started (`prompts/list`).
+    private func runningConnection() throws -> MCPConnection? {
+        if let connection { return connection }
+        guard let endpoint = try resolveRunning?(openedProject) else { return nil }
+        return try connect(to: endpoint)
+    }
+
+    private func connect(to endpoint: Endpoint) throws -> MCPConnection {
+        let conn = MCPConnection(endpoint: endpoint, clientInfo: clientInfo, protocolVersion: protocolVersion, reconnect: { [weak self] in
             guard let self else { throw CLIError(message: "Ocelot's proxy ended.") }
             return try self.resolve(self.openedProject)
         })

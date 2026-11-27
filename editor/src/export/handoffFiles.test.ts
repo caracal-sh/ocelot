@@ -7,6 +7,7 @@ import { fakePng } from '../assets/testing';
 import { createDesignSystem } from '../designsystem/apply';
 import { normalizeCode } from '../model/code';
 import { setupMcp } from '../mcp/testSetup';
+import { CODE_LAYER_MODULE } from './code';
 import { buildHandoff } from './handoff';
 import { buildHandoffFolder } from './handoffFiles';
 
@@ -66,13 +67,18 @@ describe('buildHandoffFolder', () => {
     const folder = await buildHandoffFolder(p.editor, p.host, p.brief());
     const files = byPath(folder.files);
     const tsx = files.get('code/Home.tsx')!.text!;
-    expect(tsx).toContain(`"image":"/assets/${pic.id}.${pic.ext}"`);
-    expect(tsx).not.toMatch(/;base64,|asset:\/\//);
+    const layers = files.get('code/Home.layers.js')!.text!;
+    expect(layers).toContain(`"image":"/assets/${pic.id}.${pic.ext}"`);
+    expect(`${tsx}${layers}`).not.toMatch(/;base64,|asset:\/\//);
     expect(files.get(`code/public/assets/${pic.id}.${pic.ext}`)).toMatchObject({ assetId: pic.id });
     expect(files.get('prototype/home.html')!.text).toContain('"image":"data:image/png;base64,');
     expect(files.has(`prototype/assets/${pic.id}.${pic.ext}`)).toBe(false);
-    expect(tsx.startsWith('// @ts-nocheck\n')).toBe(true);
-    expect(files.get('code/Pricing.tsx')!.text).not.toContain('ts-nocheck');
+    // the screen stays fully typed: its layers are a separate file, typed by a .d.ts, next to the one shared runtime
+    expect(tsx).not.toContain('ts-nocheck');
+    expect(tsx).toContain("from './Home.layers.js';");
+    expect(files.has('code/Home.layers.d.ts') && files.has('code/ocelot-code-layer.tsx')).toBe(true);
+    expect(files.get('code/Pricing.tsx')!.text).not.toContain('ocelot-code-layer');
+    expect(['code/Pricing.layers.js', 'code/Pricing.layers.d.ts'].some((x) => files.has(x))).toBe(false);
     expect(folder.warnings.filter((w) => w.includes('shader picture'))).toEqual([]);
   });
 
@@ -83,7 +89,7 @@ describe('buildHandoffFolder', () => {
     await p.editor.assets.delete([pic.id]);
     const folder = await buildHandoffFolder(p.editor, p.host, p.brief());
     expect(folder.warnings).toContain('1 shader picture in “Home” is missing from the asset store: the layer prints its generated field. Set another image with update_shader { image }, then hand off again.');
-    expect(byPath(folder.files).get('code/Home.tsx')!.text).toContain(`"image":"${assetRef(pic.id)}"`);
+    expect(byPath(folder.files).get('code/Home.layers.js')!.text).toContain(`"image":"${assetRef(pic.id)}"`);
   });
 
   it('asks the host for 2× renders of the screen HTML', async () => {
@@ -148,6 +154,48 @@ describe('buildHandoffFolder', () => {
     expect(files.has('code/Pricing.tsx') && files.has('code/Pricing2.tsx')).toBe(true);
     expect(files.get('code/Pricing2.tsx')!.text).not.toContain('./Pricing.css');
     expect(new Set(folder.files.map((f) => f.path)).size).toBe(folder.files.length);
+  });
+
+  it('code layers: the layers files are written once, numbered screens rename theirs and the import in the component, the shared runtime keeps its name', async () => {
+    const p = await project({ designSystem: false });
+    const again = p.editor.human.createArtboard({ name: 'Pricing' });
+    const source = 'export default function mount(el) { el.dataset.on = "1"; }';
+    for (const ab of [p.pricing, again]) p.editor.human.insertNodes(ab, [{ type: 'code', name: 'Glow', code: normalizeCode({ source, libraries: [] }) }]);
+    const folder = await buildHandoffFolder(p.editor, p.host, p.brief());
+    const files = byPath(folder.files);
+    expect(new Set(folder.files.map((f) => f.path)).size).toBe(folder.files.length);
+    expect(folder.files.filter((f) => f.path === 'code/ocelot-code-layer.tsx')).toHaveLength(1);
+    for (const [tsx, base] of [['code/Pricing.tsx', 'Pricing'], ['code/Pricing2.tsx', 'Pricing2']] as const) {
+      expect(files.get(tsx)!.text).toContain(`from './${base}.layers.js';`);
+      expect(files.get(tsx)!.text).toContain("from './ocelot-code-layer';");
+      expect(files.get(`code/${base}.layers.js`)!.text).toContain('export const mountLayer1 = ');
+      expect(files.get(`code/${base}.layers.d.ts`)!.text).toContain('export declare const mountLayer1: CodeLayerMount;');
+    }
+    expect(files.get('code/Pricing2.tsx')!.text).not.toContain('./Pricing.layers.js');
+    expect(files.has('code/Home.layers.js')).toBe(false);
+    // the brief tells where each of them goes
+    const md = files.get('HANDOFF.md')!.text!;
+    expect(md).toContain('copy `code/*.tsx` (`ocelot-code-layer.tsx` included), `code/*.css`, `code/*.layers.js` and `code/*.layers.d.ts` into `src/pages/`');
+  });
+
+  it('code layers in a document component: its files are in code/components/, with its own copy of the runtime, once', async () => {
+    const p = await project({ designSystem: false });
+    const { human } = p.editor;
+    const source = 'export default function mount(el) { el.dataset.on = "1"; }';
+    const [card] = human.insertNodes(p.pricing, [{ type: 'frame', name: 'Card', children: [{ type: 'code', name: 'Glow', code: normalizeCode({ source, libraries: [] }) }] }]);
+    human.makeComponent([card!], { name: 'Card' });
+    human.placeInstance('Card', p.home, { name: 'One' });
+    human.placeInstance('Card', p.home, { name: 'Two' });
+    const folder = await buildHandoffFolder(p.editor, p.host, p.brief());
+    const files = byPath(folder.files);
+    expect(new Set(folder.files.map((f) => f.path)).size).toBe(folder.files.length);
+    expect(files.get('code/components/Card.tsx')!.text).toContain("from './Card.layers.js';");
+    expect(files.get('code/components/Card.tsx')!.text).toContain("from './ocelot-code-layer';");
+    expect(files.get('code/components/Card.layers.js')!.text).toContain('export const mountLayer1 = ');
+    expect(files.get('code/components/Card.layers.d.ts')!.text).toContain('mountLayer1: CodeLayerMount');
+    expect(folder.files.filter((f) => f.path === 'code/components/ocelot-code-layer.tsx')).toHaveLength(1);
+    expect(files.get('code/components/ocelot-code-layer.tsx')!.text).toBe(CODE_LAYER_MODULE);
+    expect(files.get('HANDOFF.md')!.text).toContain('its own `ocelot-code-layer.tsx` included');
   });
 
   it('writes the document components once in code/components/, with their images; the screens import them', async () => {

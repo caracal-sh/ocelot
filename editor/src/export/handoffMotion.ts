@@ -120,7 +120,7 @@ export function motionOf(doc: OcelotDocument, artboardId: string): HandoffMotion
   const parts = out.states.filter((s) => s.component);
   if (parts.length) out.notes.push(`${parts.map((p) => `“${p.layer}” (${p.component})`).join(', ')} ${parts.length === 1 ? 'is a design-system part' : 'are design-system parts'}: the hover, pressed and focus styles listed for ${parts.length === 1 ? 'it are' : 'them are'} the component's own plus the design's changes. They come with the component in design-system/; code/ adds only what the design changed.`);
   const libs = [...new Set(out.code_layers.flatMap((c) => c.libraries))];
-  if (out.code_layers.length) out.notes.push(`Code layers are in code/ as modules behind a small runtime (they run on mount and honour prefers-reduced-motion); install ${libs.length ? libs.map((l) => `\`${l}\``).join(', ') : 'their libraries'} from npm. The editor's Pause button is not carried.`);
+  if (out.code_layers.length) out.notes.push(`Code layers are in code/ as <Name>.layers.js modules (typed by <Name>.layers.d.ts) behind the typed runtime ocelot-code-layer.tsx (they run on mount and honour prefers-reduced-motion); install ${libs.length ? libs.map((l) => `\`${l}\``).join(', ') : 'their libraries'} from npm. The editor's Pause button is not carried.`);
   return out;
 }
 

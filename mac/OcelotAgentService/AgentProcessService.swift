@@ -109,11 +109,11 @@ final class AgentProcessService: NSObject, OcelotAgentServiceProtocol, @unchecke
             throw AgentLaunch.Failure("Invalid project or conversation id.")
         }
         let omp = start.ompPath
-        guard omp.hasPrefix("/"), (omp as NSString).lastPathComponent == "omp" else {
-            throw AgentLaunch.Failure("The sandboxed agent only runs omp. Reinstall omp, or turn on \"Run agent unconfined\" in Settings > Agent.")
+        if let problem = OmpExecutable.problem(command: start.ompCommand, resolved: omp) {
+            throw AgentLaunch.Failure(problem)
         }
         guard access(omp, X_OK) == 0 else {
-            throw AgentLaunch.Failure("The sandboxed agent cannot run omp at \(omp). Install omp under ~/.bun, ~/.local/bin, /opt/homebrew or /usr/local (for example \"bun install -g @oh-my-pi/pi-coding-agent\"), or turn on \"Run agent unconfined\" in Settings > Agent.")
+            throw AgentLaunch.Failure("The sandboxed agent cannot run omp at \(omp): that folder is outside what the sandbox may read. Install omp with its installer (it puts omp in ~/.local/bin) or with \"bun install -g @oh-my-pi/pi-coding-agent\", or turn on \"Run agent unconfined\" in Settings > Agent.")
         }
         lock.lock()
         let running = sessions[start.sessionId] != nil
@@ -147,7 +147,7 @@ final class AgentProcessService: NSObject, OcelotAgentServiceProtocol, @unchecke
         let process = Process()
         process.executableURL = URL(fileURLWithPath: omp)
         process.arguments = AgentLaunch.ompArguments(configFile: configFile.path, systemPromptFile: promptFile.path, model: start.model, thinking: start.thinking, sessionDirectory: conversation.path, resume: start.resume)
-        process.environment = AgentLaunch.confinedEnvironment(home: home, agentDir: agentDir.path, temporaryDirectory: try temporaryDirectory(start.temporaryDirectory), token: start.gatewayToken, mcpToken: start.mcpToken)
+        process.environment = AgentLaunch.confinedEnvironment(home: home, agentDir: agentDir.path, temporaryDirectory: try temporaryDirectory(start.temporaryDirectory), token: start.gatewayToken, mcpToken: start.mcpToken, searchPath: start.searchPath)
         process.currentDirectoryURL = directory
         let stdin = Pipe(), stdout = Pipe(), stderr = Pipe()
         process.standardInput = stdin

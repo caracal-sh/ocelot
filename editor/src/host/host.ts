@@ -117,6 +117,9 @@ export function createBrowserHost(opts: { assets?: MemoryHostOptions } = {}): Ho
   server.register('host.agentHistoryRead', () => ({}));
   server.register('host.agentHistoryWrite', () => ({}));
   server.register('host.agentHistoryDelete', () => ({}));
+  // A browser tab has no Commands folder: only the built-in commands are offered.
+  server.register('host.agentCommands', () => ({ files: [] }));
+  server.register('host.agentCommandsReveal', () => ({}));
   server.register('host.exportRun', () => {
     throw new BridgeError('host_unavailable', 'Exporting PNG, JPG and PDF files needs the Ocelot app or the headless host (editor/e2e/headless-host.mjs); a plain browser tab cannot render or save them.');
   });
