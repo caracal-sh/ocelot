@@ -6,6 +6,20 @@
     <description>Ocelot updates</description>
     <language>en</language>
     <item>
+      <title>Ocelot 0.3.14</title>
+      <pubDate>Fri, 27 Nov 2026 10:36:29 +0000</pubDate>
+      <sparkle:version>1025</sparkle:version>
+      <sparkle:shortVersionString>0.3.14</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <description><![CDATA[<ul>
+<li>The agent no longer hangs when its connection restarts. If the local model connection restarted in the middle of a chat, the agent lost it and sat there until it timed out; it now keeps working, and when a new chat cannot start, the message says why.</li>
+<li>Halftone and dither layers can print a picture from your assets. Choose one in the Inspector's Shader section, set the focal point, and tune contrast and inversion; exported pages carry the picture with them.</li>
+<li>Better-finished designs from the agent. It generates detailed objects instead of drawing them by hand and keeps drawn objects whole, keeps the navigation clear of busy pictures, fills app screens to the bottom, keeps small text readable, and picks sober accent colors for serious clients. Design inspection now also asks about a screen that ends in a band of empty space, a column that stops far short of its neighbour, and a colored section that runs on below its content.</li>
+<li>Lists in the agent's replies show as lists instead of one run-on paragraph.</li>
+</ul>]]></description>
+      <enclosure url="https://github.com/caracal-sh/ocelot/releases/download/v0.3.14/Ocelot-0.3.14.dmg" length="17497540" type="application/octet-stream" sparkle:edSignature="ATx4b+1Wekj21mUg6PA20SpAel30u4ie5q0S9kbJ1SzFeZ7EcKY6+xdw6Yrt8eHE+4/Ofly1v7t1SfLj7DrjBw=="/>
+    </item>
+    <item>
       <title>Ocelot 0.3.13</title>
       <pubDate>Tue, 24 Nov 2026 10:49:17 +0000</pubDate>
       <sparkle:version>1024</sparkle:version>
