@@ -6,6 +6,21 @@
     <description>Ocelot updates</description>
     <language>en</language>
     <item>
+      <title>Ocelot 0.3.16</title>
+      <pubDate>Fri, 27 Nov 2026 17:08:57 +0000</pubDate>
+      <sparkle:version>1027</sparkle:version>
+      <sparkle:shortVersionString>0.3.16</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <description><![CDATA[<ul>
+<li>Slash commands in the Agent sidebar. Type <code>/</code> to pick one: <code>/critique</code> reviews the selection or page without changing it, <code>/polish</code> fixes what the review finds, <code>/variants</code> has several agents build different directions side by side at the same time, <code>/responsive</code> makes tablet and mobile versions, <code>/flow</code> links the screens into a clickable prototype, and <code>/copy</code> rewrites the text only. <code>/new</code>, <code>/compact</code> and <code>/model</code> handle the conversation.</li>
+<li>Your own slash commands: put one Markdown file per command in the Commands folder (Settings › Agent › Open Folder) and it appears in the list. Agents you connect from outside see the same commands.</li>
+<li>The Agent sidebar works with every way of installing omp. Installed with Ocelot's own Install button (or with bun or npm), or through an install manager that keeps one file per version, omp was refused by the sandbox (&quot;The sandboxed agent only runs omp&quot;) and no chat could start. Settings › Agent › Verify isolation now also checks that omp actually runs in the sandbox, and names the omp it found.</li>
+<li>React exports with live code layers are fully typed: the layers' JavaScript sits in its own file next to the screen, with a small typed runtime, instead of the whole screen turning type checking off.</li>
+<li>Agents connected to Ocelot can open Settings right after Ocelot starts; before, the request was answered as done while no window appeared until Settings had been opened once by hand.</li>
+</ul>]]></description>
+      <enclosure url="https://github.com/caracal-sh/ocelot/releases/download/v0.3.16/Ocelot-0.3.16.dmg" length="17661238" type="application/octet-stream" sparkle:edSignature="+C/i78wSuu/qj8vbZL8kjeSMmw6Me5/s6R1M5Xyiz9Wo6lxIdOXMhkjDyDReLUmS1g/z6xzr/De2nLpmSrAXCA=="/>
+    </item>
+    <item>
       <title>Ocelot 0.3.15</title>
       <pubDate>Fri, 27 Nov 2026 14:20:07 +0000</pubDate>
       <sparkle:version>1026</sparkle:version>
