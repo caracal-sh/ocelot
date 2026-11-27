@@ -12,9 +12,11 @@
 //    free-running frames, so every moment can be reproduced (render/exportRuntime.ts).
 //
 // Configuration arrives as `window.__OCELOT_CFG = { source, libraries, mode,
-// paused, reducedMotion, fps, seed, spec, vars }` (JSON, set by codeFrameSrcdoc). `vars` are the custom properties the source reads
-// (var(--theme-color-accent)), set on the frame's root; `spec` is a shader layer's spec. The host posts `ocelot:update { spec, vars }`
-// when either changes: `ctx.spec` is the latest spec and `ctx.onSpec(cb)` calls back (a layer can tune itself without re-mounting).
+// paused, reducedMotion, fps, seed, spec, vars, images }` (JSON, set by codeFrameSrcdoc). `vars` are the custom properties the source reads
+// (var(--theme-color-accent)), set on the frame's root; `spec` is a shader layer's spec. The host posts `ocelot:update { spec, vars, images }`
+// when any changes: `ctx.spec` is the latest spec and `ctx.onSpec(cb)` calls back (a layer can tune itself without re-mounting). `images` maps
+// an `asset://` reference of the spec to the image's pixels as a `data:image/` URL ('' when the asset is missing or unreadable): the frame
+// loads only data:/blob: images, so the host reads the asset and hands it over; `ctx.images` is the latest map.
 
 import { FRAME_EXPORT_SOURCE } from './exportRuntime';
 
@@ -89,6 +91,15 @@ export const CODE_FRAME_BOOTSTRAP = String.raw`
     }
   }
   applyVars(CFG.vars);
+  var hostImages = {};
+  function applyImages(images) {
+    if (!images || typeof images !== 'object') return;
+    for (var ref in images) {
+      var url = images[ref];
+      if (typeof url === 'string' && (url === '' || url.slice(0, 11) === 'data:image/')) hostImages[ref] = url;
+    }
+  }
+  applyImages(CFG.images);
 
   // ---- motion state ----
   var reducedQuery = window.matchMedia ? window.matchMedia('(prefers-reduced-motion: reduce)') : null;
@@ -145,6 +156,7 @@ export const CODE_FRAME_BOOTSTRAP = String.raw`
     else if (d && d.type === 'ocelot:update') {
       applyVars(d.vars);
       if (d.spec && typeof d.spec === 'object') hostSpec = d.spec;
+      applyImages(d.images);
       specListeners.slice().forEach(function (cb) { try { cb(); } catch (err) { report('error', err && err.message ? err.message : String(err)); } });
     }
     else if (d && d.type === 'ocelot:seek' && xr) {
@@ -226,6 +238,7 @@ export const CODE_FRAME_BOOTSTRAP = String.raw`
       get reducedMotion() { return state.reducedMotion; },
       libraries: CFG.libraries.slice(),
       get spec() { return hostSpec; },
+      get images() { return hostImages; },
       onSpec: function (cb) {
         if (typeof cb !== 'function') return function () {};
         specListeners.push(cb);

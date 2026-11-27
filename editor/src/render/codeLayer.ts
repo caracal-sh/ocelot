@@ -13,6 +13,7 @@
 import { CODE_FRAME_BOOTSTRAP } from './codeFrameBootstrap';
 import { frameSeed } from './exportRuntime';
 import type { CodeData, CodeLibrary } from '../model/types';
+import { assetIdOf } from '../assets/refs';
 import { sameShader } from '../shader/spec';
 import { shaderRuntimeKey } from '../shader/source';
 import { varNamesIn } from './customProps';
@@ -88,6 +89,8 @@ export interface CodeFrameOptions {
   seed?: number;
   /** Custom properties the source reads through var(--name), resolved by the host: set on the frame's root so var() works inside it. */
   vars?: Record<string, string>;
+  /** A shader layer's picture: its `asset://` reference mapped to a `data:image/` URL ('' when it cannot be loaded). The frame loads nothing else. */
+  images?: Record<string, string>;
 }
 
 /** JSON that is safe inside an inline <script>: no "</script", no "<!--", no line separators. */
@@ -107,6 +110,7 @@ export function codeFrameSrcdoc(code: CodeData, opts: CodeFrameOptions): string 
     ...(opts.seed !== undefined ? { seed: opts.seed } : {}),
     ...(code.shader ? { spec: code.shader } : {}),
     ...(opts.vars && Object.keys(opts.vars).length ? { vars: opts.vars } : {}),
+    ...(opts.images && Object.keys(opts.images).length ? { images: opts.images } : {}),
   };
   return [
     '<!doctype html><html><head><meta charset="utf-8">',
@@ -165,9 +169,22 @@ interface Mounted {
   key: string;
   code: CodeData;
   status: CodeLayerStatus;
-  /** What the frame has been told since it mounted: its shader spec (JSON) and custom properties. */
+  /** What the frame has been told since it mounted: its shader spec (JSON), custom properties and the pictures (reference -> data: URL). */
   spec: string;
   vars: Record<string, string>;
+  images: Map<string, string>;
+  /** The pictures in the frame's own config: certainly delivered, unlike what was posted while it loaded. */
+  bornWith: ReadonlyMap<string, string>;
+}
+
+/** Where the live canvas gets the pixels of a shader layer's stored image (the asset service). */
+export interface FrameImages {
+  /** The image as a `data:` URL (cached by the source); rejects when the asset is missing or unreadable. */
+  load(assetId: string): Promise<string>;
+  /** The URL when it is already loaded. */
+  cached(assetId: string): string | undefined;
+  /** Calls back when the asset store changed (an asset arrived, went away or was replaced): pictures that failed are tried again. */
+  subscribe(cb: () => void): () => void;
 }
 
 const MAX_ERRORS = 20;
@@ -182,6 +199,11 @@ export class CodeLayerHost {
   readonly #vendorBase: string;
   readonly #mounted = new Map<string, Mounted>();
   readonly #forceReload = new Set<string>();
+  #images: FrameImages | null = null;
+  #offImages: (() => void) | null = null;
+  /** `asset://` reference -> the picture's data: URL, or '' when it could not be loaded. */
+  readonly #pictures = new Map<string, string>();
+  readonly #loadingPictures = new Set<string>();
   /** Frames per second while the timeline scrubs this artboard (frames mount in export mode); null = live. */
   #exportFps: number | null = null;
   #listeners = new Set<(nodeId: string) => void>();
@@ -197,6 +219,20 @@ export class CodeLayerHost {
     const win = dom.defaultView;
     win?.addEventListener('message', this.#onMessage);
     win?.addEventListener('ocelot-motion-changed', this.#onMotion);
+  }
+
+  /** Connects shader pictures to the asset store (null: none, a shader layer then prints its generated field). */
+  setImages(images: FrameImages | null): void {
+    this.#offImages?.();
+    this.#images = images;
+    this.#pictures.clear();
+    this.#offImages = images
+      ? images.subscribe(() => {
+          for (const [ref, url] of [...this.#pictures]) if (url === '') this.#pictures.delete(ref);
+          for (const id of this.#mounted.keys()) this.#pushUpdate(id);
+        })
+      : null;
+    for (const id of this.#mounted.keys()) this.#pushUpdate(id);
   }
 
   /** Re-mounts a layer with its current source (Run / Reload in the inspector). */
@@ -241,17 +277,19 @@ export class CodeLayerHost {
     iframe.setAttribute('aria-hidden', 'true');
     iframe.setAttribute('data-ocelot-code-frame', '');
     const vars = this.#resolveVars(el, varNamesIn(code.source));
-    this.#mounted.set(nodeId, { el, iframe, key, code, status: { ready: false, errors: [] }, spec: JSON.stringify(code.shader ?? null), vars });
+    const images = this.#knownPictures(code);
+    this.#mounted.set(nodeId, { el, iframe, key, code, status: { ready: false, errors: [] }, spec: JSON.stringify(code.shader ?? null), vars, images: new Map(Object.entries(images)), bornWith: new Map(Object.entries(images)) });
     this.#observe(el);
     const motion = (this.#dom.defaultView as MotionWindow | null)?.__ocelotMotion;
     iframe.srcdoc = codeFrameSrcdoc(
       code,
       this.#exportFps !== null
-        ? { vendorBase: this.#vendorBase, mode: 'export', paused: false, reducedMotion: false, fps: this.#exportFps, seed: frameSeed(nodeId), vars }
+        ? { vendorBase: this.#vendorBase, mode: 'export', paused: false, reducedMotion: false, fps: this.#exportFps, seed: frameSeed(nodeId), vars, images }
         : {
             vendorBase: this.#vendorBase,
             mode: 'live',
             vars,
+            images,
             ...(motion?.paused !== undefined ? { paused: !!motion.paused } : {}),
             ...(motion?.reducedMotion !== undefined ? { reducedMotion: !!motion.reducedMotion } : {}),
           },
@@ -290,6 +328,8 @@ export class CodeLayerHost {
     win?.removeEventListener('ocelot-motion-changed', this.#onMotion);
     this.#observer?.disconnect();
     this.#observer = null;
+    this.#offImages?.();
+    this.#offImages = null;
     for (const m of this.#mounted.values()) m.iframe.remove();
     this.#mounted.clear();
     this.#listeners = new Set();
@@ -318,7 +358,41 @@ export class CodeLayerHost {
     return out;
   }
 
-  /** Tells the frame what changed since it last heard: its shader spec and any custom property whose value moved. */
+  /** The pictures a layer's spec already has (what its frame is born with); starts loading the one that is missing. */
+  #knownPictures(code: CodeData): Record<string, string> {
+    const ref = code.shader?.image;
+    const url = ref ? this.#pictureFor(ref) : undefined;
+    return ref && url !== undefined ? { [ref]: url } : {};
+  }
+
+  /** A picture's data: URL; '' when it cannot be had (not in the store, unreadable, or no store attached); undefined while it loads. */
+  #pictureFor(ref: string): string | undefined {
+    const known = this.#pictures.get(ref);
+    if (known !== undefined) return known;
+    const images = this.#images;
+    const id = assetIdOf(ref);
+    if (!images || !id) return '';
+    const hit = images.cached(id);
+    if (hit) {
+      this.#pictures.set(ref, hit);
+      return hit;
+    }
+    if (!this.#loadingPictures.has(ref)) {
+      this.#loadingPictures.add(ref);
+      void images
+        .load(id)
+        .catch(() => '')
+        .then((url) => {
+          this.#loadingPictures.delete(ref);
+          if (this.#images !== images) return;
+          this.#pictures.set(ref, url);
+          for (const [nodeId, m] of this.#mounted) if (m.code.shader?.image === ref) this.#pushUpdate(nodeId);
+        });
+    }
+    return undefined;
+  }
+
+  /** Tells the frame what changed since it last heard: its shader spec, its picture and any custom property whose value moved. */
   #pushUpdate(nodeId: string, force = false): void {
     const m = this.#mounted.get(nodeId);
     if (!m) return;
@@ -328,10 +402,14 @@ export class CodeLayerHost {
     for (const k of Object.keys(m.vars)) if (!(k in vars)) changedVars[k] = '';
     const spec = JSON.stringify(m.code.shader ?? null);
     const specChanged = force ? m.code.shader !== undefined : spec !== m.spec;
-    if (!specChanged && Object.keys(changedVars).length === 0) return;
+    const ref = m.code.shader?.image;
+    const picture = ref ? this.#pictureFor(ref) : undefined;
+    const send = ref !== undefined && picture !== undefined && m.images.get(ref) !== picture ? { ref, picture } : null;
+    if (!specChanged && !send && Object.keys(changedVars).length === 0) return;
     m.vars = vars;
     m.spec = spec;
-    m.iframe.contentWindow?.postMessage({ type: 'ocelot:update', ...(specChanged ? { spec: m.code.shader } : {}), vars: changedVars }, '*');
+    if (send) m.images.set(send.ref, send.picture);
+    m.iframe.contentWindow?.postMessage({ type: 'ocelot:update', ...(specChanged ? { spec: m.code.shader } : {}), ...(send ? { images: { [send.ref]: send.picture } } : {}), vars: changedVars }, '*');
   }
 
   /** Re-resolves every layer's custom properties when a style or class changes on one of its ancestors (a theme switch, a token edit). */
@@ -370,6 +448,8 @@ export class CodeLayerHost {
       const msg = d as Record<string, unknown>;
       if (msg['type'] === 'ocelot:ready') {
         m.status.ready = true;
+        // What the frame was born with is certain; what was posted while it loaded may have been missed.
+        m.images = new Map(m.bornWith);
         // A frame that mounted before the editor published its motion state missed the broadcast: tell it now.
         this.#broadcastMotion([m.iframe]);
         // The same goes for a spec or token that changed while the frame was loading.

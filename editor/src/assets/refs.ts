@@ -53,15 +53,25 @@ export function nodeAssetIds(n: NodeData): string[] {
   return [...out];
 }
 
-/** Asset ids used by `rootId` and everything below it (all artboards when omitted), with the nodes using each. */
-export function assetUsage(doc: OcelotDocument, rootIds?: readonly string[]): Map<string, string[]> {
+/** The stored image a shader layer (halftone, dither) prints, as an asset id. It is not an attribute or a style, so it is scanned apart from them. */
+export function shaderImageId(n: NodeData): string | null {
+  const ref = n.code?.shader?.image;
+  return ref ? assetIdOf(ref) : null;
+}
+
+/**
+ * Asset ids used by `rootId` and everything below it (all artboards when omitted), with the nodes using each. A shader layer's picture counts
+ * (it must not be deleted from under the layer, and screenshots inline it); `shader: false` leaves it out (exports embed it in the code instead of copying the file).
+ */
+export function assetUsage(doc: OcelotDocument, rootIds?: readonly string[], opts: { shader?: boolean } = {}): Map<string, string[]> {
   const usage = new Map<string, string[]>();
   const roots = rootIds ?? doc.artboardIds();
   for (const root of roots) {
     for (const id of doc.subtreeIds(root)) {
       const n = doc.get(id);
       if (!n) continue;
-      for (const asset of nodeAssetIds(n)) {
+      const picture = opts.shader === false ? null : shaderImageId(n);
+      for (const asset of picture ? [...nodeAssetIds(n), picture] : nodeAssetIds(n)) {
         const list = usage.get(asset);
         if (list) list.push(id);
         else usage.set(asset, [id]);
@@ -89,8 +99,8 @@ export function keyframeAssetUsage(doc: OcelotDocument): Map<string, string[]> {
 }
 
 /** Every asset the document (or just the subtrees under `rootIds`) shows: layers plus `@keyframes`. The one "in use" scan. */
-export function referencedAssetIds(doc: OcelotDocument, rootIds?: readonly string[]): Set<string> {
-  return new Set([...assetUsage(doc, rootIds).keys(), ...keyframeAssetUsage(doc).keys()]);
+export function referencedAssetIds(doc: OcelotDocument, rootIds?: readonly string[], opts: { shader?: boolean } = {}): Set<string> {
+  return new Set([...assetUsage(doc, rootIds, opts).keys(), ...keyframeAssetUsage(doc).keys()]);
 }
 
 const EXT_BY_MIME: Record<string, string> = {

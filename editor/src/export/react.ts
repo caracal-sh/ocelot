@@ -11,7 +11,7 @@ import { componentName, jsxAttr, jsxAttrName, jsxStyle, jsxStyleEntries, jsxStyl
 import { stylesToTailwind } from './tailwind';
 import { NO_THEME_UTILITIES, THEME_CLASS, reactThemeCss, splitThemeStyles, themeUtilities, usedBundledFonts, type ReactThemeFile, type ThemeUtilities } from './themeCss';
 import { MOTION_ROOT_CLASS, createMotionExport, stateClasses, styleBlockJsx, type MotionExport } from './motion';
-import { addCodeLayer, createCodeExport, reactCodePrelude, type CodeExport } from './code';
+import { addCodeLayer, createCodeExport, reactCodePrelude, type CodeExport, type PictureUrl } from './code';
 import { artboardSlugs, exportedLink, reactLinkTargets, type LinkTargets } from './links';
 import {
   COMPONENT_IMPORT,
@@ -68,6 +68,8 @@ export interface ReactExportOptions {
    */
   components?: 'ui' | 'inline';
   ui?: UiComponents;
+  /** The `data:` URL of a stored image whose pixels are loaded: shader layers that print a picture embed it in their module. */
+  pictureUrl?: PictureUrl;
 }
 
 /** Added above the component when a layer links to another screen. */
@@ -195,7 +197,7 @@ function renderFile(sh: Shared, rootId: string, comp: ComponentPlan | null, scre
   const motion = createMotionExport(doc, rootId);
   // Generated state classes (`atl-s1`) are global: a component's must not collide with the screen's or another component's.
   if (comp) motion.counter = 1000 * (1 + [...docs.plans.keys()].indexOf(comp.def.id));
-  const codeExport = createCodeExport();
+  const codeExport = createCodeExport(opts.pictureUrl);
   const themed = sh.theme;
   const uiOut = sh.ds && opts.ui && opts.components !== 'inline' ? createUiExport() : null;
   const links: ExportContext = {

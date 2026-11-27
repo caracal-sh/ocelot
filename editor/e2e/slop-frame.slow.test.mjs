@@ -149,6 +149,43 @@ describe('frame rules', () => {
     expect(ids(await inspect(split, 1440, 700))).not.toContain('one-sided-bleed');
   });
 
+  it('trailing-void: a dashboard whose table stops 300px above the bottom asks, past a full-height sidebar; a filled screen does not', async () => {
+    const rows = (n) => Array.from({ length: n }, (_, i) => `<div style="display:flex;gap:24px;padding:14px 0;border-bottom:1px solid #ddd">${P(`#48${i} Ingrid Solheim`, 'font-size:14px')}${P('Ash-glaze mug set', 'font-size:14px')}</div>`).join('');
+    const screen = (n) => doc(`<div style="display:flex;width:1440px;height:900px"><aside style="width:240px;height:900px;background:#222;display:flex;flex-direction:column;justify-content:space-between;padding:24px;box-sizing:border-box">${P('Haru', 'color:#fff')}${P('Mina Okafor', 'color:#fff')}</aside><main style="flex:1;padding:40px">${H('Overview', 'font-size:40px')}${rows(n)}</main></div>`);
+    const r = await inspect(screen(5), 1440, 900);
+    expect(ids(r)).toContain('trailing-void');
+    expect(r.findings.find((f) => f.rule_id === 'trailing-void').level).toBe('check');
+    expect(ids(await inspect(screen(14), 1440, 900))).not.toContain('trailing-void');
+  });
+
+  it('hollow-column: a half-width heading column beside a 700px list asks; a third-width label column, balanced columns and a full-height picture do not', async () => {
+    const steps = (n, label = 'Step') => Array.from({ length: n }, (_, i) => `<div style="height:116px;box-sizing:border-box;padding-top:20px;border-bottom:1px solid #ddd">${P(`${label} ${i + 1}: ${['Brief', 'Sketch', 'Prototype', 'Review', 'Build', 'Ship'][i % 6]}`, 'font-size:22px')}</div>`).join('');
+    const intro = `${H('Process intro', 'font-size:48px;line-height:1.1')}${P(BODY, 'margin-top:24px')}`;
+    const row = (leftWidth, left, right) => doc(`<section style="padding:96px 120px"><div style="display:flex;gap:48px"><div style="width:${leftWidth}%">${left}</div><div style="flex:1">${right}</div></div></section>`);
+    const r = await inspect(row(50, intro, steps(6)), 1440, 900);
+    expect(ids(r)).toContain('hollow-column');
+    const hit = r.findings.find((f) => f.rule_id === 'hollow-column');
+    expect(hit.level).toBe('check');
+    expect(hit.measured).toMatch(/Process intro.* ends \d+px above .* beside it \(column 50% of the row\)/);
+    expect(ids(await inspect(row(30, intro, steps(6)), 1440, 900))).not.toContain('hollow-column');
+    expect(ids(await inspect(row(50, `${intro}${steps(4, 'Phase')}`, steps(5)), 1440, 900))).not.toContain('hollow-column');
+    const picture = '<div style="height:696px;background-image:linear-gradient(#e0a070,#7a3a1c)"></div>';
+    expect(ids(await inspect(row(50, steps(6), picture), 1440, 900))).not.toContain('hollow-column');
+  });
+
+  it('dead-band: a dark section whose content ends 320px above its bottom asks; an evenly padded one, and a section on the ground colour, do not', async () => {
+    const next = '<section style="padding:0 120px"><div style="height:400px;background:#e8e4dc"></div></section>';
+    const band = (fill, bottom, ground = '') => doc(`<section style="${fill}padding:96px 120px ${bottom}px;color:#fff">${H('Tracklist', 'font-size:48px')}${P(BODY, 'margin-top:16px;max-width:600px')}</section>${next}`, ground);
+    const r = await inspect(band('background:#14171f;', 320), 1440, 1000);
+    expect(ids(r)).toContain('dead-band');
+    const hit = r.findings.find((f) => f.rule_id === 'dead-band');
+    expect(hit.level).toBe('check');
+    expect(hit.measured).toMatch(/Tracklist.* has 3\d\dpx of empty fill below its content, \d+px above/);
+    expect(ids(await inspect(band('background:#14171f;', 96), 1440, 1000))).not.toContain('dead-band');
+    expect(ids(await inspect(band('', 320, 'background:#f6f3ee;'), 1440, 1000))).not.toContain('dead-band');
+    expect(ids(await inspect(band('background:#f6f3ee;', 320, 'background:#f6f3ee;'), 1440, 1000))).not.toContain('dead-band');
+  });
+
   it('blank-gap: 240px of nothing between two blocks trips it; trailing space and an image band do not', async () => {
     const block = (extra = '') => `<div style="margin:0 120px;height:200px;background:#cde;${extra}"></div>`;
     const gap = doc(`<div style="padding-top:60px">${block()}<div style="height:300px"></div>${block()}</div>`);

@@ -1,6 +1,80 @@
 import { describe, expect, it } from 'vitest';
 import { ModelError } from '../model/types';
-import { SHADER_DEFS, SHADER_KINDS, applyShaderPatch, colorProblem, colorVarNames, convertShader, defaultColors, normalizeShader, readShaderSpec } from './spec';
+import { IMAGE_KINDS, SHADER_DEFS, SHADER_KINDS, acceptsImage, applyShaderPatch, cloneShader, colorProblem, colorVarNames, convertShader, defaultColors, isShaderImageRef, normalizeShader, readShaderSpec, sameShader } from './spec';
+
+const IMAGE = `asset://${'ab12'.repeat(16)}`;
+
+function refusal(fn: () => unknown): string {
+  try {
+    fn();
+  } catch (e) {
+    expect(e).toBeInstanceOf(ModelError);
+    return (e as Error).message;
+  }
+  throw new Error('did not throw');
+}
+
+describe('shader picture', () => {
+  it('is accepted by halftone and dither only, as asset://<64 hex>', () => {
+    expect(IMAGE_KINDS).toEqual(['halftone', 'dither']);
+    for (const kind of SHADER_KINDS) expect(acceptsImage(kind)).toBe(kind === 'halftone' || kind === 'dither');
+    for (const kind of IMAGE_KINDS) expect(normalizeShader({ kind, image: IMAGE }).image).toBe(IMAGE);
+    expect(normalizeShader({ kind: 'halftone', image: `  ${IMAGE}  ` }).image).toBe(IMAGE);
+    for (const kind of SHADER_KINDS) expect('image' in normalizeShader({ kind }), kind).toBe(false);
+    expect(isShaderImageRef(IMAGE)).toBe(true);
+  });
+
+  it('refuses the other kinds, and says which kinds and what to do instead', () => {
+    for (const kind of ['grain-gradient', 'mesh-gradient', 'grain'] as const) {
+      expect(refusal(() => normalizeShader({ kind, image: IMAGE })), kind).toMatch(/only halftone and dither shaders can print a picture.*create_shader_layer/);
+    }
+  });
+
+  it('refuses a reference that is not a stored asset, naming the form and the tools that make one', () => {
+    for (const bad of ['https://example.com/a.png', 'asset://abc', 'asset://' + 'Z'.repeat(64), 'data:image/png;base64,AAAA', 'photo.png', 42, {}]) {
+      expect(refusal(() => normalizeShader({ kind: 'halftone', image: bad })), String(bad)).toMatch(/"image" must be a stored asset like "asset:\/\/<64 hex characters>".*list_assets.*generate_image/s);
+    }
+  });
+
+  it('points an image given as a parameter to the top-level field', () => {
+    expect(refusal(() => normalizeShader({ kind: 'halftone', params: { image: IMAGE } }))).toMatch(/"image" is not a parameter: pass it next to "params"/);
+    expect(refusal(() => normalizeShader({ kind: 'grain', params: { image: IMAGE } }))).toMatch(/grain cannot print a picture/);
+  });
+
+  it('patches: kept when omitted, replaced, cleared by null or "", and dropped by a kind that cannot print it', () => {
+    const base = normalizeShader({ kind: 'halftone', image: IMAGE, params: { cell: 20 } });
+    expect(normalizeShader({ params: { angle: 10 } }, 'shader', base).image).toBe(IMAGE);
+    const other = `asset://${'cd34'.repeat(16)}`;
+    expect(normalizeShader({ image: other }, 'shader', base).image).toBe(other);
+    expect(normalizeShader({ image: null }, 'shader', base).image).toBeUndefined();
+    expect(normalizeShader({ image: '' }, 'shader', base).image).toBeUndefined();
+    expect(applyShaderPatch(base, { kind: 'dither' }).image).toBe(IMAGE);
+    expect(applyShaderPatch(base, { kind: 'grain-gradient' }).image).toBeUndefined();
+    expect(refusal(() => applyShaderPatch(base, { kind: 'grain', image: IMAGE }))).toMatch(/only halftone and dither/);
+    expect(convertShader(base, 'dither').image).toBe(IMAGE);
+  });
+
+  it('is part of the spec: stored, cloned and compared', () => {
+    const spec = normalizeShader({ kind: 'dither', image: IMAGE });
+    expect(readShaderSpec(JSON.parse(JSON.stringify(spec)))?.image).toBe(IMAGE);
+    expect(cloneShader(spec)).toEqual(spec);
+    expect(sameShader(spec, normalizeShader({ kind: 'dither' }))).toBe(false);
+    expect(sameShader(spec, cloneShader(spec))).toBe(true);
+    expect(readShaderSpec({ kind: 'halftone', image: 'https://example.com/a.png' })).toBeNull();
+  });
+
+  it('adds the focal point only where a picture can be printed, and marks which parameters it replaces', () => {
+    for (const kind of SHADER_KINDS) {
+      const keys = SHADER_DEFS[kind].params.map((p) => p.key);
+      expect(keys.includes('focus_x') && keys.includes('focus_y'), kind).toBe(acceptsImage(kind));
+      for (const p of SHADER_DEFS[kind].params) if (p.when) expect(acceptsImage(kind), `${kind}.${p.key}`).toBe(true);
+    }
+    const halftone = SHADER_DEFS.halftone.params;
+    expect(halftone.filter((p) => p.when === 'image').map((p) => p.key)).toEqual(['focus_x', 'focus_y']);
+    expect(halftone.filter((p) => p.when === 'generated').map((p) => p.key)).toEqual(['field', 'scale', 'direction', 'warp', 'speed', 'seed']);
+    expect(SHADER_DEFS.dither.params.find((p) => p.key === 'invert')).toMatchObject({ type: 'boolean', default: false });
+  });
+});
 
 describe('normalizeShader', () => {
   it('fills defaults for every kind', () => {

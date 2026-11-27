@@ -113,8 +113,10 @@ describe('guide topics', () => {
     // the ds-hand-built check points to; agents fetch it only for design-system work.
     // design-guide: the property-to-tool table moved to its own topic, tool-map (fetched on demand), so the guide every agent reads first
     // shrank by about 480 words while it gained the register, weight and ground rules; its cap came down with it. tool-map grows by a row
-    // per new tool family (shader layers added one).
-    const budget: Record<string, number> = { 'design-guide': 5500, 'motion-guide': 2900, 'slides-guide': 1900, 'video-guide': 2300, 'theme-guide': 1470, 'design-system-guide': 1950, 'product-guide': 1750, 'tool-map': 1200 };
+    // per new tool family (shader layers added one). The canvas, pages, links and design-to-code sections moved to canvas-guide (fetched
+    // before a second screen), so the guide every agent reads first dropped to about 4,700 words: shorter for the models that follow long
+    // instructions less well, and its cap came down to 4,800.
+    const budget: Record<string, number> = { 'design-guide': 4800, 'motion-guide': 2900, 'slides-guide': 1900, 'video-guide': 2300, 'theme-guide': 1470, 'design-system-guide': 1950, 'product-guide': 1750, 'tool-map': 1200, 'canvas-guide': 1100 };
     for (const [topic, max] of Object.entries(budget)) expect(words(readGuide(topic)), topic).toBeLessThanOrEqual(max);
     expect(words(SERVER_INSTRUCTIONS)).toBeLessThanOrEqual(1250);
   });

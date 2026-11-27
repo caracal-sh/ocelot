@@ -40,7 +40,7 @@ You MUST read the guide before your first design or edit: get_guide({ topic: "de
 - Style with inline style attributes only (no <style>, classes or scripts); interactive states, keyframes and code layers have their own tools. The canvas applies a reset like Tailwind's preflight, so set sizes, weights and spacing explicitly.`
 
 export const GUIDE_TOPICS = [
-  { topic: 'design-guide', summary: 'Read first. Review checkpoints and two bounded critique rounds, direction and taste (ground in the subject, mode and register, direction check, defaults to question, type and weight, color and surfaces, composition, copy), mood word, the ground and scene pairings, contrast, the brief and the task-specific system it becomes before the first write (own theme, stock theme or design system), incremental writing, reuse (components built once and placed as instances, make_component / place_instance), Ocelot HTML rules, the common tools, organizing the canvas, pages and page kinds, prototypes and links.' },
+  { topic: 'design-guide', summary: 'Read first. Review checkpoints and two bounded critique rounds, direction and taste (ground in the subject, mode and register, direction check, defaults to question, type and weight, color and surfaces, composition, pictures of the subject, copy), mood word, the ground and scene pairings, contrast, the brief and the task-specific system it becomes before the first write (own theme, stock theme or design system), incremental writing, reuse (components built once and placed as instances, make_component / place_instance), Ocelot HTML rules, the common tools; several screens, pages, links and code are in canvas-guide.' },
   { topic: 'motion-guide', summary: 'Animation and 3D: when to animate, mechanism (states, keyframes, code layers), exact easings and durations, reduced motion, GSAP, Motion and three.js practices, seekable code rules, reviewing motion.' },
   { topic: 'mobile-status-bar', summary: 'Paste-ready status bar markup for mobile artboards.' },
   { topic: 'image-guide', summary: 'AI images and textures: generate vs SVG vs a shader layer, prompt structure (subject, style, composition, lighting, palette from tokens), text limits, aspect ratios per placement, transparent cutouts, consistency with references, checking and exporting, when a texture (grain gradient, mesh gradient, halftone, dither, film grain) serves the brief.' },
@@ -50,6 +50,7 @@ export const GUIDE_TOPICS = [
   { topic: 'design-system-guide', summary: 'Design systems (shadcn tokens plus real components): when to use one instead of a theme, create_design_system knobs and the eight styles, building screens with insert_component and <ds-*>, which component for which job, drawing behaviour (toast stacks, drawers, command menus, menus, dialogs, changing numbers), login and signup pages from insert_block, semantic tokens only (var(--primary)), changing tokens and geometry, light and dark artboards, contrast, export_design_system.' },
   { topic: 'product-guide', summary: 'Product screens and states (Operate mode): the job of a screen, decision-first dashboards and tables, the four different states (first use, no results, error, no access) plus loading, onboarding, paywall and upgrade, settings and billing consistency, one label per action, pass / fail / unverified handoff.' },
   { topic: 'tool-map', summary: 'Every property and action a person can reach and the tool for it: styles, fills, text, layers, shapes, code layers, components, artboards, themes, design systems, links, motion, slides, video, export, undo, the app and its windows, preferences, the sidebar chat, Preview, the viewport, clipboard, images.' },
+  { topic: 'canvas-guide', summary: 'Several screens: organizing the canvas (rows per flow, "Flow / Step — Device" names, arrange_artboards), pages and page kinds, prototype links between screens (required when they belong together, real <a>, get_links), design to code (exact values, get_handoff).' },
 ] as const;
 
 /** Returns a guide's text, or throws a tool error listing the valid topics. */
@@ -149,14 +150,17 @@ get_screenshot lists findings (inspect_design lists all). Fix every Fix (a frame
 
 ### Color proportions and surfaces
 - One color owns most of the surface (the ground), one supports, and the accent stays under a tenth of the pixels: the single action, a state, one detail; navigation and chrome stay neutral. A second accent only for real categories, data series or states, or a Playful brief, from the same scene. Color can live in the pictures instead.
-- Text takes three inks of one hue: primary about 16:1 (a near-black or near-white tinted toward the ground, never #000 on #fff), secondary about 7:1, tertiary about 4.5:1 for meta only. Ink does the emphasis a styled word would: a second clause in the secondary ink reads as a pause.
+- Text takes three inks of one hue: primary about 16:1 (a near-black or near-white tinted toward the ground, never #000 on #fff), secondary about 7:1, tertiary about 4.5:1 for meta only. Ink does the emphasis a styled word would: a second clause in the secondary ink reads as a pause. Text someone must read (a price note, a legend, a caption) is 13px or more in the secondary ink, and body copy never takes a light weight in a muted ink.
 - Radius is a system: controls 6-8px, cards 10-16px (24-28px on generous pages), a pill only for the primary action and chips; or square throughout for editorial work and tools. Nested: outer radius = inner radius + the padding between them.
 
 ### Composition and the first viewport
-- The first viewport has one dominant thing, ideally a picture, object or cropped interface (a word only when the brief is typographic), and a real button: nav, headline, one line of support, one or two buttons, nothing else.
+- The first viewport has one dominant thing, ideally a picture, object or cropped interface (a word only when the brief is typographic), and a real button: nav, headline, one line of support, one or two buttons, nothing else. The nav sits on the ground above the picture; over a picture only where the picture is calm and dark or light enough for its text.
+- A recognisable object with many parts (a bicycle, a watch movement, a person, an animal, a building) is a generated picture (generate_image), never an SVG drawn by hand: hand-drawn, it comes out with parts in the wrong places. SVG is for icons, marks, charts, maps and a dozen simple shapes. A drawn object sits whole inside its panel, never cut by the page edge; only a photograph crops.
 - Follow the left edge of every text block down the page: two or three x positions reused on purpose; six means placed one at a time.
 - Name each section's layout in one word (split, list, full-bleed, grid, statement). The same word twice in a row, or three times on a page, is the template showing.
 - Persuade screens carry few, large things: a 900px slice of page holds about 40 words in five text blocks. Side margins are 8-10% of the width (120-144px at 1440): empty ground is the calm, not dead space.
+- A heading beside a long list takes a column of a third or less, or sits above the list, so neither column ends in a large empty block; a filled band has the same space below its content as above it.
+- A fixed-height screen (an app screen, a dashboard) is filled: when its table or list ends early, give it more real rows, a second panel, or a shorter artboard; never a band of empty ground under the last row.
 
 ### Realistic content and copy
 Write the page as plain text before the markup: claims with proof, one per section; a section without a claim is cut. Buttons say what happens ("Book a tasting", "Save changes"), never "Submit" or "Learn more"; an action keeps its name through the flow ("Publish" then "Published"). Sentence case, active voice. Errors say what happened and how to fix it; empty states invite the next action. Use plausible names, prices, dates and sentences of varied length, never "Lorem ipsum", "Item 1" or "John Doe". Never invent customers, logos, awards or statistics; a number needs a source in the brief or is labelled illustrative. Do not name real competing products or design tools in the placeholder copy.
@@ -168,7 +172,7 @@ When the user asks for options, or the brief is truly open: make up to three low
 
 Before choosing a single hex value, choose a mood word: a physical condition or register, not an adjective like "modern" or "clean" (tidal, chalky, signage, hypertext, alpine, workshop, nocturnal, gallery, chapel, highlighter). List four candidates, mix obvious and unexpected ones, and take one that is NOT your first instinct: first instincts land on the same few palettes every time.
 
-Then imagine a concrete scene for that word (a specific place at a specific hour, with its own light, surfaces and things lying around) and derive every color from a named object in that scene. One intense color moment beats five. If you cannot name the object a color comes from, drop the color.
+Then imagine a concrete scene for that word (a specific place at a specific hour, with its own light, surfaces and things lying around) and derive every color from a named object in that scene. One intense color moment beats five. If you cannot name the object a color comes from, drop the color. The accent must also fit the client's register: a law firm, a bank or a hospital takes a sober accent from its scene (signal red, brass, navy), never a fashion magenta or a toy color.
 
 Palette shape: ground, surface, ink, muted ink, one primary accent, optionally one secondary. 5-6 hex values with roles, written into the brief.
 
@@ -233,7 +237,7 @@ get_document_info, then get_design_tokens (when a design exists), get_selection 
 ## 10. Writing new designs
 
 1. The brief and its system (section 7), with list_fonts for families that exist.
-2. create_artboard: desktop 1440×900, tablet 768×1024, mobile 375×812 (add the status bar from get_guide "mobile-status-bar"), or the size the user gave. Name it "Flow / Step — Device" (see Organizing the canvas). set_document_name if the document is still "Untitled". A new document starts with one empty artboard: reuse it for your first design (rename and resize it with update_artboard) and never leave an empty artboard behind.
+2. create_artboard: desktop 1440×900, tablet 768×1024, mobile 375×812 (add the status bar from get_guide "mobile-status-bar"), or the size the user gave. Name it "Flow / Step — Device" (canvas-guide). set_document_name if the document is still "Untitled". A new document starts with one empty artboard: reuse it for your first design (rename and resize it with update_artboard) and never leave an empty artboard behind.
 3. begin_edit on the artboard, in the same turn as set_document_name, update_artboard and update_styles on it (display flex, column, background); then the first write_html.
 4. write_html incrementally, one group per call in reading order, with data-name on every meaningful layer.
 5. Screenshot every 2-3 groups and fix; update_artboard height "fit-content" at the end.
@@ -268,46 +272,11 @@ Everything a person can change in the editor can be changed with a tool. Always 
 
 Layer locks: the edit tools refuse a layer the user locked, or anything inside it, and name it. Leave it alone unless the user asked for that change; then set_locked false, edit, set_locked true.
 
-## 15. Design to code
+## 15. Several screens, pages, links, code
 
-Take exact values from get_computed_styles, get_node, export_html and export_react (React + Tailwind v4), never from screenshots; screenshots are for visual review only. A document with a theme exports its tokens as a Tailwind v4 @theme block / CSS variables.
+Before a second artboard, a new page, links between screens, or implementing the design in code, read get_guide({ topic: "canvas-guide" }): rows and names on the canvas, pages, prototype links (required for screens that belong together) and exact values for code.
 
-Asked to implement the design? Call get_handoff({ files: "code" }) first (screens, flows, design system, code and registry inline), then get_screenshot per screen, install the registry with shadcn, adapt code/, get_links. Never save_export or export_design_system for a handoff: they open a save dialog.
-
-## 16. Organizing the canvas
-
-A canvas is read like a page: rows top to bottom, steps left to right. Keep it that way from the first artboard.
-
-- One row per flow (Onboarding, Checkout, Settings). When a design has no flows, one row per device class (Desktop, Tablet, Mobile).
-- Columns are steps in user-journey order. The same screen in another device sits in the same column, directly below or above its sibling.
-- Name artboards "Flow / Step — Device": "Onboarding / Welcome — Desktop", "Onboarding / Welcome — Mobile", "Onboarding / Sign up — Desktop". "Checkout 2 — Mobile" and "Home (mobile)" also work. Numbers in names fix the order of steps ("Onboarding / 2 Sign up"). Without a flow, rows come from the artboard width: desktop 1024 and up, tablet 600-1023, mobile below 600.
-- create_artboard without x/y already puts a new artboard at the end of its row (or a new row below). Use after to insert a step in the middle (later ones shift right) and group to join a named row. Never invent x/y yourself.
-- When you have created several artboards, or added a device variant, call arrange_artboards (no arguments). It aligns steps into shared columns, puts the layers panel in reading order and answers with the inferred rows in "how". Use dry_run to preview, rows [{name, artboard_ids}] when the inference is wrong, artboard_ids to tidy only part of the canvas. Locked artboards stay where they are.
-
-## 17. Pages
-
-A page is a separate canvas inside the document: its own artboards, arranged on their own. Use pages to group by platform or major area, not one per screen: "Desktop", "Mobile", "Brand", "Marketing site", "Design system". Screens of one flow stay together as a row of artboards on one page (see Organizing the canvas); a new flow is a new row, not a new page.
-
-- Orient with list_pages (or get_document_info).
-- Start a new area with create_page({ name }), then create_artboard({ page_id, ... }). create_artboard without page_id uses the page you last worked on in this session, else the page the user is viewing. Pass page_id whenever more than one page could be meant.
-- A page has a kind: "canvas" (default, free artboards), "deck" (its artboards are slides) or "video" (its artboards are scenes). Make a deck or a video with create_page({ name, kind }) and read "slides-guide" or "video-guide" first; do not use a canvas page for either.
-- Working on a page the user is not viewing never moves their view. Screenshots, measurements (fit-content, content_height) and computed styles work on every page. Present the result with set_current_page (a page) or focus_nodes (layers; it switches pages for you).
-- arrange_artboards tidies ONE page (page_id, else the page you last worked on); other pages stay as they are.
-- duplicate_page copies a page with its artboards (id_map) for a variant: dark mode, another locale, a mobile pass. update_page renames and reorders.
-- move_artboards moves whole artboards between pages (ids and content stay). delete_page removes a page AND its artboards: move what should survive first, ask the user, then pass confirm: true. The last page cannot be deleted.
-
-## 18. Prototypes and links
-
-Whenever you build two or more screens that belong together (a website's pages such as Home, Pricing and About, a flow's steps, an app's tabs), link them before you finish, without being asked, so the user can click through them in Preview instead of reading a description of the flow. Mobile and desktop versions are linked within their own device. Screens that do not belong together (unrelated designs, alternative directions, a moodboard) stay unlinked.
-
-- Link the layers people would click: nav items, buttons, cards, logos, "Back" arrows. set_link({ node_ids, link: { artboard_id } }) opens that screen (also on another page); { url } opens a website (http, https or mailto only); link: null removes it. Artboards cannot carry a link, a layer inside them does. A shared nav (component): link the main's items; set_link inside one instance links only that copy.
-- Use a real <a> for navigation: nav items, text links and linked cards should carry the <a> tag, so they export as real links. Each link needs its own layer, but a container that holds only inline tags (<a>, <span>, <b>) merges into ONE text layer, so write nav items as <div data-name="Nav / Pricing">Pricing</div> inside a flex row, then set_tag them to "a" and set_link (a card or button frame can be an <a> too, with its children). Give each linked layer a clear name ("Nav / Pricing").
-- Make both directions work: every screen needs a way back (logo or nav to Home) and forward (the primary button to the next step). Nav on every screen links to the other top-level screens.
-- External links are for references (docs, a live site, mailto:), never for moving between your own screens.
-- After linking, call get_links: it shows the click-through graph, broken links (a deleted screen) and screens nothing leads to. Fix every broken link with set_link or link: null.
-- When the screens are linked, say so in your final reply in a few words ("Click through it in Preview"); call start_presentation ONLY when the user asks to try, present or click through the design. It takes over what they see, so never use it while you are still working. stop_presentation ends it. Your edits keep rendering live during the preview.
-
-## 19. When you are done
+## 16. When you are done
 
 end_edit releases the lock and closes the undo step. Before it, take one final get_screenshot of what you changed. Tell the user what you made or changed in plain language, by layer name, never by id, in at most 60 words: no palette, font or section recap, the person can see the canvas. Use focus_nodes when the user should look at a specific part.
 `;
@@ -603,7 +572,7 @@ Stored images export with the design: HTML references ./assets/<id>.<ext>, React
 
 ## 8. Textures: shader layers
 
-Textures serve a brief's material (print, film, paper, screen) as a ground or an overlay; they never replace the picture of the subject, are never default decoration, and one texture per page is the most. Use one only when the brief names its material. create_shader_layer (get_shader_kinds lists every parameter): grain-gradient gives a poster or hero ground with a printed edge; mesh-gradient a clean, soft ground; halftone editorial or print plates (a "transparent" paper colour lays it over a photo); dither retro-technical or zine work; grain goes last, over photos or fills, with blend_mode overlay or soft-light (invisible over pure white or black). Colours come from the theme tokens (var(--theme-color-accent)), never a stock blue-pink gradient. Tune with update_shader. If the page reads the same without it, delete it.
+Textures serve a brief's material (print, film, paper, screen) as a ground or an overlay; they never replace the picture of the subject, are never default decoration, and one texture per page is the most. Use one only when the brief names its material. create_shader_layer (get_shader_kinds lists every parameter): grain-gradient gives a poster or hero ground with a printed edge; mesh-gradient a clean, soft ground; halftone editorial or print plates; dither retro-technical or zine work; grain goes last, over photos or fills, with blend_mode overlay or soft-light (invisible over pure white or black). Halftone and dither can print a stored photo: pass image (an asset id from list_assets, or an image layer's id); it crops to fill (focus_x, focus_y), contrast and invert tune the print. Colours come from the theme tokens (var(--theme-color-accent)), never a stock blue-pink gradient. Tune with update_shader. If the page reads the same without it, delete it.
 `;
 
 const SLIDES_GUIDE = `# Ocelot slides guide
@@ -1034,6 +1003,50 @@ Every property and action a person can reach in the editor, and the tool that ch
 | Design system crisp text; theme revert; restart a code layer | update_design_system { antialiased }; apply_theme { theme_id: "previous" }; set_code { reload } |
 `;
 
+const CANVAS_GUIDE = `# Ocelot canvas guide: several screens, pages, links and code
+
+Read this before a second artboard, a new page, links between screens, or implementing the design in code.
+
+## 1. Organizing the canvas
+
+A canvas is read like a page: rows top to bottom, steps left to right. Keep it that way from the first artboard.
+
+- One row per flow (Onboarding, Checkout, Settings). When a design has no flows, one row per device class (Desktop, Tablet, Mobile).
+- Columns are steps in user-journey order. The same screen in another device sits in the same column, directly below or above its sibling.
+- Name artboards "Flow / Step — Device": "Onboarding / Welcome — Desktop", "Onboarding / Welcome — Mobile", "Onboarding / Sign up — Desktop". "Checkout 2 — Mobile" and "Home (mobile)" also work. Numbers in names fix the order of steps ("Onboarding / 2 Sign up"). Without a flow, rows come from the artboard width: desktop 1024 and up, tablet 600-1023, mobile below 600.
+- create_artboard without x/y already puts a new artboard at the end of its row (or a new row below). Use after to insert a step in the middle (later ones shift right) and group to join a named row. Never invent x/y yourself.
+- When you have created several artboards, or added a device variant, call arrange_artboards (no arguments). It aligns steps into shared columns, puts the layers panel in reading order and answers with the inferred rows in "how". Use dry_run to preview, rows [{name, artboard_ids}] when the inference is wrong, artboard_ids to tidy only part of the canvas. Locked artboards stay where they are.
+
+## 2. Pages
+
+A page is a separate canvas inside the document: its own artboards, arranged on their own. Use pages to group by platform or major area, not one per screen: "Desktop", "Mobile", "Brand", "Marketing site", "Design system". Screens of one flow stay together as a row of artboards on one page (see Organizing the canvas); a new flow is a new row, not a new page.
+
+- Orient with list_pages (or get_document_info).
+- Start a new area with create_page({ name }), then create_artboard({ page_id, ... }). create_artboard without page_id uses the page you last worked on in this session, else the page the user is viewing. Pass page_id whenever more than one page could be meant.
+- A page has a kind: "canvas" (default, free artboards), "deck" (its artboards are slides) or "video" (its artboards are scenes). Make a deck or a video with create_page({ name, kind }) and read "slides-guide" or "video-guide" first; do not use a canvas page for either.
+- Working on a page the user is not viewing never moves their view. Screenshots, measurements (fit-content, content_height) and computed styles work on every page. Present the result with set_current_page (a page) or focus_nodes (layers; it switches pages for you).
+- arrange_artboards tidies ONE page (page_id, else the page you last worked on); other pages stay as they are.
+- duplicate_page copies a page with its artboards (id_map) for a variant: dark mode, another locale, a mobile pass. update_page renames and reorders.
+- move_artboards moves whole artboards between pages (ids and content stay). delete_page removes a page AND its artboards: move what should survive first, ask the user, then pass confirm: true. The last page cannot be deleted.
+
+## 3. Prototypes and links
+
+Whenever you build two or more screens that belong together (a website's pages such as Home, Pricing and About, a flow's steps, an app's tabs), link them before you finish, without being asked, so the user can click through them in Preview instead of reading a description of the flow. Mobile and desktop versions are linked within their own device. Screens that do not belong together (unrelated designs, alternative directions, a moodboard) stay unlinked.
+
+- Link the layers people would click: nav items, buttons, cards, logos, "Back" arrows. set_link({ node_ids, link: { artboard_id } }) opens that screen (also on another page); { url } opens a website (http, https or mailto only); link: null removes it. Artboards cannot carry a link, a layer inside them does. A shared nav (component): link the main's items; set_link inside one instance links only that copy.
+- Use a real <a> for navigation: nav items, text links and linked cards should carry the <a> tag, so they export as real links. Each link needs its own layer, but a container that holds only inline tags (<a>, <span>, <b>) merges into ONE text layer, so write nav items as <div data-name="Nav / Pricing">Pricing</div> inside a flex row, then set_tag them to "a" and set_link (a card or button frame can be an <a> too, with its children). Give each linked layer a clear name ("Nav / Pricing").
+- Make both directions work: every screen needs a way back (logo or nav to Home) and forward (the primary button to the next step). Nav on every screen links to the other top-level screens.
+- External links are for references (docs, a live site, mailto:), never for moving between your own screens.
+- After linking, call get_links: it shows the click-through graph, broken links (a deleted screen) and screens nothing leads to. Fix every broken link with set_link or link: null.
+- When the screens are linked, say so in your final reply in a few words ("Click through it in Preview"); call start_presentation ONLY when the user asks to try, present or click through the design. It takes over what they see, so never use it while you are still working. stop_presentation ends it. Your edits keep rendering live during the preview.
+
+## 4. Design to code
+
+Take exact values from get_computed_styles, get_node, export_html and export_react (React + Tailwind v4), never from screenshots; screenshots are for visual review only. A document with a theme exports its tokens as a Tailwind v4 @theme block / CSS variables.
+
+Asked to implement the design? Call get_handoff({ files: "code" }) first (screens, flows, design system, code and registry inline), then get_screenshot per screen, install the registry with shadcn, adapt code/, get_links. Never save_export or export_design_system for a handoff: they open a save dialog.
+`;
+
 const GUIDE_BODIES: Record<string, string> = {
   'design-guide': DESIGN_GUIDE,
   'motion-guide': MOTION_GUIDE,
@@ -1045,4 +1058,5 @@ const GUIDE_BODIES: Record<string, string> = {
   'design-system-guide': DESIGN_SYSTEM_GUIDE,
   'product-guide': PRODUCT_GUIDE,
   'tool-map': TOOL_MAP_GUIDE,
+  'canvas-guide': CANVAS_GUIDE,
 };

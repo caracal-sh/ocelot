@@ -15,6 +15,7 @@ import type {
 } from '../bridge/schema.gen';
 import { editorEndpoint, type Host } from '../host/host';
 import { ImageJobs } from './jobs';
+import { ShaderPictures } from '../shader/pictures';
 import { base64ToBytes, bytesToBase64 } from './sniff';
 
 /** 1×1 transparent GIF shown until an asset's bytes arrive. */
@@ -51,6 +52,8 @@ function revokeUrl(url: string): void {
 export class AssetService {
   /** Background image jobs of the agents (see jobs.ts). */
   readonly jobs = new ImageJobs();
+  /** The pictures shader layers print, as `data:` URLs (the canvas frames, screenshots and the HTML/React exports read them from here). */
+  readonly pictures = new ShaderPictures(this);
   #host: Host | null = null;
   #records = new Map<string, AssetRecord>();
   #urls = new Map<string, string>();
@@ -168,6 +171,7 @@ export class AssetService {
     this.#urls.clear();
     this.#loading.clear();
     this.#records = new Map();
+    this.pictures.prune();
     this.#emitChanged();
     if (this.#host) await this.refresh().catch(() => {});
   }

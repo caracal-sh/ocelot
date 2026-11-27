@@ -65,7 +65,7 @@ export function nodeLine(n: NodeData, doc?: OcelotDocument): string {
   if (n.frame) bits.push(`${n.frame.width}×${n.frame.height} at (${n.frame.x}, ${n.frame.y})`);
   if (preview) bits.push(preview);
   if (n.type === 'image' && n.attrs.src) bits.push(`src ${clip(n.attrs.src, 40)}`);
-  if (n.type === 'code' && n.code?.shader) bits.push(`shader ${n.code.shader.kind}${n.code.shader.colors.length ? ` ${n.code.shader.colors.join(' ')}` : ''}`);
+  if (n.type === 'code' && n.code?.shader) bits.push(`shader ${n.code.shader.kind}${n.code.shader.colors.length ? ` ${n.code.shader.colors.join(' ')}` : ''}${n.code.shader.image ? ` over ${clip(n.code.shader.image, 18)}` : ''}`);
   else if (n.type === 'code' && n.code) bits.push(`code (${n.code.source.split('\n').length} lines${n.code.libraries.length ? `; ${n.code.libraries.join(', ')}` : ''})`);
   const s = summarizeStyles(n.styles);
   if (s) bits.push(`· ${s}`);

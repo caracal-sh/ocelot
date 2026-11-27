@@ -218,8 +218,8 @@ final class AuthGateway {
         try FileManager.default.createDirectory(at: home, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
         GatewayClientFiles.removeStale(in: home)
         try await flush()
+        port = try Http.freePort(preferring: port) // a restarted gateway keeps its address: running agents were configured with it
         let brokerPort = try Http.freePort()
-        port = try Http.freePort()
         let brokerURL = "http://127.0.0.1:\(brokerPort)"
 
         guard let tokenOutput = await cli.capture(["auth-broker", "token", "--json"], timeout: 30), tokenOutput.status == 0,
@@ -314,14 +314,30 @@ final class AuthGateway {
         try await write.value
     }
 
+    /// Waits until the gateway answers `token`. A gateway that is restarting is waited for (its new process reads the
+    /// clients file when it starts); the error says what went wrong: the token stayed unknown, or the gateway did not answer.
     private func waitAdmitted(_ token: String) async throws {
         let deadline = Date().addingTimeInterval(40) // the gateway re-reads its clients file every 10 s
-        guard let url = URL(string: "\(baseURL)/v1/models") else { return }
+        var last = "did not answer"
         while Date() < deadline {
-            if let (status, _) = await Http.get(url, bearer: token, timeout: 3), status == 200 { return }
+            switch state {
+            case .failed(let message): throw BridgeFailure(.hostUnavailable, message)
+            case .running:
+                if let url = URL(string: "\(baseURL)/v1/models"), let (status, _) = await Http.get(url, bearer: token, timeout: 3) {
+                    if status == 200 { return }
+                    last = "answered \(status)"
+                } else {
+                    last = "did not answer"
+                }
+            default:
+                last = "was restarting"
+            }
             try await Task.sleep(for: .milliseconds(500))
         }
-        throw BridgeFailure(.hostUnavailable, "The agent gateway did not admit the new agent token. Try again in a moment.")
+        if last == "answered 401" || last == "answered 403" {
+            throw BridgeFailure(.hostUnavailable, "The agent gateway did not admit the new agent token within 40 s. Try again in a moment.")
+        }
+        throw BridgeFailure(.hostUnavailable, "The agent gateway \(last) for 40 s. Try again in a moment; if it repeats, run \"omp auth-gateway status\" in a terminal.")
     }
 
     nonisolated private static func randomHex(_ bytes: Int) -> String {
@@ -473,8 +489,14 @@ enum Http {
         return (http.statusCode, data)
     }
 
-    /// A free loopback port. Small race between close and the child's bind; the supervisor retries.
-    static func freePort() throws -> Int {
+    /// A free loopback port: `preferring` when it can be bound (a restarted gateway keeps its address), else any.
+    /// Small race between close and the child's bind; the supervisor retries.
+    static func freePort(preferring preferred: Int = 0) throws -> Int {
+        if preferred > 0, let port = try? bindLoopback(preferred) { return port }
+        return try bindLoopback(0)
+    }
+
+    private static func bindLoopback(_ requested: Int) throws -> Int {
         let fd = socket(AF_INET, SOCK_STREAM, 0)
         guard fd >= 0 else { throw BridgeFailure(.internal, "Could not open a socket to pick a gateway port.") }
         defer { close(fd) }
@@ -482,7 +504,7 @@ enum Http {
         address.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
         address.sin_family = sa_family_t(AF_INET)
         address.sin_addr.s_addr = inet_addr("127.0.0.1")
-        address.sin_port = 0
+        address.sin_port = in_port_t(UInt16(requested).bigEndian)
         let bound = withUnsafePointer(to: &address) {
             $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { bind(fd, $0, socklen_t(MemoryLayout<sockaddr_in>.size)) }
         }

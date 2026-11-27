@@ -1281,10 +1281,10 @@ export class DocumentOps {
 
   /**
    * Retunes a shader layer: `kind` switches to another kind (keeping the colours and parameters that fit), `colors` replaces the colour
-   * list, `params` changes the listed parameters and keeps the rest. The module source is regenerated from the new spec. One call is
-   * one undo step.
+   * list, `params` changes the listed parameters and keeps the rest, `image` sets (an `asset://<id>`) or clears (null) the picture a halftone or
+   * dither prints. The module source is regenerated from the new spec. One call is one undo step.
    */
-  setShader(id: string, patch: { kind?: ShaderKind; colors?: readonly string[]; params?: Readonly<Record<string, ShaderParamValue>> }): void {
+  setShader(id: string, patch: { kind?: ShaderKind; colors?: readonly string[]; params?: Readonly<Record<string, ShaderParamValue>>; image?: string | null }): void {
     const n = this.doc.ynode(id);
     refuseInstanceLayer(this.doc, id, 'its shader is mirrored from the main');
     const type = n.get('type') as NodeType;
@@ -1292,7 +1292,7 @@ export class DocumentOps {
     if (!cur?.shader) {
       throw new ModelError('invalid_argument', `Node "${id}" is ${type === 'code' ? 'a plain code layer' : `a ${type} node`}, not a shader layer. Create one with create_shader_layer.`);
     }
-    const shader = applyShaderPatch(cur.shader, { kind: patch.kind, colors: patch.colors ? [...patch.colors] : undefined, params: patch.params ?? {} }, 'Shader');
+    const shader = applyShaderPatch(cur.shader, { kind: patch.kind, colors: patch.colors ? [...patch.colors] : undefined, params: patch.params ?? {}, image: patch.image }, 'Shader');
     this.transact(() => writeCode(n, { source: generateShaderSource(shader), libraries: [], shader }));
   }
 

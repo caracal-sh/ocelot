@@ -455,6 +455,111 @@ export function probeSlop(opts: ProbeOptions): ProbeResult {
         }
       }
     }
+
+    // ---- trailing void: the content of a screen ends far above its bottom edge (a table that stops early). A sidebar
+    //      (a full-height column at a side edge) and full-height wrappers do not count as content reaching the bottom.
+    if (!slide) {
+      const sidebars = els.filter((el) => {
+        const r = rectOf(el);
+        return r.h >= 0.9 * H && r.w <= 0.3 * W && (r.x <= 2 || r.x + r.w >= W - 2) && !isHidden(el);
+      });
+      const content = painted.filter((b) => !isGround(b) && b.h < 0.9 * H && b.y < H && !sidebars.some((s) => s.contains(b.el)));
+      if (content.length) {
+        const bottom = Math.max(...content.map((b) => Math.min(H, b.y + b.h)));
+        const gap = H - bottom;
+        const limit = Math.max(160, 0.15 * H);
+        if (gap >= limit) {
+          const last = content.reduce((a, b) => (b.y + b.h > a.y + a.h ? b : a));
+          add('trailing-void', last.el, `the content ends at y=${round(bottom)}, ${round(gap)}px above the bottom of a ${round(H)}px screen`, `under ${round(limit)}px of empty ground below the last content`);
+        }
+      }
+    }
+
+    // ---- what a layer really contains: its text, pictures and the boxes inside it. Its own box does not count (a flex or grid item is
+    //      stretched to the row, a section is as tall as its padding), except a picture or image/gradient fill that is the layer itself.
+    const contentExtent = (el: Element, ownPicture: boolean) => {
+      let top = Infinity, bottom = -Infinity;
+      for (const b of painted) {
+        if (!el.contains(b.el) || (b.el === el && !(ownPicture && b.pictorial))) continue;
+        top = Math.min(top, b.y);
+        bottom = Math.max(bottom, b.y + b.h);
+      }
+      for (const r of runs) {
+        if (r.el !== el) continue;
+        top = Math.min(top, r.y);
+        bottom = Math.max(bottom, r.y + r.h);
+      }
+      return bottom > top ? { top, bottom } : null;
+    };
+
+    // ---- hollow column: in a row of side-by-side columns one column's content ends far above the other's, leaving a large empty block
+    //      under it. A narrow column (a third of the row or less: a label or heading beside a long list) is a deliberate pattern.
+    if (!slide) {
+      const rows: Element[] = [];
+      for (const row of [root, ...els]) {
+        if ((perRule['hollow-column'] ?? 0) >= 2) break;
+        if (row.children.length < 2 || row.children.length > 6 || row.closest('svg') || rows.some((d) => d.contains(row) || row.contains(d))) continue;
+        const kids = Array.from(row.children).filter((c) => {
+          if (SKIP.has(c.tagName.toUpperCase()) || isHidden(c)) return false;
+          const s = cs(c);
+          return s.position !== 'absolute' && s.position !== 'fixed' && s.display !== 'inline' && s.display !== 'contents';
+        }).map((el) => ({ el, ...rectOf(el) })).filter((k) => k.w >= 1 && k.h >= 1);
+        if (kids.length < 2 || kids.length > 4 || Math.max(...kids.map((k) => k.h)) < 240) continue;
+        const sorted = [...kids].sort((a, b) => a.x - b.x);
+        const rowW = sorted[sorted.length - 1]!.x + sorted[sorted.length - 1]!.w - sorted[0]!.x;
+        if (rowW < 0.5 * W) continue;
+        const sideBySide = sorted.every((k, i) => {
+          if (i > 0 && k.x < sorted[i - 1]!.x + sorted[i - 1]!.w - 2) return false;
+          return sorted.every((o) => o === k || Math.min(k.y + k.h, o.y + o.h) - Math.max(k.y, o.y) >= 0.5 * Math.min(k.h, o.h));
+        });
+        if (!sideBySide) continue;
+        const cols = sorted.flatMap((k) => {
+          const e = contentExtent(k.el, true);
+          return e ? [{ ...k, ...e }] : [];
+        });
+        if (cols.length < 2) continue;
+        const rowTop = Math.min(...cols.map((c) => c.top));
+        const rowBottom = Math.max(...cols.map((c) => c.bottom));
+        const rowH = rowBottom - rowTop;
+        const long = cols.reduce((a, c) => (c.bottom > a.bottom ? c : a));
+        const short = [...cols].sort((a, b) => a.bottom - b.bottom).find((c) => {
+          const empty = rowBottom - c.bottom;
+          return empty >= 240 && empty >= 0.45 * rowH && c.w > 0.36 * rowW;
+        });
+        if (!short) continue;
+        rows.push(row);
+        add('hollow-column', short.el, `“${nameOf(short.el).slice(0, 28)}” ends ${round(rowBottom - short.bottom)}px above “${nameOf(long.el).slice(0, 28)}” beside it (column ${round((100 * short.w) / rowW)}% of the row)`, 'columns of similar length, a heading column of a third or less, or the heading above the list');
+      }
+    }
+
+    // ---- dead band: a full-width section with a fill of its own whose content sits high: far more empty fill below the content than above it.
+    //      The last section of a screen that ends in empty space is trailing-void's to report, not this rule's.
+    if (!slide) {
+      const groundFill: [number, number, number, number] = [painted.find(isGround)?.el, root, doc.body, doc.documentElement].reduce<[number, number, number, number] | null>((found, e) => {
+        if (found || !e) return found;
+        const c = parseColor(cs(e).backgroundColor);
+        return c && c[3] >= 0.5 ? c : null;
+      }, null) ?? [255, 255, 255, 1];
+      const bands: Element[] = [];
+      for (const el of els) {
+        if ((perRule['dead-band'] ?? 0) >= 2) break;
+        if (MEDIA.has(el.tagName.toUpperCase()) || isHidden(el) || bands.some((d) => d.contains(el) || el.contains(d))) continue;
+        const r = rectOf(el);
+        if (r.w < 0.9 * W || r.h < 160 || r.w * r.h >= 0.85 * W * H) continue;
+        const s = cs(el);
+        const bg = parseColor(s.backgroundColor);
+        const gradient = GRADIENT.test(s.backgroundImage) && !/url\(/.test(s.backgroundImage);
+        const flat = !!bg && bg[3] >= 0.5 && Math.abs(bg[0] - groundFill[0]) + Math.abs(bg[1] - groundFill[1]) + Math.abs(bg[2] - groundFill[2]) >= 18;
+        if (!flat && !gradient) continue;
+        if (r.y + r.h >= H - 2 && (perRule['trailing-void'] ?? 0) > 0) continue;
+        const ext = contentExtent(el, false);
+        if (!ext) continue;
+        const above = Math.max(0, ext.top - r.y), below = r.y + r.h - ext.bottom;
+        if (below < 160 || below <= 2 * above) continue;
+        bands.push(el);
+        add('dead-band', el, `“${nameOf(el).slice(0, 28)}” has ${round(below)}px of empty fill below its content, ${round(above)}px above`, 'the same space below the content as above it');
+      }
+    }
   }
 
   // ---------------------------------------------------------------- tells (style only unless noted)

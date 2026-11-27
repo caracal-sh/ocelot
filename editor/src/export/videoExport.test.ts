@@ -4,6 +4,10 @@ import type { VideoExportParams } from '../bridge/schema.gen';
 import { BridgeError } from '../bridge/rpc';
 import { Editor } from '../editor/Editor';
 import { createBrowserHost, type Host } from '../host/host';
+import { assetRef } from '../assets/refs';
+import { bytesToBase64 } from '../assets/sniff';
+import { fakePng } from '../assets/testing';
+import { normalizeCode } from '../model/code';
 import { handleExportProgress } from './fileExport';
 import {
   DEFAULT_VIDEO_SETTINGS,
@@ -144,6 +148,20 @@ describe('buildComposition', () => {
     const { files } = await buildComposition(editor, planVideoExport(editor.doc, { pageId: page, format: 'mov' }));
     expect(files[0]!.text).toContain('background:transparent');
     expect(files[1]!.text).toContain('[data-ocelot-root]{background:transparent!important}');
+  });
+
+  it('hands a shader layer\'s picture to its scene frame as a data: URL (the frame loads nothing else), without writing an asset file for it', async () => {
+    const { editor, page } = videoEditor();
+    editor.assets.attach(createBrowserHost());
+    const record = await editor.assets.importBase64(bytesToBase64(fakePng(40, 20, 1)), { name: 'Photo' });
+    const plan = planVideoExport(editor.doc, { pageId: page, format: 'mp4' });
+    editor.agent.insertNodes(plan.scenes[0]!.artboardId, [{ type: 'code', code: normalizeCode({ shader: { kind: 'halftone', image: assetRef(record.id) } }) }]);
+    const { files, warnings } = await buildComposition(editor, plan);
+    const scene = files.find((f) => f.path === 'scene-0.html')!;
+    const config = [...new DOMParser().parseFromString(scene.text!, 'text/html').querySelectorAll('iframe[data-ocelot-code-frame]')].map((f) => f.getAttribute('srcdoc')!)[0]!;
+    expect(config).toContain(`"images":{"${assetRef(record.id)}":"data:image/png;base64,`);
+    expect(files.map((f) => f.path).filter((p) => p.startsWith('assets/'))).toEqual([]);
+    expect(warnings).toEqual([]);
   });
 });
 

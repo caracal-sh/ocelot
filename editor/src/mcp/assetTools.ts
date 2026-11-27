@@ -8,7 +8,7 @@ import type { AssetRecord, ExportFile, ImageModelInfo, ImageProgressParams } fro
 import { ASPECTS, BACKGROUND_PROVIDERS, aspectRatio, etaSeconds, nearestAspect, prepareImageJob, runImageJob, type Background, type JobRequest, type JobResult, type Operation } from '../assets/generate';
 import type { ImageJob, JobOutcome } from '../assets/jobs';
 import { assetPreview } from '../assets/preview';
-import { exportFiles, exportNode, exportScreensHtml, reactOptions, screensFiles, type ExportAssetPlan } from '../export/assets';
+import { exportFiles, exportNode, exportScreensHtml, preloadPictures, reactOptions, screensFiles, type ExportAssetPlan } from '../export/assets';
 
 import { assetUsage, keyframeAssetUsage, referencedAssetIds } from '../assets/refs';
 import { assetIdOfNode, embeddedImageOf, imageSpec, placeholderSpec, setAssetOnNode, type NewImageOptions } from '../assets/place';
@@ -776,14 +776,17 @@ export const ASSET_TOOLS: ToolDef[] = [
       let name: string;
       if (args['artboard_ids'] !== undefined) {
         if (format !== 'html') throw new ToolError('artboard_ids saves several screens as linked HTML pages. For React call save_export with node_id for each artboard (their links are route paths).');
-        const screens = exportScreensHtml(ctx.editor.doc, screenIds(ctx, args), ctx.editor.assets);
+        const ids = screenIds(ctx, args);
+        await preloadPictures(ctx.editor.doc, ids, ctx.editor.assets);
+        const screens = exportScreensHtml(ctx.editor.doc, ids, ctx.editor.assets, { embedPictures: true });
         result = screens;
         files = screensFiles(screens);
         name = screens.name;
       } else {
         const id = str(args, 'node_id', {});
         requireNode(ctx, id);
-        const single = exportNode(ctx.editor.doc, id, format, ctx.editor.assets, format === 'react' ? await reactOptions(ctx.editor.doc, enumArg(args, 'components', ['ui', 'inline'] as const)) : {});
+        await preloadPictures(ctx.editor.doc, id, ctx.editor.assets);
+        const single = exportNode(ctx.editor.doc, id, format, ctx.editor.assets, format === 'react' ? await reactOptions(ctx.editor.doc, enumArg(args, 'components', ['ui', 'inline'] as const)) : {}, { embedPictures: true });
         result = single;
         files = exportFiles(single);
         name = single.fileName.replace(/\.[a-z]+$/i, '');

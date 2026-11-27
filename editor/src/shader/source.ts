@@ -6,7 +6,7 @@
 // `ctx.spec` / `ctx.onSpec` (render/codeFrameBootstrap.ts) without re-mounting, which is why `shaderRuntimeKey` ignores that line.
 
 import { GLSL, GRAIN, GRAIN_GRADIENT, DITHER, HALFTONE, MESH_GRADIENT } from './glsl';
-import { SHADER_DEFS, type SelectParam, type ShaderKind, type ShaderSpec } from './spec';
+import { SHADER_DEFS, acceptsImage, type SelectParam, type ShaderKind, type ShaderSpec } from './spec';
 
 const VERTEX = `#version 300 es
 void main() {
@@ -23,8 +23,8 @@ interface Program {
 const PROGRAMS: Record<ShaderKind, Program> = {
   'grain-gradient': { main: GRAIN_GRADIENT, parts: [GLSL.NOISE, GLSL.COLOR, GLSL.COORDS], space: 'oklab' },
   'mesh-gradient': { main: MESH_GRADIENT, parts: [GLSL.NOISE, GLSL.COLOR, GLSL.COORDS], space: 'oklab' },
-  halftone: { main: HALFTONE, parts: [GLSL.NOISE, GLSL.COORDS, GLSL.FIELDS], space: 'srgb' },
-  dither: { main: DITHER, parts: [GLSL.NOISE, GLSL.COORDS, GLSL.FIELDS, GLSL.BAYER], space: 'srgb' },
+  halftone: { main: HALFTONE, parts: [GLSL.NOISE, GLSL.COORDS, GLSL.FIELDS, GLSL.IMAGE], space: 'srgb' },
+  dither: { main: DITHER, parts: [GLSL.NOISE, GLSL.COORDS, GLSL.FIELDS, GLSL.IMAGE, GLSL.BAYER], space: 'srgb' },
   grain: { main: GRAIN, parts: [GLSL.NOISE], space: 'srgb' },
 };
 
@@ -36,6 +36,8 @@ function uniformKeys(kind: ShaderKind): string[] {
 function fragmentSource(kind: ShaderKind): string {
   const prog = PROGRAMS[kind];
   const uniforms = uniformKeys(kind).map((k) => `uniform float u_${k};`);
+  // Kinds that can print a picture get its texture: u_img (pixels in u_imgSize), u_hasImage 0 or 1 (0 prints the generated field).
+  const picture = acceptsImage(kind) ? ['uniform sampler2D u_img;', 'uniform vec2 u_imgSize;', 'uniform float u_hasImage;'] : [];
   return [
     '#version 300 es',
     'precision highp float;',
@@ -48,6 +50,7 @@ function fragmentSource(kind: ShaderKind): string {
     'uniform float u_a[5];',
     'uniform float u_n;',
     ...uniforms,
+    ...picture,
     'out vec4 o;',
     '#define SEEDU uint(u_seed)',
     ...prog.parts,
@@ -63,6 +66,7 @@ export function shaderRuntimeKey(source: string): string {
 const RUNTIME = String.raw`
 const MAX_DPR = 3;
 const MAX_PIXELS = 8000000;
+const MAX_TEX = 4096;
 
 export default function mount(el, ctx) {
   let spec = SPEC;
@@ -87,6 +91,18 @@ export default function mount(el, ctx) {
   let last = null;
   let raf = 0;
   let count = 0;
+
+  // A picture (halftone, dither): the host hands the frame the image's pixels as a data: URL, by asset reference, in ctx.images ('' when the asset
+  // is missing or unreadable); an exported page carries the data: URL in spec.image itself. States: none, pending (the host has not answered yet:
+  // nothing is drawn, so the generated field never flashes), ready, failed (the generated field is printed and the console says why).
+  let tex = null;
+  let blank = null;
+  let imgEl = null;
+  let imgState = 'none';
+  let imgWant = '';
+  let imgToken = 0;
+  let imgW = 1;
+  let imgH = 1;
   const rgb = new Float32Array(15);
   const alpha = new Float32Array(5);
 
@@ -137,6 +153,97 @@ export default function mount(el, ctx) {
     if (missing.length) console.error('Shader colour uses ' + missing.join(', ') + ', which this layer cannot see. Define it on the artboard (apply_theme / update_styles) or use a hex colour.');
   }
 
+  function makeBlank() {
+    if (!loc.img) return;
+    blank = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, blank);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array([255, 255, 255, 255]));
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+  }
+  function upload() {
+    if (!imgEl || !gl || lost) return;
+    if (tex) gl.deleteTexture(tex);
+    tex = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, tex);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+    gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, imgEl);
+    gl.generateMipmap(gl.TEXTURE_2D);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    imgW = imgEl.naturalWidth || imgEl.width;
+    imgH = imgEl.naturalHeight || imgEl.height;
+  }
+  function shrink(img) {
+    const m = Math.max(img.naturalWidth, img.naturalHeight);
+    if (m <= MAX_TEX) return img;
+    const c = document.createElement('canvas');
+    c.width = Math.max(1, Math.round((img.naturalWidth * MAX_TEX) / m));
+    c.height = Math.max(1, Math.round((img.naturalHeight * MAX_TEX) / m));
+    c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+    return c;
+  }
+  function failImage(why) {
+    imgState = 'failed';
+    imgEl = null;
+    if (tex && gl) gl.deleteTexture(tex);
+    tex = null;
+    const ref = spec.image || '';
+    console.error('The shader image ' + (ref.slice(0, 5) === 'data:' ? '(embedded)' : ref.slice(0, 22) + '…') + ' ' + why + ', so the layer prints its generated field instead. Choose an image that is in the document assets (list_assets shows them; update_shader { image } or the Shader section sets it).');
+  }
+  function pictureSource(ref) {
+    if (ref.slice(0, 11) === 'data:image/') return ref;
+    const map = ctx.images;
+    return map ? (ref in map ? map[ref] : undefined) : '';
+  }
+  // Follows spec.image and what the host sent: returns a promise while a picture is decoding (mount waits for it, so a screenshot shows it).
+  function syncImage() {
+    const ref = spec.image || '';
+    const src = ref ? pictureSource(ref) : '';
+    const want = !ref ? '' : src === undefined ? '?' : src === '' ? '!' : src;
+    if (want === imgWant) return null;
+    imgWant = want;
+    const token = ++imgToken;
+    imgEl = null;
+    if (tex && gl) gl.deleteTexture(tex);
+    tex = null;
+    if (!ref) {
+      imgState = 'none';
+      return null;
+    }
+    if (want === '?') {
+      imgState = 'pending';
+      return null;
+    }
+    if (want === '!') {
+      failImage('is missing from the document assets or cannot be read');
+      return null;
+    }
+    imgState = 'pending';
+    const img = new Image();
+    img.src = src;
+    return img
+      .decode()
+      .then(() => {
+        if (token !== imgToken) return;
+        if (img.naturalWidth < 2 || img.naturalHeight < 2) throw new Error('empty');
+        imgEl = shrink(img);
+        upload();
+        imgState = 'ready';
+      })
+      .catch(() => {
+        if (token === imgToken) failImage('could not be read');
+      })
+      .then(() => {
+        if (token !== imgToken) return;
+        draw();
+        start();
+      });
+  }
+
   function build() {
     const shader = (type, src) => {
       const s = gl.createShader(type);
@@ -152,7 +259,8 @@ export default function mount(el, ctx) {
     if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error('Shader link failed: ' + gl.getProgramInfoLog(p));
     prog = p;
     loc = {};
-    for (const k of ['res', 'dpr', 'phase', 'time', 'c', 'a', 'n'].concat(KEYS)) loc[k] = gl.getUniformLocation(p, 'u_' + k);
+    for (const k of ['res', 'dpr', 'phase', 'time', 'c', 'a', 'n', 'img', 'imgSize', 'hasImage'].concat(KEYS)) loc[k] = gl.getUniformLocation(p, 'u_' + k);
+    makeBlank();
   }
 
   function fit() {
@@ -174,6 +282,11 @@ export default function mount(el, ctx) {
   function draw() {
     if (!gl || lost || !prog || !w || !h) return;
     gl.viewport(0, 0, canvas.width, canvas.height);
+    if (imgState === 'pending') {
+      gl.clearColor(0, 0, 0, 0);
+      gl.clear(gl.COLOR_BUFFER_BIT);
+      return;
+    }
     gl.useProgram(prog);
     gl.uniform2f(loc.res, canvas.width, canvas.height);
     gl.uniform1f(loc.dpr, dpr);
@@ -182,6 +295,14 @@ export default function mount(el, ctx) {
     gl.uniform1f(loc.n, count);
     gl.uniform3fv(loc.c, rgb);
     gl.uniform1fv(loc.a, alpha);
+    if (loc.img) {
+      const shown = imgState === 'ready' && tex;
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, shown ? tex : blank);
+      gl.uniform1i(loc.img, 0);
+      gl.uniform2f(loc.imgSize, imgW, imgH);
+      gl.uniform1f(loc.hasImage, shown ? 1 : 0);
+    }
     for (const k of KEYS) {
       const v = spec.params[k];
       gl.uniform1f(loc[k], typeof v === 'string' ? SELECT[k].indexOf(v) : +v);
@@ -189,7 +310,7 @@ export default function mount(el, ctx) {
     gl.drawArrays(gl.TRIANGLES, 0, 3);
   }
 
-  const animating = () => spec.params.speed > 0 && !ctx.paused && !ctx.reducedMotion;
+  const animating = () => imgState !== 'ready' && imgState !== 'pending' && spec.params.speed > 0 && !ctx.paused && !ctx.reducedMotion;
   function tick(now) {
     raf = 0;
     if (last !== null && now !== undefined) phase += Math.min(0.25, Math.max(0, (now - last) / 1000)) * spec.params.speed;
@@ -206,7 +327,8 @@ export default function mount(el, ctx) {
   // The host changed the spec (an Inspector slider, update_shader) or the tokens it reads: redraw without re-mounting.
   function onHost() {
     const s = ctx.spec;
-    if (s && s.kind === SPEC.kind) spec = { kind: s.kind, colors: s.colors, params: Object.assign({}, SPEC.params, s.params) };
+    if (s && s.kind === SPEC.kind) spec = { kind: s.kind, colors: s.colors, params: Object.assign({}, SPEC.params, s.params), image: s.image };
+    syncImage();
     recolor();
     draw();
     start();
@@ -222,7 +344,9 @@ export default function mount(el, ctx) {
   });
   canvas.addEventListener('webglcontextrestored', () => {
     lost = false;
+    tex = null;
     build();
+    upload();
     fit();
     draw();
     start();
@@ -230,6 +354,7 @@ export default function mount(el, ctx) {
   build();
   fit();
   recolor();
+  const loading = syncImage();
   draw();
   start();
   const offHost = typeof ctx.onSpec === 'function' ? ctx.onSpec(onHost) : null;
@@ -254,10 +379,11 @@ export default function mount(el, ctx) {
     return q;
   })();
 
-  return () => {
+  const cleanup = () => {
     clearTimeout(tokens);
     cancelAnimationFrame(raf);
     raf = 0;
+    imgToken++;
     if (offHost) offHost();
     if (typeof offResize === 'function') offResize();
     if (typeof offPause === 'function') offPause();
@@ -267,6 +393,7 @@ export default function mount(el, ctx) {
     probe.remove();
     void dprQuery;
   };
+  return loading ? loading.then(() => cleanup) : cleanup;
 }
 `;
 

@@ -72,12 +72,15 @@ export async function sweepStaleGatewayHomes(root = tmpdir(), { alive = pidAlive
   return removed;
 }
 
-/** A free loopback port. Small race between close and the child's bind; callers retry. */
-export function freePort() {
+/**
+ * A free loopback port: `prefer` when it can be bound (a restarted gateway keeps its address, because running agents were
+ * configured with it and their sandbox only reaches that port), else any. Small race between close and the child's bind; callers retry.
+ */
+export function freePort(prefer = 0) {
   return new Promise((resolve, reject) => {
     const server = createServer();
-    server.once('error', reject);
-    server.listen(0, '127.0.0.1', () => {
+    server.once('error', (e) => (prefer ? freePort().then(resolve, reject) : reject(e)));
+    server.listen(prefer, '127.0.0.1', () => {
       const { port } = server.address();
       server.close(() => resolve(port));
     });
@@ -320,18 +323,30 @@ export class AgentGateway {
     return next;
   }
 
+  /**
+   * Waits until the gateway answers `token`. A gateway that is restarting is waited for (its new process reads the clients
+   * file when it starts); the error says what actually went wrong: the token stayed unknown, or the gateway did not answer.
+   */
   async #admitted(token) {
     const deadline = Date.now() + ADMIT_TIMEOUT_MS;
+    let last = 'did not answer';
     while (Date.now() < deadline) {
-      try {
-        const res = await fetch(`${this.baseUrl}/v1/models`, { headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(3000) });
-        if (res.ok) return;
-      } catch {
-        // gateway restarting
+      if (this.#state === 'failed') throw new Error(this.#error);
+      if (this.#state === 'running') {
+        try {
+          const res = await fetch(`${this.baseUrl}/v1/models`, { headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(3000) });
+          if (res.ok) return;
+          last = `answered ${res.status}`;
+        } catch {
+          last = 'did not answer';
+        }
+      } else {
+        last = `was ${this.#state}${this.#error ? ` (${this.#error})` : ''}`;
       }
       await sleep(500);
     }
-    throw new Error('The agent gateway did not admit the new agent token. Try again in a moment.');
+    if (/^answered 40[13]$/.test(last)) throw new Error(`The agent gateway did not admit the new agent token within ${ADMIT_TIMEOUT_MS / 1000} s. Try again in a moment.`);
+    throw new Error(`The agent gateway ${last} for ${ADMIT_TIMEOUT_MS / 1000} s. Try again in a moment; if it repeats, run "omp auth-gateway status" in a terminal.`);
   }
 
   async #supervise() {
@@ -383,8 +398,8 @@ export class AgentGateway {
       });
     }
     await this.#flush();
+    this.#port = await freePort(this.#port);
     const brokerPort = await freePort();
-    this.#port = await freePort();
     const brokerUrl = `http://127.0.0.1:${brokerPort}`;
     const base = { ...process.env };
     const brokerToken = JSON.parse(await capture(this.#ompBin, ['auth-broker', 'token', '--json'], base)).token;

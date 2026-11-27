@@ -269,7 +269,7 @@ export async function buildComposition(editor: Editor, plan: VideoPlan): Promise
   };
 
   const sceneDocs: VideoFile[] = plan.scenes.map((scene, i) => {
-    let html = artboardDocumentHtml(doc, scene.artboardId, { codeFrames: { vendorBase: defaultVendorBase() }, exportRuntime: { fps: plan.fps }, assetUrl });
+    let html = artboardDocumentHtml(doc, scene.artboardId, { codeFrames: { vendorBase: defaultVendorBase() }, exportRuntime: { fps: plan.fps }, assetUrl, imageUrl: inline.urlOf });
     // A transparent video drops the artboard's own background; layers keep theirs.
     if (plan.alpha) html = injectHeadStyle(html, 'html,body,[data-ocelot-root]{background:transparent!important}');
     return { path: sceneFile(i), mime: 'text/html; charset=utf-8', text: html };

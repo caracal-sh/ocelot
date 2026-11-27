@@ -72,8 +72,8 @@ export class HumanActions {
     this.run([id], () => this.editor.human.setCode(id, patch));
   }
 
-  /** Retunes a shader layer's colours and parameters. `gesture`: a slider or picker drag in progress (merged into one undo step; end it with endGesture). */
-  setShader(id: string, patch: { kind?: ShaderKind; colors?: readonly string[]; params?: Readonly<Record<string, ShaderParamValue>> }, opts: { gesture?: boolean } = {}): void {
+  /** Retunes a shader layer's colours, parameters and picture. `gesture`: a slider or picker drag in progress (merged into one undo step; end it with endGesture). */
+  setShader(id: string, patch: { kind?: ShaderKind; colors?: readonly string[]; params?: Readonly<Record<string, ShaderParamValue>>; image?: string | null }, opts: { gesture?: boolean } = {}): void {
     this.run([id], () => this.editor.human.setShader(id, patch), { endStep: !opts.gesture });
   }
 

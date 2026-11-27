@@ -2,9 +2,10 @@
 // A shader layer is a code layer whose module Ocelot generates from a typed spec (shader/spec.ts), so one tool call tunes a look
 // without writing GLSL, and the layer exports, screenshots and renders into video like any other layer.
 
+import { assetIdOfNode } from '../assets/place';
 import { normalizeCode } from '../model/code';
 import { definedNamesAt } from '../render/customProps';
-import { SHADER_DEFS, SHADER_KINDS, applyShaderPatch, defaultColors, normalizeShader, type ShaderInput, type ShaderKindDef, type ShaderParam, type ShaderSpec } from '../shader/spec';
+import { IMAGE_KINDS, SHADER_DEFS, SHADER_KINDS, acceptsImage, applyShaderPatch, defaultColors, normalizeShader, type ShaderInput, type ShaderKindDef, type ShaderParam, type ShaderSpec } from '../shader/spec';
 import { normalizeStyles } from './editTools';
 import { nodeLine } from './format';
 import { SCREENSHOT_NOTE, report, settle } from './codeTools';
@@ -14,14 +15,51 @@ import { NODE_ID, ToolError, assertEditable, enumArg, json, num, requireNode, st
 const BLEND_MODES = ['normal', 'multiply', 'screen', 'overlay', 'soft-light', 'hard-light', 'color-dodge', 'color-burn', 'darken', 'lighten', 'difference', 'exclusion'] as const;
 
 function paramText(p: ShaderParam): string {
-  if (p.type === 'number') return `${p.key} ${p.min}-${p.max} (default ${p.default}${p.unit ? ` ${p.unit}` : ''})`;
-  if (p.type === 'select') return `${p.key} ${p.options.join('|')} (default ${p.default})`;
-  return `${p.key} true|false (default ${p.default})`;
+  const only = p.when === 'image' ? ' [with image only]' : p.when === 'generated' ? ' [generated field only]' : '';
+  if (p.type === 'number') return `${p.key} ${p.min}-${p.max} (default ${p.default}${p.unit ? ` ${p.unit}` : ''})${only}`;
+  if (p.type === 'select') return `${p.key} ${p.options.join('|')} (default ${p.default})${only}`;
+  return `${p.key} true|false (default ${p.default})${only}`;
 }
 
 function kindLine(def: ShaderKindDef): string {
   const colors = def.colors.max === 0 ? 'no colours' : `colours ${def.colors.min === def.colors.max ? def.colors.max : `${def.colors.min}-${def.colors.max}`} (${def.colors.labels.slice(0, def.colors.max).join(', ')})`;
-  return `- ${def.kind}: ${def.summary} ${colors}. Params: ${def.params.map(paramText).join('; ')}.`;
+  return `- ${def.kind}: ${def.summary} ${colors}. Params: ${def.params.map(paramText).join('; ')}${acceptsImage(def.kind) ? '. Also image (a stored picture, see below)' : ''}.`;
+}
+
+const IMAGE_NOTE =
+  `${IMAGE_KINDS.join(' and ')} can print a picture instead of a generated field: image: "asset://<id>" (an id from list_assets; import_image with the file as base64 or generate_image add one) or the id of an image layer. ` +
+  'The picture is cover-fitted to the layer (focus_x / focus_y choose the part that stays in view), its luminance is the tone (contrast, invert and the cell size shape the print; the colours are the ink and the paper), ' +
+  'and the dots or dither cells stay on the device-pixel grid. Screenshots and exports show it; the HTML and React exports embed it in the file. image is a separate field next to params (it references a stored asset), null removes it. ' +
+  'A picture that is missing or cannot be read is refused here; if it goes missing later the layer prints its generated field.';
+
+/**
+ * The stored image an `image` argument names, as `asset://<64 hex>`: a full asset id or `asset://` reference, a unique prefix of at least 8
+ * characters (what list_assets shows), or the id of an image layer (or a frame with a background image). undefined: not given; null: remove.
+ */
+function resolveImage(ctx: ToolContext, value: unknown, what: string): string | null | undefined {
+  if (value === undefined) return undefined;
+  if (value === null || value === '') return null;
+  if (typeof value !== 'string') throw new ToolError(`${what}: "image" must be a string (an asset id from list_assets, or an image layer's id) or null to remove the picture.`);
+  const given = value.trim();
+  const layer = ctx.editor.doc.get(given);
+  let id: string | null;
+  if (layer) {
+    id = assetIdOfNode(layer);
+    if (!id) {
+      throw new ToolError(`${what}: layer "${given}" (${layer.name || layer.type}) does not show a stored image, so it cannot be the picture. Pass an asset id from list_assets, add a file with import_image, or pass the id of an image layer whose picture is stored.`);
+    }
+  } else {
+    try {
+      id = ctx.editor.assets.resolve(given).id;
+    } catch {
+      throw new ToolError(`${what}: image "${given.slice(0, 80)}" is not a stored asset of this document and not a layer id. Call list_assets for the ids, add the picture with import_image (the file as base64) or generate_image, then pass its id.`);
+    }
+  }
+  const mime = ctx.editor.assets.get(id)?.mime ?? '';
+  if (!mime.startsWith('image/') || mime === 'image/svg+xml') {
+    throw new ToolError(`${what}: asset ${id.slice(0, 8)} is ${mime || 'not an image'}; a shader prints a raster picture (PNG, JPEG, WebP). Pick another asset from list_assets, or import a raster version.`);
+  }
+  return `asset://${id}`;
 }
 
 const CONTRACT =
@@ -79,6 +117,7 @@ export const SHADER_TOOLS: ToolDef[] = [
       'Layout: the layer is a box like any other (styles width/height, default 480×320). For a full-bleed ground use styles {"position":"absolute","left":"0","top":"0","width":"100%","height":"100%"} and put it first among the siblings, or give it z-index 0 under content. ' +
       'For film grain on top of other layers put it LAST in the parent, size it to cover them, and set blend_mode (overlay or soft-light; multiply darkens; normal also works because the grain is already transparent). ' +
       'Halftone with a transparent paper colour ("transparent" as the second colour) prints only the ink, to lay over a photo or a fill. ' +
+      `${IMAGE_NOTE} ` +
       'Returns the id and the first-frame result. Tune it afterwards with update_shader (one parameter at a time is fine). ' +
       `${SCREENSHOT_NOTE} The layer takes the usual style changes through update_styles (opacity, border-radius, filter, mix-blend-mode).`,
     inputSchema: {
@@ -89,6 +128,7 @@ export const SHADER_TOOLS: ToolDef[] = [
         name: { type: 'string', description: 'Layer name, e.g. "Hero ground".' },
         colors: { type: 'array', items: { type: 'string' }, description: 'CSS colours or tokens in the kind\'s slot order (grain-gradient dark→light, halftone ink then paper, dither dark→light). Omit for the defaults; grain takes none.' },
         params: { type: 'object', properties: paramsSchema(), description: 'Parameters of the kind (see the kind list). Omitted ones keep the default.' },
+        image: { type: 'string', description: 'Halftone and dither only: the picture to print instead of the generated field. An asset id or "asset://<id>" from list_assets, or the id of an image layer.' },
         styles: { type: 'object', additionalProperties: { type: ['string', 'number'] }, description: 'CSS for the layer box, e.g. {"width":"1440px","height":"720px"}. Default 480×320 px.' },
         blend_mode: { type: 'string', enum: [...BLEND_MODES], description: 'mix-blend-mode of the layer against what is beneath it. Mostly for grain.' },
         index: { type: 'integer', description: 'Position among the parent\'s children (default: end).' },
@@ -103,7 +143,8 @@ export const SHADER_TOOLS: ToolDef[] = [
       const kind = enumArg(args, 'kind', SHADER_KINDS);
       if (!kind) throw new ToolError(`create_shader_layer needs "kind": one of ${SHADER_KINDS.join(', ')}.`);
       const colors = args['colors'] ?? defaultColors(kind, definedNamesAt(ctx.editor.doc, parent));
-      const spec = normalizeShader({ kind, colors, params: args['params'] } as ShaderInput, 'create_shader_layer');
+      const image = resolveImage(ctx, args['image'], 'create_shader_layer');
+      const spec = normalizeShader({ kind, colors, params: args['params'], ...(image ? { image } : {}) } as ShaderInput, 'create_shader_layer');
       assertTokensDefined(ctx, parent, spec);
       const blend = enumArg(args, 'blend_mode', BLEND_MODES);
       const styles = args['styles'] === undefined ? {} : normalizeStyles(args['styles']);
@@ -120,8 +161,9 @@ export const SHADER_TOOLS: ToolDef[] = [
     title: 'Update shader',
     readOnly: false,
     description:
-      'Tunes shader layers: updates: [{node_id, kind?, colors?, params?}, …]. colors replaces the whole colour list (same slot order as create_shader_layer); params changes only the parameters you list and keeps the rest. ' +
-      'kind switches the layer to another kind and keeps the colours and the parameters that fit it (scale, speed, seed, …); the rest take the new kind\'s defaults. Several layers in one call are one undo step. ' +
+      'Tunes shader layers: updates: [{node_id, kind?, colors?, params?, image?}, …]. colors replaces the whole colour list (same slot order as create_shader_layer); params changes only the parameters you list and keeps the rest. ' +
+      'kind switches the layer to another kind and keeps the colours, the picture (halftone and dither) and the parameters that fit it (scale, speed, seed, …); the rest take the new kind\'s defaults. Several layers in one call are one undo step. ' +
+      `${IMAGE_NOTE} ` +
       `${CONTRACT} ` +
       'Typical moves: scale (bigger or smaller shapes, cells, grain), softness, speed (0 = still), seed (try another arrangement of the same look), angle, intensity or grain (texture strength). ' +
       'get_shader_kinds lists every parameter with its range; get_node shows the layer\'s current spec. ' +
@@ -139,6 +181,7 @@ export const SHADER_TOOLS: ToolDef[] = [
               kind: { type: 'string', enum: [...SHADER_KINDS], description: 'Switch the layer to this kind.' },
               colors: { type: 'array', items: { type: 'string' }, description: 'The complete colour list (CSS colours or tokens).' },
               params: { type: 'object', properties: paramsSchema(), description: 'Parameters to change.' },
+              image: { type: ['string', 'null'], description: 'Halftone and dither only: the picture to print (an asset id or "asset://<id>" from list_assets, or an image layer\'s id); null removes it and the layer prints its generated field again.' },
             },
             required: ['node_id'],
             additionalProperties: false,
@@ -152,14 +195,15 @@ export const SHADER_TOOLS: ToolDef[] = [
       const items = updatesOf(args, 'update_shader', '[{"node_id": "<id>", "params": {"scale": 1.4, "speed": 0}}]').map((u) => {
         const id = str(u, 'node_id', {});
         const { shader } = shaderNode(ctx, id);
-        if (u['kind'] === undefined && u['colors'] === undefined && u['params'] === undefined) throw new ToolError(`Update for "${id}" needs "kind", "colors" and/or "params".`);
+        if (u['kind'] === undefined && u['colors'] === undefined && u['params'] === undefined && u['image'] === undefined) throw new ToolError(`Update for "${id}" needs "kind", "colors", "params" and/or "image".`);
         const kind = enumArg(u, 'kind', SHADER_KINDS);
-        const next = applyShaderPatch(shader, { kind, colors: u['colors'], params: u['params'] }, `Shader "${id}"`);
+        const image = resolveImage(ctx, u['image'], `Shader "${id}"`);
+        const next = applyShaderPatch(shader, { kind, colors: u['colors'], params: u['params'], image }, `Shader "${id}"`);
         assertTokensDefined(ctx, id, next);
-        return { id, kind, colors: u['colors'] === undefined ? undefined : next.colors, params: (u['params'] ?? {}) as Record<string, number | string | boolean> };
+        return { id, kind, image, colors: u['colors'] === undefined ? undefined : next.colors, params: (u['params'] ?? {}) as Record<string, number | string | boolean> };
       });
       assertEditable(ctx, items.map((i) => i.id));
-      write(ctx, 'Update shader', () => items.forEach((i) => ctx.editor.agent.setShader(i.id, { ...(i.kind ? { kind: i.kind } : {}), ...(i.colors ? { colors: i.colors } : {}), params: i.params })));
+      write(ctx, 'Update shader', () => items.forEach((i) => ctx.editor.agent.setShader(i.id, { ...(i.kind ? { kind: i.kind } : {}), ...(i.colors ? { colors: i.colors } : {}), ...(i.image !== undefined ? { image: i.image } : {}), params: i.params })));
       const out: string[] = [];
       for (const i of items) {
         const { state, errors } = await settle(ctx, i.id);
@@ -185,6 +229,7 @@ export const SHADER_TOOLS: ToolDef[] = [
           label: d.label,
           summary: d.summary,
           colors: { min: d.colors.min, max: d.colors.max, defaults: d.colors.defaults, slots: d.colors.labels },
+          ...(acceptsImage(d.kind) ? { image: 'A stored picture (asset://<id>) printed instead of the generated field; set it with the image field of create_shader_layer / update_shader, not in params. Parameters marked when "image" apply only with it, those marked "generated" only without it.' } : {}),
           params: d.params.map((p) => ({ ...p })),
         })),
       );

@@ -795,7 +795,9 @@ body {
 
 .at-msg { display: flex; flex-direction: column; gap: 4px; line-height: 1.5; }
 .at-msg p { margin: 0; }
-.at-msg p + p { margin-top: 6px; }
+.at-msg :is(p, ul, ol) + :is(p, ul, ol) { margin-top: 6px; }
+.at-msg :is(ul, ol) { margin: 0; padding-left: 18px; }
+.at-msg li + li { margin-top: 2px; }
 .at-msg code { font: var(--at-type-small); font-family: var(--at-font-mono); padding: 0 3px; border-radius: var(--at-radius-xs); background: var(--at-bg); }
 .at-msg--user { align-items: flex-end; }
 .at-msg__bubble {

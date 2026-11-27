@@ -9,7 +9,10 @@
 import type { ExportFile } from '../bridge/schema.gen';
 import type { AssetService } from '../assets/service';
 import { ORIGIN, type OcelotDocument } from '../model/document';
+import { ModelError } from '../model/types';
 import { referencedAssetIds, replaceAssetRefs } from '../assets/refs';
+import { shaderPictureIds } from '../shader/pictures';
+import type { PictureUrl } from './code';
 import { decodeDocument, encodeDocument } from '../model/persistence';
 import type * as Y from 'yjs';
 import { exportHtml } from './html';
@@ -29,6 +32,13 @@ export interface ExportAssetPlan {
   missing: string[];
   /** The bundled fonts the design uses: the export copies their files (SIL OFL, with the licence texts) and declares them with `@font-face`. */
   fonts: BundledFont[];
+  /**
+   * The pictures shader layers print. When the export is written to files (`embedPictures`: save_export, the handoff folder) HTML and React
+   * embed them in the code as data: URLs and copy no file, so the page renders from one file; the text results of export_html/export_react
+   * keep the `asset://` reference (a picture is megabytes). `missing` are the ones the asset store does not have: those layers print their
+   * generated field.
+   */
+  pictures: { embedded: string[]; missing: string[]; inlined: boolean };
   /** Maps an asset id to the URL the exported code uses. */
   urlOf(id: string): string;
 }
@@ -65,12 +75,26 @@ export async function reactOptions(doc: OcelotDocument, components?: ReactCompon
   return { components: 'ui', ui: await loadUiComponents(ds) };
 }
 
-/** Ids of every asset used below `rootIds` (including keyframes). */
+/** Ids of every asset used below `rootIds` (including keyframes) that the export copies as files: a shader layer's picture is embedded instead. */
 function referencedAssets(doc: OcelotDocument, rootIds: readonly string[]): string[] {
-  return [...referencedAssetIds(doc, rootIds)];
+  return [...referencedAssetIds(doc, rootIds, { shader: false })];
 }
 
-export function planExportAssets(doc: OcelotDocument, rootId: string | readonly string[], assets: AssetService, kind: ExportKind): ExportAssetPlan {
+/**
+ * Loads the pictures of the shader layers an export of `ids` embeds. `exportNode` and `exportScreensHtml` are synchronous, so every caller
+ * that writes files awaits this first and passes `embedPictures`.
+ */
+export async function preloadPictures(doc: OcelotDocument, ids: string | readonly string[], assets: AssetService): Promise<void> {
+  const roots = (typeof ids === 'string' ? [ids] : ids).flatMap((id) => exportRoots(doc, id));
+  await assets.pictures.preload(doc, roots);
+}
+
+/** Writes files (save_export, the handoff folder) rather than text for a reader: shader pictures are embedded. */
+export interface PictureOptions {
+  embedPictures?: boolean;
+}
+
+export function planExportAssets(doc: OcelotDocument, rootId: string | readonly string[], assets: AssetService, kind: ExportKind, embed = false): ExportAssetPlan {
   const prefix = kind === 'html' ? './assets/' : '/assets/';
   const files: ExportAssetPlan['files'] = [];
   const missing: string[] = [];
@@ -80,9 +104,26 @@ export function planExportAssets(doc: OcelotDocument, rootId: string | readonly 
     if (rec) files.push({ id, file: `${id}.${rec.ext}` });
     else missing.push(id);
   }
+  const pictures: ExportAssetPlan['pictures'] = { embedded: [], missing: [], inlined: embed };
+  for (const id of shaderPictureIds(doc, roots)) (assets.get(id) ? pictures.embedded : pictures.missing).push(id);
   const fileOf = new Map(files.map((f) => [f.id, f.file]));
-  return { files, missing, fonts: fontsForExport(doc, roots), urlOf: (id) => (fileOf.has(id) ? `${prefix}${fileOf.get(id)}` : `asset://${id}`) };
+  return { files, missing, pictures, fonts: fontsForExport(doc, roots), urlOf: (id) => (fileOf.has(id) ? `${prefix}${fileOf.get(id)}` : `asset://${id}`) };
 }
+
+/** The data: URL of an embedded picture. A picture that is in the store but was not loaded cannot be embedded: refuse instead of exporting a layer that prints something else. */
+function pictureUrlOf(plan: ExportAssetPlan, assets: AssetService): PictureUrl | undefined {
+  if (!plan.pictures.inlined) return undefined;
+  const unread = plan.pictures.embedded.filter((id) => assets.pictures.cached(id) === undefined);
+  if (unread.length) {
+    throw new ModelError(
+      'invalid_argument',
+      `The picture of a shader layer (${unread.map((id) => id.slice(0, 8)).join(', ')}) could not be read from the asset store, so the export cannot embed it. Upload the image again (or generate it) and set it with update_shader { image }, or remove the picture; then export again.`,
+    );
+  }
+  return (id) => assets.pictures.cached(id);
+}
+
+const pictureOpt = (url: PictureUrl | undefined) => (url ? { pictureUrl: url } : {});
 
 /**
  * A copy of the document with every `asset://<id>` replaced (React export reads many corners of the model; a copy keeps that code untouched).
@@ -130,16 +171,16 @@ function withAssetUrls(doc: OcelotDocument, rootIds: readonly string[], urlOf: (
   return copy;
 }
 
-export function exportNode(doc: OcelotDocument, id: string, kind: ExportKind, assets: AssetService, react: ReactExportOptions = {}): ExportResult {
+export function exportNode(doc: OcelotDocument, id: string, kind: ExportKind, assets: AssetService, react: ReactExportOptions = {}, pictures: PictureOptions = {}): ExportResult {
   // The React export also reads the mains of the document components the layer uses (their files carry their images and fonts).
   const roots = kind === 'react' ? exportRoots(doc, id) : [id];
-  const plan = planExportAssets(doc, roots, assets, kind);
+  const plan = planExportAssets(doc, roots, assets, kind, !!pictures.embedPictures);
   const name = doc.require(id).name || 'Design';
   if (kind === 'html') {
-    return { kind, fileName: `${fileSafe(name)}.html`, code: exportHtml(doc, id, { assetUrl: plan.urlOf }), assets: plan };
+    return { kind, fileName: `${fileSafe(name)}.html`, code: exportHtml(doc, id, { assetUrl: plan.urlOf, ...pictureOpt(pictureUrlOf(plan, assets)) }), assets: plan };
   }
   const source = plan.files.length || plan.missing.length ? withAssetUrls(doc, roots, plan.urlOf) : doc;
-  const r = exportReact(source, id, react);
+  const r = exportReact(source, id, { ...react, ...pictureOpt(pictureUrlOf(plan, assets)) });
   const extraFiles = [...(r.css ? [r.css] : []), ...(r.components ?? []).map((c) => ({ path: c.path, text: c.code }))];
   return {
     kind,
@@ -168,11 +209,12 @@ export interface ScreensExport {
  * Exports artboards together. A link from one exported screen to another becomes `<slug>.html`; a link to a screen that is not in `ids`
  * (or was deleted) drops to `#`; external URLs stay. Slugs are the artboard names, unique across the document.
  */
-export function exportScreensHtml(doc: OcelotDocument, ids: readonly string[], assets: AssetService): ScreensExport {
+export function exportScreensHtml(doc: OcelotDocument, ids: readonly string[], assets: AssetService, opts: PictureOptions = {}): ScreensExport {
   const slugs = artboardSlugs(doc);
   const targets = htmlLinkTargets(slugs, new Set(ids));
-  const plan = planExportAssets(doc, ids, assets, 'html');
-  const pages = ids.map((id) => ({ id, name: doc.require(id).name, fileName: `${slugs.get(id) ?? fileSafe(doc.require(id).name)}.html`, code: exportHtml(doc, id, { assetUrl: plan.urlOf, links: targets }) }));
+  const plan = planExportAssets(doc, ids, assets, 'html', !!opts.embedPictures);
+  const picture = pictureOpt(pictureUrlOf(plan, assets));
+  const pages = ids.map((id) => ({ id, name: doc.require(id).name, fileName: `${slugs.get(id) ?? fileSafe(doc.require(id).name)}.html`, code: exportHtml(doc, id, { assetUrl: plan.urlOf, links: targets, ...picture }) }));
   return { pages, assets: plan, name: doc.name ? fileSafe(doc.name) : 'screens' };
 }
 
@@ -206,6 +248,10 @@ export function assetNote(result: ExportResult): string {
   const where = result.kind === 'html' ? './assets/' : '/assets/ (put the files in your public/ folder)';
   const parts: string[] = [];
   if (n) parts.push(`The code references ${n} stored image${n === 1 ? '' : 's'} under ${where}; call save_export (or use Save… in the toolbar) to copy the files next to it.`);
+  const { embedded, missing: lostPictures, inlined } = result.assets.pictures;
+  if (embedded.length && inlined) parts.push(`${embedded.length} shader picture${embedded.length === 1 ? ' is' : 's are'} embedded in the code as data: URLs, so the page renders without ${result.kind === 'html' ? './assets/' : 'public/assets/'}; the file grows by the picture size.`);
+  if (embedded.length && !inlined) parts.push(`${embedded.length} shader picture${embedded.length === 1 ? ' stays' : 's stay'} an asset:// reference in this text (a picture is megabytes); save_export embeds ${embedded.length === 1 ? 'it' : 'them'} as data: URLs so the saved page renders on its own.`);
+  if (lostPictures.length) parts.push(`${lostPictures.length} shader picture${lostPictures.length === 1 ? ' is' : 's are'} missing from the store (${lostPictures.map((m) => m.slice(0, 8)).join(', ')}): the layer prints its generated field; set another image with update_shader { image }.`);
   if (result.assets.missing.length) parts.push(`${result.assets.missing.length} referenced asset${result.assets.missing.length === 1 ? ' is' : 's are'} missing from the store (${result.assets.missing.map((m) => m.slice(0, 8)).join(', ')}) and keep their asset:// reference; replace those images or generate them again.`);
   const fonts = result.assets.fonts;
   if (fonts.length) {

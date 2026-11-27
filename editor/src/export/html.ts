@@ -7,7 +7,7 @@ import { RESET_CSS } from '../render/frameDocument';
 import { replaceAssetRefs } from '../assets/refs';
 import { escapeText, nodeToHtml } from '../render/serialize';
 import { artboardMotionCss, statefulNodeIds } from '../render/motionCss';
-import { collectCodeLayers, htmlCodeScripts } from './code';
+import { collectCodeLayers, htmlCodeScripts, type PictureUrl } from './code';
 import type { LinkTargets } from './links';
 
 /** Wires `data-href` layers (links on non-anchor layers); emitted only when the page has some. */
@@ -26,7 +26,7 @@ document.addEventListener('keydown', function (e) {
  * `links` decides where screen links go (see export/links.ts). Without it (a single artboard on its own) screen links become `#`
  * and external URLs stay; the page still wires hotspot layers that point at a URL.
  */
-export function exportHtml(doc: OcelotDocument, id: string, opts: { assetUrl?: (id: string) => string; links?: LinkTargets } = {}): string {
+export function exportHtml(doc: OcelotDocument, id: string, opts: { assetUrl?: (id: string) => string; links?: LinkTargets; pictureUrl?: PictureUrl } = {}): string {
   const n = doc.require(id);
   // Nodes with interaction states get a class so the generated rules can address them without internal ids.
   const classOf = new Map(statefulNodeIds(doc, id).map((nid, i) => [nid, `atl-${i + 1}`]));
@@ -34,7 +34,7 @@ export function exportHtml(doc: OcelotDocument, id: string, opts: { assetUrl?: (
   const rawMotion = artboardMotionCss(doc, id, { selector: (nid) => (classOf.has(nid) ? `.${classOf.get(nid)}` : ''), reducedMotion: true });
   const motion = opts.assetUrl ? replaceAssetRefs(rawMotion, opts.assetUrl) : rawMotion;
   const frame = n.frame;
-  const codeLayers = collectCodeLayers(doc, id);
+  const codeLayers = collectCodeLayers(doc, id, opts.pictureUrl);
   const codeScripts = [codeLayers.layers.length ? htmlCodeScripts(codeLayers) : '', body.includes(' data-href="') ? LINK_SCRIPT : ''].filter(Boolean).join('\n');
   // A themed design: its tokens as CSS variables in one rule, and @font-face for the bundled fonts it uses (files go to ./fonts/).
   const { theme } = splitThemeStyles(doc.require(doc.artboardOf(id) ?? id).styles);

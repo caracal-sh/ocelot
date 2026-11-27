@@ -162,12 +162,12 @@ describe('link tools', () => {
     for (const name of ['set_link', 'start_presentation', 'stop_presentation']) expect(readOnly).not.toContain(name);
   });
 
-  it('the design guide has a Prototypes and links section', () => {
-    const guide = readGuide('design-guide');
+  it('the canvas guide has a Prototypes and links section, and the design guide points to it', () => {
+    const guide = readGuide('canvas-guide');
     expect(guide).toMatch(/## \d+\. Prototypes and links/);
     expect(guide).toMatch(/Use a real <a> for navigation/);
     expect(guide).toMatch(/set_tag them to "a"/);
     expect(guide).toMatch(/start_presentation ONLY when the user asks/);
-    expect(guide).toMatch(/## \d+\. When you are done/);
+    expect(readGuide('design-guide')).toMatch(/links between screens[^\n]*get_guide\(\{ topic: "canvas-guide" \}\)/);
   });
 });

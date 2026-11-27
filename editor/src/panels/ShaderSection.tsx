@@ -1,10 +1,11 @@
-// Inspector section for shader layers: kind, colours, and a control per parameter. Every edit goes through `actions.setShader`, which
-// regenerates the module; the canvas frame is told the new spec and redraws without re-mounting, so sliders respond live.
+// Inspector section for shader layers: kind, colours, the picture of a halftone or dither, and a control per parameter. Every edit goes through
+// `actions.setShader`, which regenerates the module; the canvas frame is told the new spec and redraws without re-mounting, so sliders respond live.
 
 import { useEditor } from '../editor/context';
-import { SHADER_DEFS, SHADER_KINDS, type NumberParam, type ShaderKind, type ShaderParam, type ShaderParamValue } from '../shader/spec';
+import { SHADER_DEFS, SHADER_KINDS, acceptsImage, type NumberParam, type ShaderKind, type ShaderParam, type ShaderParamValue } from '../shader/spec';
 import type { NodeData } from '../model/types';
 import { ColorRow, IconButton, Section, SelectField } from './fields';
+import { ShaderImageRow } from './ShaderImage';
 import './ShaderSection.css';
 
 const BLEND_MODES = ['normal', 'multiply', 'screen', 'overlay', 'soft-light', 'hard-light', 'color-dodge', 'color-burn', 'darken', 'lighten', 'difference', 'exclusion'];
@@ -119,11 +120,14 @@ export function ShaderSection({ node }: { node: NodeData }) {
           testId={`shader-color-${i}`}
         />
       ))}
-      {def.params.map((p) => (
-        <ParamRow key={p.key} p={p} value={spec.params[p.key] ?? p.default} onChange={(v, live) => set({ params: { [p.key]: v } }, live)} onEnd={end} />
-      ))}
+      {acceptsImage(spec.kind) && <ShaderImageRow node={node} />}
+      {def.params
+        .filter((p) => !p.when || (p.when === 'image') === !!spec.image)
+        .map((p) => (
+          <ParamRow key={p.key} p={p} value={spec.params[p.key] ?? p.default} onChange={(v, live) => set({ params: { [p.key]: v } }, live)} onEnd={end} />
+        ))}
       <SelectField label="Blend" title="How the layer mixes with what is under it. Overlay or soft-light suit film grain." value={blend} options={BLEND_MODES} onChange={(v) => editor.actions.updateStyles([node.id], { 'mix-blend-mode': v === 'normal' ? null : v })} testId="shader-blend" span />
-      <div className="at-hint">Speed 0 holds the picture still · same seed, same picture · colours can be tokens</div>
+      <div className="at-hint">{spec.image ? 'The picture is cropped to fill the layer; its brightness sets the tone · colours can be tokens' : 'Speed 0 holds the picture still · same seed, same picture · colours can be tokens'}</div>
     </Section>
   );
 }

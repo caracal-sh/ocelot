@@ -15,7 +15,7 @@ import { loadStyle } from '../designsystem/snapshot';
 import { defaultVendorBase } from '../render/codeLayer';
 import { artboardDocumentHtml } from '../render/serialize';
 import { FONT_BASE } from '../themes/fonts';
-import { exportFiles, exportNode, exportScreensHtml, reactOptions, screensFiles } from './assets';
+import { exportFiles, exportNode, exportScreensHtml, preloadPictures, reactOptions, screensFiles } from './assets';
 import { slugify } from './links';
 import { MAX_EXPORT_PIXELS, ExportError, assertCodeLayersHealthy } from './fileExport';
 import { HANDOFF_SCALE, flowsJson, folderMarkdown, folderReadme, type FolderLayout, type Handoff } from './handoff';
@@ -70,7 +70,8 @@ async function codeFiles(editor: Editor, h: Handoff): Promise<{ files: ExportFil
   const warnings: string[] = [];
   const names = new Set<string>();
   for (const s of h.screens) {
-    const result = exportNode(doc, s.id, 'react', editor.assets, options);
+    await preloadPictures(doc, s.id, editor.assets);
+    const result = exportNode(doc, s.id, 'react', editor.assets, options, { embedPictures: true });
     const base = result.componentName ?? slugify(s.name);
     let name = base;
     for (let n = 2; names.has(name); n++) name = `${base}${n}`;
@@ -140,7 +141,9 @@ export async function buildHandoffFolder(editor: Editor, host: Host, h: Handoff,
   opts.onProgress?.(h.design_system ? 'Exporting the design system' : 'Writing the brief');
   const registry = await registryFiles(editor, h, opts.compact ? 'used' : 'all');
   if (registry) warnings.push(...registry.warnings);
-  const prototype = opts.compact ? [] : screensFiles(exportScreensHtml(editor.doc, h.screens.map((s) => s.id), editor.assets)).map((f) => ({ ...f, path: `prototype/${f.path}` }));
+  const screenIds = h.screens.map((s) => s.id);
+  if (!opts.compact) await preloadPictures(editor.doc, screenIds, editor.assets);
+  const prototype = opts.compact ? [] : screensFiles(exportScreensHtml(editor.doc, screenIds, editor.assets, { embedPictures: true })).map((f) => ({ ...f, path: `prototype/${f.path}` }));
   const layout: FolderLayout = { code: code.code, hasRegistry: registry !== null, hasPrototype: prototype.length > 0, hasScreenshots: withShots, ...(code.components.length ? { components: code.components } : {}) };
   let files: ExportFile[] = [
     { path: 'HANDOFF.md', text: folderMarkdown(h, layout) },

@@ -24,7 +24,7 @@ export const CLIPBOARD_TOOLS: ToolDef[] = [
     description:
       'Puts something on the PERSON\'s pasteboard, like their ⌘C / ⇧⌘C / "Copy prompt". The pasteboard is theirs and this REPLACES what they had copied: use it only when they asked ("copy that to my clipboard", "give me the prompt to paste"), never to pass data to yourself or between your own steps. ' +
       'They see the same toast as when they copy it themselves. what: ' +
-      '"png" copies ONE layer or artboard as a PNG image (node_id, or artboard_id for an artboard; scale 1, 2 or 3, default the scale they last exported at), ready to paste into Slack, Figma, a doc. Needs the Ocelot app or headless host. ' +
+      '"png" copies ONE layer or artboard as a PNG image (node_id, or artboard_id for an artboard; scale 1, 2 or 3, default the scale they last exported at), ready to paste into a chat, another app or a doc. Needs the Ocelot app or headless host. ' +
       '"prompt" copies the handoff prompt for a coding agent (scope, node_ids, page_id, agent: as get_handoff; agent defaults to "claude"; the prompt includes the connect command when that agent is not connected). ' +
       '"layers" copies the layers node_ids as HTML text (artboards copy their children), so pasting in Ocelot recreates them (⌘V adds them next to the selection) and other apps get the HTML. ' +
       '"text" copies text exactly as given. ' +

@@ -141,12 +141,12 @@ describe('create_artboard placement', () => {
 });
 
 describe('guide', () => {
-  it('server instructions and the design guide teach organizing the canvas', async () => {
+  it('server instructions and the canvas guide teach organizing the canvas', async () => {
     const t = setupMcp();
     const init = await t.rpc('initialize', { protocolVersion: '2025-03-26', clientInfo: { name: 'test' }, capabilities: {} });
     expect(init.result.instructions).toMatch(/arrange_artboards/);
     expect(init.result.instructions).toMatch(/Flow \/ Step — Device/);
-    const guide = t.textOf(await t.call('get_guide', { topic: 'design-guide' }));
+    const guide = t.textOf(await t.call('get_guide', { topic: 'canvas-guide' }));
     expect(guide).toContain('Organizing the canvas');
     expect(guide).toMatch(/Onboarding \/ Welcome — Desktop/);
   });

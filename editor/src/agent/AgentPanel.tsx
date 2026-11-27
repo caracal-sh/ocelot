@@ -17,6 +17,7 @@ import type { QueueName, QueuedItem, SendMode } from './queue';
 import { ImageJobStep, PendingImages } from './ImageJobs';
 import { DirectionCard } from './DirectionCard';
 import { relativeTime, type ConversationMeta } from './conversations';
+import { renderText } from './messageText';
 
 export const AgentChatContext = createContext<AgentChat | null>(null);
 
@@ -574,19 +575,4 @@ function PickerPopover({ children }: { children: ReactNode }) {
       {children}
     </div>
   );
-}
-
-/** Paragraphs, `code` and **bold**; everything else stays plain text. `caret` puts a blinking caret after the last paragraph (streaming). */
-function renderText(text: string, caret = false): ReactNode {
-  const paragraphs = text.trim().split(/\n{2,}/);
-  return paragraphs.map((para, i) => (
-    <p key={i}>
-      {para.split(/(`[^`\n]+`|\*\*[^*\n]+\*\*)/g).map((part, j) => {
-        if (part.startsWith('`') && part.endsWith('`') && part.length > 2) return <code key={j}>{part.slice(1, -1)}</code>;
-        if (part.startsWith('**') && part.endsWith('**') && part.length > 4) return <strong key={j}>{part.slice(2, -2)}</strong>;
-        return part;
-      })}
-      {caret && i === paragraphs.length - 1 && <span className="at-caret" aria-hidden="true" />}
-    </p>
-  ));
 }

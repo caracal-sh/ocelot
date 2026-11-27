@@ -13,8 +13,12 @@
 
 import type { OcelotDocument } from '../model/document';
 import type { CodeData, CodeLibrary } from '../model/types';
+import { assetIdOf } from '../assets/refs';
 import { LIBRARY_VERSIONS, importMapFor } from '../render/codeLayer';
 import { bindingKey, renderImport, scanImports, type ImportDecl } from './moduleImports';
+
+/** A stored image's `data:` URL when its pixels are loaded (assets.pictures.cached), else undefined. */
+export type PictureUrl = (assetId: string) => string | undefined;
 
 export interface SplitModule {
   imports: ImportDecl[];
@@ -53,10 +57,16 @@ export interface CodeExport {
   imports: string[];
   /** Local name -> what it is bound to (see bindingKey), for the names hoisted so far. */
   bound: Map<string, string>;
+  /**
+   * Shader layers that print a picture carry it inside the module as a data: URL, so the exported page renders from a single file (an image
+   * file next to it would taint the canvas when the page is opened from disk). Without it a layer keeps its reference, which an exported page
+   * cannot resolve: the layer prints its generated field and says so in the console.
+   */
+  pictureUrl?: PictureUrl;
 }
 
-export function createCodeExport(): CodeExport {
-  return { layers: [], imports: [], bound: new Map() };
+export function createCodeExport(pictureUrl?: PictureUrl): CodeExport {
+  return { layers: [], imports: [], bound: new Map(), ...(pictureUrl ? { pictureUrl } : {}) };
 }
 
 /**
@@ -97,13 +107,22 @@ export function addCodeLayer(ctx: CodeExport, code: CodeData): string {
   const layerNo = ctx.layers.length + 1;
   const aliases = hoistImports(ctx, imports, layerNo);
   const name = `mountLayer${layerNo}`;
-  ctx.layers.push({ name, scope: scopeOf(body, aliases), libraries: code.libraries });
+  let scope = scopeOf(body, aliases);
+  // The spec line is swapped after the module was split, so the (large) picture never goes through the import scanner.
+  const ref = code.shader?.image;
+  const picture = ref ? assetIdOf(ref) : null;
+  const url = picture ? ctx.pictureUrl?.(picture) : undefined;
+  if (code.shader && url) {
+    const line = `const SPEC = ${JSON.stringify({ ...code.shader, image: url })};`;
+    scope = scope.replace(/^const SPEC = .*$/m, () => line);
+  }
+  ctx.layers.push({ name, scope, libraries: code.libraries });
   return name;
 }
 
 /** Code layers of a subtree in document (DOM) order, hidden layers and their subtrees skipped. */
-export function collectCodeLayers(doc: OcelotDocument, rootId: string): CodeExport {
-  const out = createCodeExport();
+export function collectCodeLayers(doc: OcelotDocument, rootId: string, pictureUrl?: PictureUrl): CodeExport {
+  const out = createCodeExport(pictureUrl);
   const walk = (id: string) => {
     const n = doc.get(id);
     if (!n || n.hidden) return;

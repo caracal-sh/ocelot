@@ -2,7 +2,7 @@
 // render never depends on what the user has scrolled into view.
 
 import type { OcelotDocument } from '../model/document';
-import { replaceAssetRefs } from '../assets/refs';
+import { assetIdOf, replaceAssetRefs } from '../assets/refs';
 import type { NodeData, StateName } from '../model/types';
 import { styleMapToText } from '../model/styles';
 import { ARTBOARD_BASE_CSS } from './frameDocument';
@@ -40,6 +40,12 @@ export interface SerializeOptions {
    * screenshots, `./assets/<id>.<ext>` for exports. Without it references are left as written.
    */
   assetUrl?: (id: string) => string;
+  /**
+   * Screenshots only: where a shader layer's picture (`code.shader.image`) comes from, when `assetUrl` does not give a `data:` URI (video
+   * export maps assets to files the frame cannot load). Defaults to `assetUrl`; anything that is not a `data:image/` URL leaves the layer
+   * on its generated field.
+   */
+  imageUrl?: (id: string) => string;
   /**
    * Exports only: render prototype links. An `<a>` gets its href, any other layer with a link gets `data-href` (+ role, tabindex
    * and a pointer cursor; export/html.ts adds the one-line script that follows it). Without it links are not rendered.
@@ -133,9 +139,14 @@ export function artboardDocumentHtml(doc: OcelotDocument, artboardId: string, op
 
 /** A code frame for standalone pages: reproducible (`exportRuntime`), free-running (`live`) or snapshot (motion state never applied: not paused, no reduced motion). */
 function codeFrameIframe(nodeId: string, code: CodeData, vendorBase: string, opts: SerializeOptions, vars: Record<string, string>): string {
+  // A shader layer's picture rides in the frame's config: the frame loads only data: images, and a page that is written from the model has no host to ask.
+  const ref = code.shader?.image;
+  const id = ref ? assetIdOf(ref) : null;
+  const url = id ? (opts.imageUrl ?? opts.assetUrl)?.(id) : undefined;
+  const images = ref ? { [ref]: url?.startsWith('data:image/') ? url : '' } : undefined;
   const frameOpts: CodeFrameOptions = opts.exportRuntime
-    ? { vendorBase, mode: 'export', paused: false, reducedMotion: false, fps: opts.exportRuntime.fps, seed: frameSeed(nodeId), vars }
-    : { vendorBase, mode: opts.live ? 'live' : 'snapshot', paused: false, reducedMotion: false, vars };
+    ? { vendorBase, mode: 'export', paused: false, reducedMotion: false, fps: opts.exportRuntime.fps, seed: frameSeed(nodeId), vars, ...(images ? { images } : {}) }
+    : { vendorBase, mode: opts.live ? 'live' : 'snapshot', paused: false, reducedMotion: false, vars, ...(images ? { images } : {}) };
   const srcdoc = codeFrameSrcdoc(code, frameOpts);
   return `<iframe data-ocelot-code-frame sandbox="allow-scripts" tabindex="-1" aria-hidden="true" title="Code layer" srcdoc="${escapeAttr(srcdoc)}"></iframe>`;
 }

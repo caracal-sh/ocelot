@@ -17,6 +17,8 @@ interface ParamBase {
   label: string;
   /** One plain sentence: what moving it does. Shown as the control's tooltip and in tool descriptions. */
   help: string;
+  /** Kinds that can print a picture: `image` params only act while the layer has one, `generated` ones only while it has none (they shape the generated field). */
+  when?: 'image' | 'generated';
 }
 export interface NumberParam extends ParamBase {
   type: 'number';
@@ -55,6 +57,18 @@ export interface ShaderSpec {
   colors: string[];
   /** Every parameter of the kind, defaults filled in. */
   params: Record<string, ShaderParamValue>;
+  /**
+   * Halftone and dither only: a stored image (`asset://<64 hex>`) whose luminance is printed instead of the generated field. It is a document
+   * reference, not a parameter: it counts as a use of the asset (it cannot be deleted from under the layer, exports embed it).
+   */
+  image?: string;
+}
+
+/** The kinds that can print a picture. */
+export const IMAGE_KINDS: readonly ShaderKind[] = ['halftone', 'dither'];
+
+export function acceptsImage(kind: ShaderKind): boolean {
+  return IMAGE_KINDS.includes(kind);
 }
 
 const num = (key: string, label: string, min: number, max: number, step: number, def: number, help: string, extra: { integer?: boolean; unit?: string } = {}): NumberParam => ({
@@ -69,6 +83,8 @@ const num = (key: string, label: string, min: number, max: number, step: number,
   ...extra,
 });
 const sel = (key: string, label: string, options: readonly string[], def: string, help: string): SelectParam => ({ type: 'select', key, label, options, default: def, help });
+/** Marks the parameters of a kind that a picture replaces (the generated field's own) or adds (where the picture sits). */
+const when = <T extends ShaderParam>(w: 'image' | 'generated', p: T): T => ({ ...p, when: w });
 
 // Defaults when the document has no theme: near-black, white and one saturated accent. Nothing here is a house style: pass colours from the brief.
 const INK = '#101114';
@@ -116,40 +132,45 @@ export const SHADER_DEFS: Readonly<Record<ShaderKind, ShaderKindDef>> = {
   halftone: {
     kind: 'halftone',
     label: 'Halftone',
-    summary: 'A printed screen of dots, lines or squares at an angle over a generated tonal field (a gradient, a spotlight, noise, a shaded sphere). Ink on a ground, anti-aliased. For editorial, print and poster work; the ground can be transparent to lay it over a photo.',
+    summary: 'A printed screen of dots, lines or squares at an angle over a tonal field: a generated one (a gradient, a spotlight, noise, a shaded sphere) or a picture from the document\'s assets (image: the photo printed in halftone, cover-fitted, with a focal point). Ink on a ground, anti-aliased. For editorial, print and poster work; the ground can be transparent to lay it over a photo.',
     colors: { min: 2, max: 2, defaults: [INK, PAPER], labels: ['Ink', 'Paper'] },
     tokens: ['ink', 'canvas'],
     params: [
-      sel('field', 'Field', ['linear', 'radial', 'noise', 'sphere'], 'sphere', 'The tone the screen prints: a straight gradient, a spotlight, noise or a shaded ball.'),
+      when('generated', sel('field', 'Field', ['linear', 'radial', 'noise', 'sphere'], 'sphere', 'The tone the screen prints: a straight gradient, a spotlight, noise or a shaded ball.')),
       sel('shape', 'Shape', ['dot', 'line', 'square'], 'dot', 'Round dots, engraved lines or square pixels.'),
       num('cell', 'Cell size', 3, 64, 1, 12, 'Distance between dots or lines in layer pixels. Small is fine print, large is poster.', { unit: 'px' }),
       num('angle', 'Screen angle', 0, 180, 1, 45, 'Angle of the screen. 45° is the classic; 0° and 90° read as a grid.', { unit: '°' }),
       num('contrast', 'Contrast', 0.3, 3, 0.05, 1.2, 'Pushes tones toward solid ink or bare paper. Above 1 is punchier.'),
       num('softness', 'Softness', 0, 1, 0.01, 0, 'Edge blur. 0 is a crisp anti-aliased dot, 1 is wet ink.'),
-      num('scale', 'Field scale', 0.3, 3, 0.05, 1, 'Size of the tonal field (the ball, the spotlight, the noise cloud) relative to the layer.'),
-      num('direction', 'Direction', 0, 360, 1, 135, 'Which way a linear field fades and where a sphere is lit from.', { unit: '°' }),
-      num('warp', 'Warp', 0, 1, 0.01, 0.2, 'Wobbles the field with noise so edges stop looking computed.'),
+      when('generated', num('scale', 'Field scale', 0.3, 3, 0.05, 1, 'Size of the tonal field (the ball, the spotlight, the noise cloud) relative to the layer.')),
+      when('generated', num('direction', 'Direction', 0, 360, 1, 135, 'Which way a linear field fades and where a sphere is lit from.', { unit: '°' })),
+      when('generated', num('warp', 'Warp', 0, 1, 0.01, 0.2, 'Wobbles the field with noise so edges stop looking computed.')),
       { type: 'boolean', key: 'invert', label: 'Invert', default: false, help: 'Swap where the ink goes: ink on the light parts instead of the dark.' },
-      speed(0.1, 2, 'How fast the field drifts, or the light circles the ball.'),
-      SEED,
+      when('image', num('focus_x', 'Focus X', 0, 1, 0.01, 0.5, 'Which part of the picture stays in view when it is cropped to fill the layer, left to right. 0.5 is the centre.')),
+      when('image', num('focus_y', 'Focus Y', 0, 1, 0.01, 0.5, 'Which part of the picture stays in view when it is cropped to fill the layer, top to bottom. 0.5 is the centre.')),
+      when('generated', speed(0.1, 2, 'How fast the field drifts, or the light circles the ball.')),
+      when('generated', SEED),
     ],
   },
   dither: {
     kind: 'dither',
     label: 'Dither',
-    summary: 'Ordered Bayer dithering of a generated field into two or three flat tones, on hard device-pixel cells. A deliberate 1-bit look for retro-technical, game or zine work.',
+    summary: 'Ordered Bayer dithering of a tonal field into two or three flat tones, on hard device-pixel cells: a generated field or a picture from the document\'s assets (image). A deliberate 1-bit look for retro-technical, game or zine work.',
     colors: { min: 2, max: 3, defaults: [INK, PAPER], labels: ['Dark', 'Mid', 'Light'] },
     tokens: ['ink', 'canvas'],
     params: [
-      sel('field', 'Field', ['waves', 'noise', 'sphere', 'gradient'], 'waves', 'The tone that gets dithered: interfering waves, noise, a shaded ball or a straight gradient.'),
+      when('generated', sel('field', 'Field', ['waves', 'noise', 'sphere', 'gradient'], 'waves', 'The tone that gets dithered: interfering waves, noise, a shaded ball or a straight gradient.')),
       sel('matrix', 'Matrix', ['2x2', '4x4', '8x8'], '4x4', 'Size of the Bayer pattern. 2x2 is coarse and graphic, 8x8 is smooth and fine.'),
       num('pixel', 'Pixel size', 1, 12, 1, 3, 'Size of one dither cell in layer pixels (whole device pixels, so it never shimmers).', { unit: 'px' }),
       num('contrast', 'Contrast', 0.3, 3, 0.05, 1.1, 'Pushes tones toward the extremes.'),
-      num('scale', 'Scale', 0.3, 3, 0.05, 1, 'Size of the features of the field.'),
-      num('direction', 'Direction', 0, 360, 1, 30, 'Direction of waves and gradients; where a sphere is lit from.', { unit: '°' }),
-      num('warp', 'Warp', 0, 1, 0.01, 0.3, 'Bends the field with noise.'),
-      speed(0.2, 2, 'How fast the field moves.'),
-      SEED,
+      when('generated', num('scale', 'Scale', 0.3, 3, 0.05, 1, 'Size of the features of the field.')),
+      when('generated', num('direction', 'Direction', 0, 360, 1, 30, 'Direction of waves and gradients; where a sphere is lit from.', { unit: '°' })),
+      when('generated', num('warp', 'Warp', 0, 1, 0.01, 0.3, 'Bends the field with noise.')),
+      { type: 'boolean', key: 'invert', label: 'Invert', default: false, help: 'Swap light and dark: the lightest tone where the picture or field is dark.' },
+      when('image', num('focus_x', 'Focus X', 0, 1, 0.01, 0.5, 'Which part of the picture stays in view when it is cropped to fill the layer, left to right. 0.5 is the centre.')),
+      when('image', num('focus_y', 'Focus Y', 0, 1, 0.01, 0.5, 'Which part of the picture stays in view when it is cropped to fill the layer, top to bottom. 0.5 is the centre.')),
+      when('generated', speed(0.2, 2, 'How fast the field moves.')),
+      when('generated', SEED),
     ],
   },
   grain: {
@@ -228,6 +249,32 @@ export interface ShaderInput {
   kind?: unknown;
   colors?: unknown;
   params?: unknown;
+  /** An `asset://<64 hex>` reference; null or "" clears it. */
+  image?: unknown;
+}
+
+const IMAGE_REF = /^asset:\/\/[0-9a-f]{64}$/;
+
+/** True for the one form a shader stores its picture in: `asset://<64 hex>`. */
+export function isShaderImageRef(value: unknown): value is string {
+  return typeof value === 'string' && IMAGE_REF.test(value);
+}
+
+function imageOf(input: ShaderInput, kind: ShaderKind, what: string, base: ShaderSpec | undefined): string | undefined {
+  const raw = input.image;
+  if (raw === undefined) return base?.image;
+  if (raw === null || raw === '') return undefined;
+  const value = typeof raw === 'string' ? raw.trim() : raw;
+  if (!isShaderImageRef(value)) {
+    throw new ModelError(
+      'invalid_argument',
+      `${what}: "image" must be a stored asset like "asset://<64 hex characters>" (the ids list_assets returns), got ${JSON.stringify(value).slice(0, 80)}. Upload an image in the Assets tab or make one with generate_image, then pass its id; null removes the picture.`,
+    );
+  }
+  if (!acceptsImage(kind)) {
+    throw new ModelError('invalid_argument', `${what}: only ${IMAGE_KINDS.join(' and ')} shaders can print a picture; this is a ${kind} layer. Create a halftone or dither layer with create_shader_layer, or use the picture as an image layer and put this shader over it.`);
+  }
+  return value;
 }
 
 function describeRange(p: NumberParam): string {
@@ -271,6 +318,7 @@ export function normalizeShader(input: ShaderInput, what = 'shader', base?: Shad
   const patch = (given ?? {}) as Record<string, unknown>;
   const keys = new Set(def.params.map((p) => p.key));
   for (const k of Object.keys(patch)) {
+    if (k === 'image') throw new ModelError('invalid_argument', `${what}: "image" is not a parameter: pass it next to "params" as the top-level "image" field (an asset id from list_assets${acceptsImage(kind) ? '' : `; ${kind} cannot print a picture, only ${IMAGE_KINDS.join(' and ')} can`}).`);
     if (!keys.has(k)) throw new ModelError('invalid_argument', `${what}: ${kind} has no parameter "${k}". Its parameters: ${def.params.map((p) => p.key).join(', ')}.`);
   }
   const params: Record<string, ShaderParamValue> = {};
@@ -293,7 +341,8 @@ export function normalizeShader(input: ShaderInput, what = 'shader', base?: Shad
       params[p.key] = raw;
     }
   }
-  return { kind, colors, params };
+  const image = imageOf(input, kind, what, base);
+  return { kind, colors, params, ...(image ? { image } : {}) };
 }
 
 /** A stored spec, read back leniently: null when it is not a valid spec (the layer then behaves as plain code). */
@@ -307,17 +356,17 @@ export function readShaderSpec(raw: unknown): ShaderSpec | null {
 }
 
 export function cloneShader(spec: ShaderSpec): ShaderSpec {
-  return { kind: spec.kind, colors: [...spec.colors], params: { ...spec.params } };
+  return { kind: spec.kind, colors: [...spec.colors], params: { ...spec.params }, ...(spec.image ? { image: spec.image } : {}) };
 }
 
 export function sameShader(a: ShaderSpec | undefined, b: ShaderSpec | undefined): boolean {
   if (!a || !b) return a === b;
-  return a.kind === b.kind && a.colors.length === b.colors.length && a.colors.every((c, i) => c === b.colors[i]) && JSON.stringify(a.params) === JSON.stringify(b.params);
+  return a.kind === b.kind && a.image === b.image && a.colors.length === b.colors.length && a.colors.every((c, i) => c === b.colors[i]) && JSON.stringify(a.params) === JSON.stringify(b.params);
 }
 
 /** One line for `get_tree` and friends: "grain-gradient, 3 colours". */
 export function shaderSummary(spec: ShaderSpec): string {
-  return `shader ${spec.kind}${spec.colors.length ? `, ${spec.colors.join(' ')}` : ''}`;
+  return `shader ${spec.kind}${spec.colors.length ? `, ${spec.colors.join(' ')}` : ''}${spec.image ? `, image ${spec.image.slice(0, 15)}…` : ''}`;
 }
 
 function fits(p: ShaderParam, v: unknown): boolean {
@@ -335,15 +384,15 @@ export function convertShader(spec: ShaderSpec, kind: ShaderKind): ShaderSpec {
   const colors = def.colors.max === 0 ? [] : [...spec.colors, ...def.colors.defaults.slice(spec.colors.length)].slice(0, def.colors.max);
   const params: Record<string, ShaderParamValue> = {};
   for (const p of def.params) params[p.key] = fits(p, spec.params[p.key]) ? spec.params[p.key]! : p.default;
-  return { kind, colors, params };
+  return { kind, colors, params, ...(spec.image && acceptsImage(kind) ? { image: spec.image } : {}) };
 }
 
 /** A tuning patch applied to a layer's spec: `kind` switches kind first (see convertShader), then colours replace and params merge. */
-export function applyShaderPatch(cur: ShaderSpec, patch: { kind?: unknown; colors?: unknown; params?: unknown }, what = 'shader'): ShaderSpec {
+export function applyShaderPatch(cur: ShaderSpec, patch: { kind?: unknown; colors?: unknown; params?: unknown; image?: unknown }, what = 'shader'): ShaderSpec {
   let base = cur;
   if (patch.kind !== undefined && patch.kind !== cur.kind) {
     if (!isShaderKind(patch.kind)) throw new ModelError('invalid_argument', `${what}: unknown kind ${JSON.stringify(patch.kind)}. Use one of: ${SHADER_KINDS.join(', ')}.`);
     base = convertShader(cur, patch.kind);
   }
-  return normalizeShader({ colors: patch.colors, params: patch.params }, what, base);
+  return normalizeShader({ colors: patch.colors, params: patch.params, image: patch.image }, what, base);
 }

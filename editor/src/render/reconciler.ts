@@ -11,7 +11,7 @@ import type * as Y from 'yjs';
 import { ORIGIN, type OcelotDocument } from '../model/document';
 import type { NodeData } from '../model/types';
 import { MotionSheet } from './motionSheet';
-import { CodeLayerHost } from './codeLayer';
+import { CodeLayerHost, type FrameImages } from './codeLayer';
 import { nodeAssetIds, replaceAssetRefs } from '../assets/refs';
 import { settle } from './settle';
 import { planCreateReveal, type RevealChunk, type RevealInput, type RevealNode } from './reveal';
@@ -22,6 +22,8 @@ import { createLayerElement, emptyApplied, syncAttrs, syncMarkup, syncStyles, sy
 export interface AssetUrls {
   urlFor(id: string): string;
   onLoaded(cb: (id: string) => void): () => void;
+  /** Where shader layers get their pictures as data: URLs (a code frame loads nothing else). */
+  pictures?: FrameImages;
 }
 
 /** Where a reconciler sends the chunks it reveals: the editor's reveal store (plus whatever follows the agent's work). */
@@ -91,6 +93,7 @@ export class ArtboardReconciler {
     this.#offAssets?.();
     this.#assets = assets;
     this.#offAssets = assets?.onLoaded(this.#onAssetLoaded) ?? null;
+    this.code.setImages(assets?.pictures ?? null);
     if (this.#motion) this.#motion.transform = (css) => this.#resolve(css);
   }
 

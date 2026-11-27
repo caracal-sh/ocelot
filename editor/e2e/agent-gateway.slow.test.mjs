@@ -58,6 +58,21 @@ describe('AgentGateway shutdown', () => {
   }, 30_000);
 });
 
+describe('AgentGateway restart', () => {
+  it('a gateway that dies comes back on the same port, so agents configured with it keep working', async () => {
+    const { bin, dir, pids } = await fake();
+    const gw = new AgentGateway({ ompBin: bin, home: join(dir, 'gateway-home') });
+    const { port } = await gw.ensure();
+    const [, gateway] = await alivePids(pids);
+    process.kill(gateway, 'SIGKILL');
+    for (let i = 0; i < 100 && gw.status().state === 'running'; i++) await new Promise((r) => setTimeout(r, 50));
+    const again = await gw.ensure();
+    expect(again.port).toBe(port);
+    expect((await fetch(`http://127.0.0.1:${port}/v1/models`)).ok).toBe(true);
+    await gw.stop();
+  }, 30_000);
+});
+
 describe('AgentGateway home', () => {
   it('holds the clients file while running and is removed on stop, with the file', async () => {
     const { bin, dir } = await fake();

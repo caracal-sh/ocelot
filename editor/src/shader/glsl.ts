@@ -191,6 +191,22 @@ float f_waves(vec2 q, float bg) {
 }
 `;
 
+/**
+ * A picture as the tonal field of halftone and dither (declared by source.ts: u_img, u_imgSize in pixels, u_hasImage 0 or 1): brightness 0 (dark)
+ * to 1 (light) at a device position (y down), the picture fitted like CSS cover with u_focus_x / u_focus_y choosing the part that stays in view.
+ * The sample is the mip level that averages one cell (cellDevice device pixels), so a dot or dither cell reads the mean tone under it, not a
+ * single texel. Transparent pixels read as light paper.
+ */
+const IMAGE = /* glsl */ `
+float imageTone(vec2 centreDevice, float cellDevice) {
+  float s = max(u_res.x / u_imgSize.x, u_res.y / u_imgSize.y);
+  vec2 shown = u_imgSize * s;
+  vec2 uv = (centreDevice + (shown - u_res) * vec2(u_focus_x, u_focus_y)) / shown;
+  vec4 t = textureLod(u_img, clamp(uv, 0.0, 1.0), log2(max(1.0, cellDevice / s)));
+  return mix(1.0, dot(t.rgb, vec3(0.2126, 0.7152, 0.0722)), t.a);
+}
+`;
+
 export const HALFTONE = /* glsl */ `
 float field(vec2 q) {
   int k = int(u_field + 0.5);
@@ -200,7 +216,7 @@ float field(vec2 q) {
   return f_sphere(q, 1.0);
 }
 float tone(vec2 centreDevice) {
-  float b = field(toQ(centreDevice));
+  float b = (u_hasImage > 0.5) ? imageTone(centreDevice, max(2.0, u_cell * u_dpr)) : field(toQ(centreDevice));
   float ink = (u_invert > 0.5) ? b : 1.0 - b;
   return clamp((ink - 0.5) * u_contrast + 0.5, 0.0, 1.0);
 }
@@ -281,7 +297,8 @@ void main() {
   int cs = max(1, int(floor(u_pixel * u_dpr + 0.5)));
   ivec2 cid = pix / cs;
   vec2 centre = (vec2(cid) + 0.5) * float(cs);
-  float b = field(toQ(centre));
+  float b = (u_hasImage > 0.5) ? imageTone(centre, float(cs)) : field(toQ(centre));
+  if (u_invert > 0.5) b = 1.0 - b;
   b = clamp((b - 0.5) * u_contrast + 0.5, 0.0, 1.0);
   int levels = int(u_matrix + 0.5) + 1;
   float thr = bayer(cid, levels);
@@ -327,4 +344,4 @@ void main() {
 }
 `;
 
-export const GLSL = { NOISE, COLOR, COORDS, FIELDS, BAYER };
+export const GLSL = { NOISE, COLOR, COORDS, FIELDS, IMAGE, BAYER };

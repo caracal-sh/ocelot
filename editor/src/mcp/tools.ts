@@ -301,7 +301,7 @@ const CORE_TOOLS: ToolDef[] = [
       } catch (err) {
         throw new ToolError(`Screenshot failed: ${errorMessage(err)}. Retry once; if it keeps failing, continue with get_node/get_tree and tell the user screenshots are unavailable.`);
       }
-      const missingNote = inline.missing.length ? ` Warning: ${inline.missing.length} image asset(s) used here are missing from the asset store (${inline.missing.map((m) => m.slice(0, 8)).join(', ')}) and render blank; replace them or generate them again.` : '';
+      const missingNote = inline.missing.length ? ` Warning: ${inline.missing.length} image asset(s) used here are missing from the asset store (${inline.missing.map((m) => m.slice(0, 8)).join(', ')}): image layers render blank and a shader printing one falls back to its generated field; replace them or generate them again.` : '';
       const overflow = overflowNote(frame, { rendered: true, contentWidth: shot.contentWidth, contentHeight: shot.contentHeight });
       const contrast = contrastNote(contrastIssues(ctx.editor, n.id));
       const inSubtree = n.id === artboardId ? null : new Set(ctx.editor.doc.subtreeIds(n.id));
