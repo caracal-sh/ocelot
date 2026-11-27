@@ -86,9 +86,10 @@ describe('shader picture source', () => {
       const source = generateShaderSource(normalizeShader({ kind, image: IMAGE }));
       expect(lintCodeSource(source)).toEqual([]);
       expect(source).not.toMatch(/\bfetch\s*\(|XMLHttpRequest|WebSocket|\.src\s*=\s*['"]https?:/);
-      // The picture comes from the host (ctx.images by reference) or, on an exported page, from the spec's own data: URL.
+      // The picture comes from the host (ctx.images by reference) or, on an exported page, from the spec's own URL: a data: URL (HTML) or a /assets/<file> path (React).
       expect(source).toContain('ctx.images');
       expect(source).toContain("ref.slice(0, 11) === 'data:image/'");
+      expect(source).toContain("ref.charAt(0) === '/' && ref.charAt(1) !== '/'");
       expect(source.length).toBeLessThan(30_000);
       expect(() => new Function(source.replace('export default function mount(', 'function mount('))).not.toThrow();
     }

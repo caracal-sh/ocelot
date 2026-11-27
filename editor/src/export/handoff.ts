@@ -18,9 +18,14 @@ import { collectLinks } from '../model/links';
 import { artboardSlugs } from './links';
 import { fontsForExport } from './themeCss';
 import { MOTION_RULES, hasMotion, motionLines, motionOf, type HandoffMotion } from './handoffMotion';
+import { NO_SERVER_PARTS, SAMPLE_CONTENT_RULE, SERVER_RULES, serverPartLine, serverParts, type HandoffServerPart } from './handoffServer';
 
 export type HandoffScope = 'selection' | 'page' | 'document';
 export const HANDOFF_SCOPES: readonly HandoffScope[] = ['selection', 'page', 'document'];
+
+/** What the brief builds: `frontend` the screens and routes in a Vite + React app; `full-app` a TanStack Start app, with the parts that need a server listed. */
+export type HandoffStack = 'frontend' | 'full-app';
+export const HANDOFF_STACKS: readonly HandoffStack[] = ['frontend', 'full-app'];
 
 /** The scale of the screenshots in a handoff folder. */
 export const HANDOFF_SCALE = 2;
@@ -86,6 +91,7 @@ export interface HandoffAgent {
 export interface Handoff {
   project: { id: string; name: string };
   scope: { kind: HandoffScope; page_id?: string; page?: string };
+  stack: HandoffStack;
   screens: HandoffScreen[];
   /** Layers the person selected inside those screens: where to look first. Only with the selection scope. */
   focus: Array<{ id: string; name: string; screen_id: string }>;
@@ -98,6 +104,8 @@ export interface Handoff {
   theme: { id: string } | null;
   /** The document components the screens use (an instance of each, or one a used component contains): build each once. Empty without any. */
   components: HandoffComponent[];
+  /** Full app only: the forms, sign-in and data lists of the screens, which need a server. Empty for the front end (and when the design shows none). */
+  server_parts: HandoffServerPart[];
   assets: { images: number; fonts: string[] };
   /** What the handoff leaves out, and why. */
   skipped: string[];
@@ -117,6 +125,8 @@ export interface HandoffRequest {
   pageId?: string;
   /** The agent the prompt is for; `connect` is the host's connect text for it. Without one the prompt has no connect section. */
   agent?: { kind: AgentKind; connected: boolean; connect: string | null };
+  /** What to build; default `frontend`. */
+  stack?: HandoffStack;
 }
 
 export interface HandoffSource {
@@ -195,6 +205,28 @@ const DS_CONSTRAINTS = [
 ];
 const THEME_CONSTRAINTS = ['No colours or fonts outside the theme\'s tokens (var(--theme-…) in the exported stylesheet).'];
 const ROUTES_CONSTRAINT = 'Links between screens are routes (/<slug>): wire a router so each flow below works, and keep external links as they are.';
+/** What the starter `bunx @tanstack/cli create` ships that the design replaces. */
+const STARTER_DEMO = 'Remove the starter\'s demo parts: `src/components/Header.tsx`, `Footer.tsx` and `ThemeToggle.tsx` and their use in `src/routes/__root.tsx`, the theme script there (it sets a `dark` class on the page from the system setting), the `src/routes/about.tsx` route, and everything in `src/styles.css` except `@import "tailwindcss";`.';
+const FULL_APP_CONSTRAINT = 'Server code lives only in server functions or server routes; nothing secret (keys, tokens, database access) goes into client code.';
+
+/** What differs per stack in the steps and HANDOFF.md: the shadcn `init --template`, where the screens go, and how a new app is described. */
+const STACKS: Record<HandoffStack, { template: 'vite' | 'start'; screens: string; newApp: string; newAppTitle: string }> = {
+  frontend: { template: 'vite', screens: 'src/pages', newApp: 'a new app', newAppTitle: '# a new app (Vite + React + Tailwind v4)' },
+  'full-app': { template: 'start', screens: 'src/screens', newApp: 'a new TanStack Start app', newAppTitle: '# a new full app (TanStack Start + Tailwind v4)' },
+};
+
+/** Where the document components go: worded for a tool step (`markdown` false) or for HANDOFF.md. Empty without components. */
+function componentsNote(has: boolean, markdown: boolean): string {
+  if (!has) return '';
+  return markdown
+    ? ', `code/components/` into `src/components/` (the screens import it as `@/components/<Name>`)'
+    : '`code/components/` into src/components/ (the screens import the document components as "@/components/<Name>"), ';
+}
+
+/** Full app: the first screen is served at `/` too when no screen is. Said the same in the tool step and HANDOFF.md. */
+function fullAppIndex(h: Handoff): string {
+  return h.screens.some((s) => s.route === '/') ? '' : ` The first screen (\`${h.screens[0]!.route}\`) is also served at \`/\`: \`src/routes/index.tsx\` (replace the one the starter has, if any) uses the same component.`;
+}
 
 /** A document component the handed-off screens use. */
 export interface HandoffComponent {
@@ -298,10 +330,12 @@ export function buildHandoff(src: HandoffSource, req: HandoffRequest): Handoff {
     };
   }
   const theme = ds ? null : doc.theme();
+  const stack = req.stack ?? 'frontend';
 
   const handoff: Handoff = {
     project: { id: doc.projectId, name: doc.name || 'Untitled' },
     scope: { kind: req.scope, ...(req.scope === 'page' ? { page_id: req.pageId ?? src.currentPageId } : {}), ...(page ? { page } : {}) },
+    stack,
     screens,
     focus,
     flows,
@@ -309,6 +343,7 @@ export function buildHandoff(src: HandoffSource, req: HandoffRequest): Handoff {
     design_system: designSystem,
     theme: theme ? { id: theme.id } : null,
     components,
+    server_parts: stack === 'full-app' ? serverParts(doc, ids) : [],
     assets: { images: referencedAssetIds(doc, ids).size, fonts: fontsForExport(doc, ids).map((f) => f.family) },
     skipped,
     agent: req.agent ? { kind: req.agent.kind, name: AGENT_NAMES[req.agent.kind], connected: req.agent.connected, connect: req.agent.connected ? null : req.agent.connect } : null,
@@ -317,7 +352,7 @@ export function buildHandoff(src: HandoffSource, req: HandoffRequest): Handoff {
     prompt: '',
   };
   handoff.steps = toolSteps(handoff, req.nodeIds);
-  handoff.constraints = [...(designSystem ? DS_CONSTRAINTS : theme ? THEME_CONSTRAINTS : []), ...(components.length ? [COMPONENTS_CONSTRAINT] : []), ...BASE_CONSTRAINTS, ...(screens.length > 1 || linkCount ? [ROUTES_CONSTRAINT] : [])];
+  handoff.constraints = [...(designSystem ? DS_CONSTRAINTS : theme ? THEME_CONSTRAINTS : []), ...(components.length ? [COMPONENTS_CONSTRAINT] : []), ...BASE_CONSTRAINTS, ...(screens.length > 1 || linkCount ? [ROUTES_CONSTRAINT] : []), ...(stack === 'full-app' ? [FULL_APP_CONSTRAINT] : [])];
   handoff.prompt = promptText(handoff);
   return handoff;
 }
@@ -354,7 +389,8 @@ function groupFlows(doc: OcelotDocument, ids: readonly string[], route: (id: str
 
 /** The `get_handoff` arguments that reproduce this scope. */
 function scopeArgs(h: Handoff, nodeIds: readonly string[] | undefined, files: boolean): string {
-  const tail = files ? ', "files": "code" }' : ' }';
+  const stack = h.stack === 'full-app' ? ', "stack": "full-app"' : '';
+  const tail = `${stack}${files ? ', "files": "code" }' : ' }'}`;
   if (h.scope.kind === 'selection') return `{ "scope": "selection", "node_ids": [${(nodeIds?.length ? nodeIds : h.screens.map((s) => s.id)).map((id) => `"${id}"`).join(', ')}]${tail}`;
   if (h.scope.kind === 'page') return `{ "scope": "page", "page_id": "${h.scope.page_id}"${tail}`;
   return `{ "scope": "document"${tail}`;
@@ -362,6 +398,8 @@ function scopeArgs(h: Handoff, nodeIds: readonly string[] | undefined, files: bo
 
 function toolSteps(h: Handoff, nodeIds: readonly string[] | undefined): string[] {
   const ds = h.design_system;
+  const fullApp = h.stack === 'full-app';
+  const st = STACKS[h.stack];
   const each = h.screens.length > 1 ? ' for each screen' : '';
   // No step opens a save dialog for the person: the files arrive inline in get_handoff and the agent writes them into its own repo.
   const steps = [
@@ -370,12 +408,21 @@ function toolSteps(h: Handoff, nodeIds: readonly string[] | undefined): string[]
   ];
   if (ds) {
     steps.push(
-      `Install the design system from the folder you wrote: \`bunx --bun shadcn@${ds.registry.shadcn} add ./ocelot-handoff/design-system/${ds.registry.bundle}\` in your app (a new app: \`init ./ocelot-handoff/design-system/${ds.registry.bundle} --base base --template vite\` first). It carries the tokens, fonts and every component's source.`,
+      `Install the design system from the folder you wrote: \`bunx --bun shadcn@${ds.registry.shadcn} add ./ocelot-handoff/design-system/${ds.registry.bundle}\` in your app (${st.newApp}: \`init ./ocelot-handoff/design-system/${ds.registry.bundle} --base base --template ${st.template}\` first). It carries the tokens, fonts and every component's source.`,
     );
+  } else if (fullApp) {
+    steps.push(`Create the app: \`bunx @tanstack/cli create <name> -y --package-manager bun --no-intent\` (TanStack Start with a file router and Tailwind v4). ${STARTER_DEMO}`);
   }
-  steps.push(
-    `Adapt \`code/\` into the app: copy its .tsx and .css files into src/pages/, ${h.components.length ? '`code/components/` into src/components/ (the screens import the document components as "@/components/<Name>"), ' : ''}\`code/public/\` into public/, \`@import\` each stylesheet after "tailwindcss", and wire the routes. Start from those components, do not rewrite them. Only if you want a fresh copy of one screen: export_react { "node_id": "<screen id>"${ds ? ', "components": "ui"' : ''} }.`,
-  );
+  const components = componentsNote(h.components.length > 0, false);
+  const freshCopy = `Start from those components, do not rewrite them. Only if you want a fresh copy of one screen: export_react { "node_id": "<screen id>"${ds ? ', "components": "ui"' : ''} }.`;
+  if (!fullApp) {
+    steps.push(`Adapt \`code/\` into the app: copy its .tsx and .css files into ${st.screens}/, ${components}\`code/public/\` into public/, \`@import\` each stylesheet after "tailwindcss" and give \`html\`, \`body\` and \`#root\` \`height: 100%\` there (each screen's root is \`h-full\`), and wire the routes. ${freshCopy}`);
+  } else {
+    steps.push(
+      `Adapt \`code/\` into the app: copy its .tsx and .css files into ${st.screens}/, ${components}\`code/public/\` into public/, \`@import\` each stylesheet in src/styles.css after "tailwindcss" (\`@import "./screens/<Name>.css";\`) and add \`html, body { height: 100%; }\` there (each screen's root is \`h-full\`), and add one file route per screen in src/routes/: \`src/routes/<slug>.tsx\` with \`export const Route = createFileRoute('/<slug>')({ component: <Screen> })\`, the screen imported from ${st.screens}/ (the routes are in the screens list).${fullAppIndex(h)} ${freshCopy}`,
+    );
+    if (h.server_parts.length) steps.push('Build the server parts (`server_parts`, listed in the brief): follow the server rules listed under Server parts.');
+  }
   if (h.screens.length > 1 || h.link_count) steps.push('get_links: the click-through graph with every layer id. Every flow below must work as a route in your app, and nothing may dangle.');
   return steps;
 }
@@ -458,12 +505,19 @@ function promptMotion(h: Handoff): string[] {
   ];
 }
 
+/** The server-parts block of the prompt and HANDOFF.md (full app only): the list, the rules, and what to do with the sample content. */
+function serverPartLines(h: Handoff): string[] {
+  if (!h.server_parts.length) return [NO_SERVER_PARTS];
+  return [...h.server_parts.map(serverPartLine), '', ...SERVER_RULES.map((r) => `- ${r}`), '', SAMPLE_CONTENT_RULE];
+}
+
 /** The prompt for a coding agent on this Mac that has Ocelot's MCP tools. */
 export function promptText(h: Handoff): string {
   const where = h.scope.kind === 'selection' ? 'the selected screens' : h.scope.kind === 'page' ? `the page “${h.scope.page}”` : 'the whole document';
   const manyPages = new Set(h.screens.map((s) => s.page_id)).size > 1;
   const out: string[] = [];
   out.push(`Implement the design “${h.project.name}” (Ocelot project ${h.project.id}) in code: ${where}. Ocelot is running on this Mac and is the source of truth; its tools give you exact screens, code and tokens.`, '');
+  if (h.stack === 'full-app') out.push('Build it as a full app: TanStack Start + React + Tailwind v4, with a server for what needs one (see Server parts).', '');
   out.push(`Screens (${h.screens.length}):`);
   for (const s of h.screens) out.push(`- ${s.name}: ${s.width}×${s.height}, id ${s.id}, route ${s.route}${manyPages ? `, page “${s.page}”` : ''}${s.scheme === 'dark' ? ', dark' : ''}${s.blocks?.length ? `, based on shadcn ${s.blocks.join(', ')}` : ''}`);
   if (h.focus.length) out.push(`Start with: ${h.focus.map((f) => `“${f.name}” (id ${f.id})`).join(', ')}.`);
@@ -471,6 +525,7 @@ export function promptText(h: Handoff): string {
   const ds = designSystemLines(h);
   if (ds.length) out.push('', ...ds);
   if (h.components.length) out.push('', ...componentLines(h));
+  if (h.stack === 'full-app') out.push('', h.server_parts.length ? `Server parts (${h.server_parts.length}; screen → kind: layer (detail)):` : 'Server parts:', ...serverPartLines(h));
   out.push('', 'Call these Ocelot MCP tools, in this order:', ...h.steps.map((s, i) => `${i + 1}. ${s}`));
   if (hasMotion(h.screens)) out.push('', ...promptMotion(h));
   out.push('', 'Constraints:', ...h.constraints.map((c) => `- ${c}`));
@@ -501,6 +556,7 @@ export function folderMarkdown(h: Handoff, layout: FolderLayout): string {
   const out: string[] = [];
   out.push(`# Handoff: ${h.project.name}`, '');
   out.push(`Implement this design in code. This folder has a screenshot of every screen, the screens as React + Tailwind components${ds ? ' and the design system as a shadcn registry' : ''}. Ocelot project ${h.project.id}.`, '');
+  if (h.stack === 'full-app') out.push('Build it as a full app: TanStack Start + React + Tailwind v4, with a server for what needs one (see Server parts).', '');
   out.push('## Screens', '', 'Match the screenshots.', '', '| Screen | Size | Screenshot | Component | Route |', '| --- | --- | --- | --- | --- |');
   for (const s of h.screens) {
     const code = layout.code.find((c) => c.screenId === s.id);
@@ -512,14 +568,15 @@ export function folderMarkdown(h: Handoff, layout: FolderLayout): string {
   const dsLines = designSystemLines(h);
   if (dsLines.length) out.push('', '## Design system', '', ...dsLines);
   if (h.components.length) out.push('', '## Components', '', ...componentSection(h, layout));
+  if (h.stack === 'full-app') out.push('', '## Server parts', '', ...serverPartLines(h));
   if (ds && layout.hasRegistry) {
     out.push(
       '',
       'The registry is in `design-system/`. Install it with the shadcn CLI; it brings the tokens, fonts and the source of every component:',
       '',
       '```sh',
-      '# a new app (Vite + React + Tailwind v4)',
-      `bunx --bun shadcn@${ds.registry.shadcn} init ./design-system/${ds.registry.bundle} --base base --template vite`,
+      STACKS[h.stack].newAppTitle,
+      `bunx --bun shadcn@${ds.registry.shadcn} init ./design-system/${ds.registry.bundle} --base base --template ${STACKS[h.stack].template}`,
       '# an existing shadcn app',
       `bunx --bun shadcn@${ds.registry.shadcn} add ./design-system/${ds.registry.bundle}`,
       '```',
@@ -527,15 +584,29 @@ export function folderMarkdown(h: Handoff, layout: FolderLayout): string {
       'Then copy `design-system/fonts/` to `public/fonts/` if that folder exists.',
     );
   }
-  out.push(
-    '',
-    '## How to run it',
-    '',
-    `1. In a Vite + React + Tailwind v4 app (${ds ? 'created by the command above' : '`bun create vite`, then `bun add tailwindcss @tailwindcss/vite`'}), copy \`code/*.tsx\` and \`code/*.css\` into \`src/pages/\`${layout.components?.length ? ', `code/components/` into `src/components/` (the screens import it as `@/components/<Name>`)' : ''} and \`code/public/\` into \`public/\`.`,
-    '2. `@import "./pages/<Name>.css";` in your stylesheet after `@import "tailwindcss";` (theme variables, `@theme`, `@font-face`).',
-    '3. Add a router with one route per screen (the table above); the components link to each other by those paths.',
-    '4. Run the app and compare every screen with its screenshot.',
-  );
+  const st = STACKS[h.stack];
+  const components = componentsNote(!!layout.components?.length, true);
+  if (h.stack === 'full-app') {
+    const steps = [
+      ds && layout.hasRegistry ? 'Create a TanStack Start app with Tailwind v4 with the shadcn `init … --template start` command above (its stylesheet is `src/styles.css`).' : `Create a TanStack Start app with Tailwind v4: \`bunx @tanstack/cli create <name> -y --package-manager bun --no-intent\`. ${STARTER_DEMO}`,
+      `Copy \`code/*.tsx\` and \`code/*.css\` into \`${st.screens}/\`${components} and \`code/public/\` into \`public/\`.`,
+      '`@import "./screens/<Name>.css";` in `src/styles.css` after `@import "tailwindcss";` (theme variables, `@theme`, `@font-face`), and add `html, body { height: 100%; }`: each screen\'s root is `h-full` and fills the window.',
+      `Add one file route per screen in \`src/routes/\` (the table above): \`src/routes/<slug>.tsx\` with \`export const Route = createFileRoute('/<slug>')({ component: <Screen> })\`, the screen imported from \`${st.screens}/<Name>\` (its default export); the components link to each other by those paths.${fullAppIndex(h)}`,
+      ...(h.server_parts.length ? ['Build the server parts above, following their rules: a server function for each form, a route `loader` for each list, a cookie session for sign-in.'] : []),
+      'Run the app and compare every screen with its screenshot.',
+    ];
+    out.push('', '## How to run it', '', ...steps.map((s, i) => `${i + 1}. ${s}`));
+  } else {
+    out.push(
+      '',
+      '## How to run it',
+      '',
+      `1. In a Vite + React + Tailwind v4 app (${ds ? 'created by the command above' : '`bun create vite`, then `bun add tailwindcss @tailwindcss/vite`'}), copy \`code/*.tsx\` and \`code/*.css\` into \`${st.screens}/\`${components} and \`code/public/\` into \`public/\`.`,
+      '2. `@import "./pages/<Name>.css";` in your stylesheet after `@import "tailwindcss";` (theme variables, `@theme`, `@font-face`), and give `html`, `body` and `#root` `height: 100%`: each screen\'s root is `h-full` and fills the window.',
+      '3. Add a router with one route per screen (the table above); the components link to each other by those paths.',
+      '4. Run the app and compare every screen with its screenshot.',
+    );
+  }
   if (hasMotion(h.screens)) {
     out.push('', '## Motion', '', 'What the design animates, by screen (the same data is under `motion` in `get_handoff`). The values are the design\'s: keep them.');
     for (const s of h.screens) {
@@ -567,7 +638,7 @@ export function flowsJson(h: Handoff, layout: FolderLayout): string {
         return { ...c, identifier: written?.name ?? null, file: written ? `code/${written.file}` : null };
       })
     : [];
-  return `${JSON.stringify({ project: h.project, screens, flows: h.flows, ...(components.length ? { components } : {}) }, null, 2)}\n`;
+  return `${JSON.stringify({ project: h.project, stack: h.stack, screens, flows: h.flows, ...(components.length ? { components } : {}), ...(h.server_parts.length ? { server_parts: h.server_parts } : {}) }, null, 2)}\n`;
 }
 
 const plural = (n: number, noun: string): string => `${n} ${noun}${n === 1 ? '' : 's'}`;
@@ -579,5 +650,6 @@ export function describeHandoff(h: Handoff): string {
   else if (h.theme) parts.push(`theme “${h.theme.id}”`);
   if (h.assets.images) parts.push(plural(h.assets.images, 'image'));
   if (h.components.length) parts.push(plural(h.components.length, 'component'));
+  if (h.stack === 'full-app') parts.push('full app');
   return parts.join(' · ');
 }

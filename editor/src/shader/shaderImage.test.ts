@@ -5,12 +5,14 @@ import { describe, expect, it, vi } from 'vitest';
 import { assetRef, assetUsage } from '../assets/refs';
 import { bytesToBase64 } from '../assets/sniff';
 import { fakePng } from '../assets/testing';
-import { assetNote, exportFiles, exportNode, exportScreensHtml, preloadPictures } from '../export/assets';
+import { assetNote, exportFiles, exportNode, exportNodeToFiles, exportScreensHtmlToFiles } from '../export/assets';
 import { normalizeCode } from '../model/code';
+import { SHADER_TOOLS } from '../mcp/shaderTools';
 import { setupMcp } from '../mcp/testSetup';
 import { CodeLayerHost, type FrameImages } from '../render/codeLayer';
 import { artboardDocumentHtml } from '../render/serialize';
 import { shaderRuntimeKey } from './source';
+import { shaderPictureIds } from './pictures';
 
 const VENDOR = 'ocelot://app/vendor/';
 const png = (seed: number, w = 40, h = 20) => bytesToBase64(fakePng(w, h, seed));
@@ -125,6 +127,14 @@ describe('create_shader_layer and update_shader with a picture', () => {
     expect(kinds[0]!.image).toMatch(/image field of create_shader_layer/);
     expect(kinds[0]!.params.filter((p) => p.when === 'image').map((p) => p.key)).toEqual(['focus_x', 'focus_y']);
     expect(((await callJson('get_shader_kinds', { kind: 'grain' })) as unknown as Array<Record<string, unknown>>)[0]!['image']).toBeUndefined();
+  });
+
+  it('the tool note says what is checked: missing or not a raster image is refused; a picture that later fails to load prints the field and logs', () => {
+    const description = SHADER_TOOLS.find((t) => t.name === 'create_shader_layer')!.description;
+    expect(description).toMatch(/must exist and be a raster image.*refused/);
+    expect(description).toMatch(/later fails to load.*prints the generated field and logs a console error.*get_code_errors/s);
+    expect(description).not.toMatch(/cannot be read is refused/);
+    expect(description).toMatch(/save_export embeds it in an HTML file and copies it to public\/assets for a React export/);
   });
 });
 
@@ -245,57 +255,88 @@ describe('HTML and React exports', () => {
     return { ...ctx, id: id! };
   }
 
-  it('write files with the picture embedded as a data: URL in the module, copy no asset file, and need no editor to render', async () => {
+  it('HTML written to files embeds the picture as a data: URL in the module, copies no asset file, and needs no editor to render', async () => {
     const { editor, ab, asset } = await withLayer();
-    await preloadPictures(editor.doc, ab, editor.assets);
-    const html = exportNode(editor.doc, ab, 'html', editor.assets, {}, { embedPictures: true });
+    const html = await exportNodeToFiles(editor.doc, ab, 'html', editor.assets);
     expect(html.code).toContain(`"image":"${dataUrl(1)}"`);
     expect(html.code).not.toContain('asset://');
     expect(html.assets.files).toEqual([]);
-    expect(html.assets.pictures).toEqual({ embedded: [asset], missing: [], inlined: true });
+    expect(html.assets.pictures).toEqual({ found: [asset], missing: [], as: 'data' });
     expect(exportFiles(html).map((f) => f.path)).toEqual([html.fileName]);
     expect(assetNote(html)).toMatch(/1 shader picture is embedded in the code as data: URLs/);
     // The exported page has no ctx.images: the spec's own data: URL is the picture.
     expect(html.code).toContain("ref.slice(0, 11) === 'data:image/'");
 
-    const react = exportNode(editor.doc, ab, 'react', editor.assets, {}, { embedPictures: true });
-    expect(react.code).toContain(`"image":"${dataUrl(1)}"`);
-    expect(react.code).not.toContain('asset://');
-    expect(exportFiles(react).filter((f) => 'assetId' in f)).toEqual([]);
-
-    const screens = exportScreensHtml(editor.doc, [ab], editor.assets, { embedPictures: true });
+    const screens = await exportScreensHtmlToFiles(editor.doc, [ab], editor.assets);
     expect(screens.pages[0]!.code).toContain(`"image":"${dataUrl(1)}"`);
+    expect(screens.assets.files).toEqual([]);
     // The document itself keeps the reference.
     expect(editor.doc.require(editor.doc.childIds(ab)[0]!).code!.shader!.image).toBe(assetRef(asset));
   });
 
-  it('keep the reference in the text results (a picture is megabytes) and say save_export embeds it', async () => {
+  it('React written to files copies the picture like any stored image: public/assets/<id>.<ext>, and the module loads /assets/<id>.<ext>, never a data: URL', async () => {
+    const { editor, ab, asset } = await withLayer();
+    const react = await exportNodeToFiles(editor.doc, ab, 'react', editor.assets);
+    const file = `${asset}.png`;
+    expect(react.code).toContain(`"image":"/assets/${file}"`);
+    expect(react.code).not.toContain('asset://');
+    expect(react.code).not.toContain('base64');
+    expect(react.assets.files).toEqual([{ id: asset, file, picture: true }]);
+    expect(react.assets.pictures).toEqual({ found: [asset], missing: [], as: 'file' });
+    expect(exportFiles(react).filter((f) => 'assetId' in f)).toEqual([{ path: `public/assets/${file}`, assetId: asset }]);
+    expect(assetNote(react)).toMatch(/1 shader picture is copied to public\/assets\/.*loads it from \/assets\/<file>/);
+    expect(assetNote(react)).not.toMatch(/stored image/);
+    // The shader runtime accepts a path under the site root as the picture.
+    expect(react.code).toContain("ref.charAt(0) === '/'");
+  });
+
+  it('keep the reference in the text results (a picture is megabytes) and say what save_export does with it', async () => {
     const { editor, ab, ref } = await withLayer('dither');
     const html = exportNode(editor.doc, ab, 'html', editor.assets);
     expect(html.code).toContain(`"image":"${ref}"`);
     expect(html.code).not.toContain('base64');
     expect(assetNote(html)).toMatch(/1 shader picture stays an asset:\/\/ reference in this text.*save_export embeds it/s);
-    expect(exportNode(editor.doc, ab, 'react', editor.assets).code).toContain(`"image":"${ref}"`);
+    const react = exportNode(editor.doc, ab, 'react', editor.assets);
+    expect(react.code).toContain(`"image":"${ref}"`);
+    expect(react.assets.files).toEqual([]);
+    expect(assetNote(react)).toMatch(/stays an asset:\/\/ reference in this text.*save_export copies it to public\/assets\//s);
   });
 
   it('refuse to embed a picture that was not loaded, and report one the store lost: that layer prints its generated field', async () => {
     const { editor, ab, asset, ref } = await withLayer();
-    expect(() => exportNode(editor.doc, ab, 'html', editor.assets, {}, { embedPictures: true })).toThrow(/could not be read from the asset store.*update_shader \{ image \}/s);
+    expect(() => exportNode(editor.doc, ab, 'html', editor.assets, {}, { toFiles: true })).toThrow(/could not be read from the asset store.*update_shader \{ image \}/s);
     await editor.assets.delete([asset]);
-    await preloadPictures(editor.doc, ab, editor.assets);
-    const lost = exportNode(editor.doc, ab, 'html', editor.assets, {}, { embedPictures: true });
-    expect(lost.assets.pictures).toEqual({ embedded: [], missing: [asset], inlined: true });
+    const lost = await exportNodeToFiles(editor.doc, ab, 'html', editor.assets);
+    expect(lost.assets.pictures).toEqual({ found: [], missing: [asset], as: 'data' });
     expect(lost.code).toContain(`"image":"${ref}"`);
     expect(assetNote(lost)).toMatch(/1 shader picture is missing from the store.*generated field.*update_shader \{ image \}/s);
+    // React: a picture the store lost is not copied and the layer keeps its reference.
+    const lostReact = await exportNodeToFiles(editor.doc, ab, 'react', editor.assets);
+    expect(lostReact.assets).toMatchObject({ files: [], pictures: { found: [], missing: [asset], as: 'file' } });
+    expect(lostReact.code).toContain(`"image":"${ref}"`);
   });
 
-  it('a picture that is also an image fill is still copied as a file for the fill', async () => {
+  it('a picture that is also an image fill is one file, counted as an image', async () => {
     const { editor, ab, asset, ref } = await withLayer();
     editor.agent.insertNodes(ab, [{ type: 'image', attrs: { src: ref } }]);
-    await preloadPictures(editor.doc, ab, editor.assets);
-    const html = exportNode(editor.doc, ab, 'html', editor.assets, {}, { embedPictures: true });
+    const html = await exportNodeToFiles(editor.doc, ab, 'html', editor.assets);
     expect(html.assets.files).toEqual([{ id: asset, file: `${asset}.png` }]);
     expect(html.code).toContain(`"image":"${dataUrl(1)}"`);
+    const react = await exportNodeToFiles(editor.doc, ab, 'react', editor.assets);
+    expect(react.assets.files).toEqual([{ id: asset, file: `${asset}.png` }]);
+    expect(react.code).toContain(`"image":"/assets/${asset}.png"`);
+    expect(react.code.split(`/assets/${asset}.png`).length - 1).toBeGreaterThanOrEqual(2);
+  });
+
+  it('a shader layer inside a hidden subtree has no picture to preload, count, copy or fail on', async () => {
+    const { editor, ab, asset, ref } = await setup();
+    const [group] = editor.agent.insertNodes(ab, [{ type: 'frame', name: 'Hidden group', hidden: true, children: [{ type: 'code', code: normalizeCode({ shader: { kind: 'halftone', image: ref } }) }] }]);
+    expect(shaderPictureIds(editor.doc, [ab])).toEqual(new Set());
+    const html = await exportNodeToFiles(editor.doc, ab, 'html', editor.assets);
+    expect(html.assets.pictures).toEqual({ found: [], missing: [], as: 'data' });
+    expect(editor.assets.pictures.cached(asset)).toBeUndefined();
+    editor.human.setHidden(group!, false);
+    expect(shaderPictureIds(editor.doc, [ab])).toEqual(new Set([asset]));
   });
 });
 
@@ -303,9 +344,8 @@ describe('a layer without a picture', () => {
   it('embeds nothing and copies no file for it', async () => {
     const { editor, ab } = await setup();
     editor.agent.insertNodes(ab, [{ type: 'code', code: normalizeCode({ shader: { kind: 'halftone' } }) }]);
-    await preloadPictures(editor.doc, ab, editor.assets);
-    const html = exportNode(editor.doc, ab, 'html', editor.assets, {}, { embedPictures: true });
-    expect(html.assets.pictures).toEqual({ embedded: [], missing: [], inlined: true });
+    const html = await exportNodeToFiles(editor.doc, ab, 'html', editor.assets);
+    expect(html.assets.pictures).toEqual({ found: [], missing: [], as: 'data' });
     expect(html.code).not.toContain('"image"');
     expect(assetUsage(editor.doc).size).toBe(0);
   });

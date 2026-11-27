@@ -71,6 +71,11 @@ export function acceptsImage(kind: ShaderKind): boolean {
   return IMAGE_KINDS.includes(kind);
 }
 
+/** A shader prints raster pictures (PNG, JPEG, WebP, GIF, AVIF); a vector asset cannot be sampled into a texture. */
+export function isPrintableMime(mime: string): boolean {
+  return mime.startsWith('image/') && mime !== 'image/svg+xml';
+}
+
 const num = (key: string, label: string, min: number, max: number, step: number, def: number, help: string, extra: { integer?: boolean; unit?: string } = {}): NumberParam => ({
   type: 'number',
   key,

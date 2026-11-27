@@ -13,11 +13,14 @@
 
 import type { OcelotDocument } from '../model/document';
 import type { CodeData, CodeLibrary } from '../model/types';
-import { assetIdOf } from '../assets/refs';
+import { shaderImageId } from '../assets/refs';
 import { LIBRARY_VERSIONS, importMapFor } from '../render/codeLayer';
 import { bindingKey, renderImport, scanImports, type ImportDecl } from './moduleImports';
 
-/** A stored image's `data:` URL when its pixels are loaded (assets.pictures.cached), else undefined. */
+/**
+ * Where an exported page finds the picture of a shader layer: a `data:` URL (HTML, which opens from `file://`, where a texture from a file
+ * URL is blocked) or the `/assets/<file>` path of the copied file (React, served by an app). Undefined: the layer keeps its `asset://` reference.
+ */
 export type PictureUrl = (assetId: string) => string | undefined;
 
 export interface SplitModule {
@@ -58,9 +61,8 @@ export interface CodeExport {
   /** Local name -> what it is bound to (see bindingKey), for the names hoisted so far. */
   bound: Map<string, string>;
   /**
-   * Shader layers that print a picture carry it inside the module as a data: URL, so the exported page renders from a single file (an image
-   * file next to it would taint the canvas when the page is opened from disk). Without it a layer keeps its reference, which an exported page
-   * cannot resolve: the layer prints its generated field and says so in the console.
+   * Shader layers that print a picture carry its URL inside the module (see PictureUrl). Without it a layer keeps its reference, which an
+   * exported page cannot resolve: the layer prints its generated field and says so in the console.
    */
   pictureUrl?: PictureUrl;
 }
@@ -109,8 +111,7 @@ export function addCodeLayer(ctx: CodeExport, code: CodeData): string {
   const name = `mountLayer${layerNo}`;
   let scope = scopeOf(body, aliases);
   // The spec line is swapped after the module was split, so the (large) picture never goes through the import scanner.
-  const ref = code.shader?.image;
-  const picture = ref ? assetIdOf(ref) : null;
+  const picture = shaderImageId({ code });
   const url = picture ? ctx.pictureUrl?.(picture) : undefined;
   if (code.shader && url) {
     const line = `const SPEC = ${JSON.stringify({ ...code.shader, image: url })};`;
@@ -189,6 +190,9 @@ const CODE_LAYER_COMPONENT = `function CodeLayer({ mount, libraries, as: Tag = '
   }, []);
   return <Tag ref={ref} {...props} />;
 }`;
+
+/** First lines of a React file with code layers (before its imports): the layers are plain JavaScript, so `tsc --strict` would reject them. Same convention as a generated route tree. */
+export const CODE_LAYERS_NOCHECK = '// @ts-nocheck\n// Its code layers are plain JavaScript; the rest of the file is generated.\n';
 
 /** Everything that goes above \`export default function Component\` in the React file. */
 export function reactCodePrelude(ctx: CodeExport): string {

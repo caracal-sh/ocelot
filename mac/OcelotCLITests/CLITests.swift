@@ -387,14 +387,18 @@ final class CommandOutputTests: XCTestCase {
     }
 
     func testHandoffArgumentsFollowTheOptions() throws {
-        XCTAssertEqual(try HandoffCommand.toolArguments(scope: nil, page: nil, nodes: [], files: false).count, 0)
-        let args = try HandoffCommand.toolArguments(scope: "selection", page: "p_1", nodes: ["n_1,n_2", " n_3 "], files: true)
+        XCTAssertEqual(try HandoffCommand.toolArguments(scope: nil, stack: nil, page: nil, nodes: [], files: false).count, 0)
+        let args = try HandoffCommand.toolArguments(scope: "selection", stack: "full-app", page: "p_1", nodes: ["n_1,n_2", " n_3 "], files: true)
+        XCTAssertEqual(args["stack"] as? String, "full-app")
         XCTAssertEqual(args["scope"] as? String, "selection")
         XCTAssertEqual(args["page_id"] as? String, "p_1")
         XCTAssertEqual(args["node_ids"] as? [String], ["n_1", "n_2", "n_3"])
         XCTAssertEqual(args["files"] as? Bool, true)
-        XCTAssertThrowsError(try HandoffCommand.toolArguments(scope: "everything", page: nil, nodes: [], files: false)) { error in
+        XCTAssertThrowsError(try HandoffCommand.toolArguments(scope: "everything", stack: nil, page: nil, nodes: [], files: false)) { error in
             XCTAssertTrue((error as? CLIError)?.message.contains("selection, page, document") == true)
+        }
+        XCTAssertThrowsError(try HandoffCommand.toolArguments(scope: nil, stack: "app", page: nil, nodes: [], files: false)) { error in
+            XCTAssertTrue((error as? CLIError)?.message.contains("frontend, full-app") == true)
         }
     }
 

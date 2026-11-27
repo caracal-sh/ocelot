@@ -8,7 +8,7 @@ import type { AssetRecord, ExportFile, ImageModelInfo, ImageProgressParams } fro
 import { ASPECTS, BACKGROUND_PROVIDERS, aspectRatio, etaSeconds, nearestAspect, prepareImageJob, runImageJob, type Background, type JobRequest, type JobResult, type Operation } from '../assets/generate';
 import type { ImageJob, JobOutcome } from '../assets/jobs';
 import { assetPreview } from '../assets/preview';
-import { exportFiles, exportNode, exportScreensHtml, preloadPictures, reactOptions, screensFiles, type ExportAssetPlan } from '../export/assets';
+import { exportFiles, exportNodeToFiles, exportScreensHtmlToFiles, reactOptions, screensFiles, type ExportAssetPlan } from '../export/assets';
 
 import { assetUsage, keyframeAssetUsage, referencedAssetIds } from '../assets/refs';
 import { assetIdOfNode, embeddedImageOf, imageSpec, placeholderSpec, setAssetOnNode, type NewImageOptions } from '../assets/place';
@@ -761,7 +761,7 @@ export const ASSET_TOOLS: ToolDef[] = [
     title: 'Save export to a folder',
     readOnly: false,
     description:
-      'Writes an export to disk: the HTML file (format "html", images in ./assets/) or the React component (format "react", images in public/assets/), plus a copy of every stored image it references. ' +
+      'Writes an export to disk: the HTML file (format "html", images in ./assets/) or the React component (format "react", images in public/assets/), plus a copy of every stored image it references. A picture a shader layer prints is embedded in an HTML file as a data: URL (it opens from disk) and copied to public/assets/ for React (the module loads /assets/<file>). ' +
       'In the Ocelot app the user chooses the destination folder in a dialog (you cannot pick a path); in the headless host it goes to <project>/exports/<name>/. ' +
       'Use it after export_html / export_react when the design contains generated or uploaded images, or to write a clickable prototype: artboard_ids (format "html") saves several screens as <slug>.html files that link to each other. Returns the folder and the files written.',
     inputSchema: {
@@ -777,16 +777,14 @@ export const ASSET_TOOLS: ToolDef[] = [
       if (args['artboard_ids'] !== undefined) {
         if (format !== 'html') throw new ToolError('artboard_ids saves several screens as linked HTML pages. For React call save_export with node_id for each artboard (their links are route paths).');
         const ids = screenIds(ctx, args);
-        await preloadPictures(ctx.editor.doc, ids, ctx.editor.assets);
-        const screens = exportScreensHtml(ctx.editor.doc, ids, ctx.editor.assets, { embedPictures: true });
+        const screens = await exportScreensHtmlToFiles(ctx.editor.doc, ids, ctx.editor.assets);
         result = screens;
         files = screensFiles(screens);
         name = screens.name;
       } else {
         const id = str(args, 'node_id', {});
         requireNode(ctx, id);
-        await preloadPictures(ctx.editor.doc, id, ctx.editor.assets);
-        const single = exportNode(ctx.editor.doc, id, format, ctx.editor.assets, format === 'react' ? await reactOptions(ctx.editor.doc, enumArg(args, 'components', ['ui', 'inline'] as const)) : {}, { embedPictures: true });
+        const single = await exportNodeToFiles(ctx.editor.doc, id, format, ctx.editor.assets, format === 'react' ? await reactOptions(ctx.editor.doc, enumArg(args, 'components', ['ui', 'inline'] as const)) : {});
         result = single;
         files = exportFiles(single);
         name = single.fileName.replace(/\.[a-z]+$/i, '');
@@ -795,7 +793,12 @@ export const ASSET_TOOLS: ToolDef[] = [
         throw new ToolError(`Could not save the export: ${errorMessage(err)}`);
       });
       if (saved.cancelled) return json({ saved: false, message: 'The user cancelled the folder dialog. Ask them where to save it, then call save_export again.' });
-      return json({ saved: true, folder: saved.path, files: files.map((f) => f.path), ...(result.assets.missing.length ? { warning: `${result.assets.missing.length} referenced asset(s) are missing from the store and were not copied.` } : {}) });
+      const lostPictures = result.assets.pictures.missing.length;
+      const warnings = [
+        ...(result.assets.missing.length ? [`${result.assets.missing.length} referenced asset(s) are missing from the store and were not copied.`] : []),
+        ...(lostPictures ? [`${lostPictures} shader picture(s) are missing from the store: those layers print their generated field. Set another image with update_shader { image }.`] : []),
+      ];
+      return json({ saved: true, folder: saved.path, files: files.map((f) => f.path), ...(warnings.length ? { warning: warnings.join(' ') } : {}) });
     },
   },
 ];

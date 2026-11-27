@@ -939,7 +939,7 @@ An action keeps one label everywhere it appears: the button, the menu item, the 
 
 ## 9. Before you stop
 
-Check by counting, per screen: one primary action; every state of section 3 built where the screen fetches data; the label list unchanged across screens; one control height. Link the screens that belong together (design-guide, Prototypes and links).
+Check by counting, per screen: one primary action; every state of section 3 built where the screen fetches data; the label list unchanged across screens; one control height. Link the screens that belong together (canvas-guide, Prototypes and links).
 
 Hand off in three words: pass, fail, unverified. List what you checked and how ("states: four artboards, headlines all different: pass"; "settings pages share one control height: pass, 40px"). What you did not or could not check (real data volumes, slow networks, screen readers, other viewports) is unverified, said plainly. A verdict like "looks polished" is not evidence, and a score never replaces a check.
 `;
@@ -966,7 +966,7 @@ Every property and action a person can reach in the editor, and the tool that ch
 | Create layers / paste markup | write_html (append, prepend or replace into a frame or artboard) |
 | Rectangle, ellipse, line (the R / O / L tools: frames, ellipse = border-radius 50%, line = 1px frame) | create_shape (parent_id, shape, x, y, width, height, styles); then set_fill / update_styles |
 | Code layer (three.js / GSAP / Motion): create, source, libraries, runtime errors | create_code_layer, set_code, get_code, get_code_errors |
-| Shader layer (grain gradient, mesh gradient, halftone, dither, film grain): add, kind, colours, parameters, blend, edit as code | create_shader_layer, update_shader, get_shader_kinds; blend: update_styles mix-blend-mode; set_code { source } turns it into plain code (get_guide "image-guide" Textures) |
+| Shader layer (grain gradient, mesh gradient, halftone, dither, film grain): add, kind, colours, parameters, image (halftone and dither print a stored picture), blend, edit as code | create_shader_layer and update_shader { image }, get_shader_kinds; blend: update_styles mix-blend-mode; set_code { source } turns it into plain code (get_guide "image-guide" Textures) |
 | Duplicate (one screen's filler; a part that repeats across screens is a component) | duplicate_nodes (copies under parent_id optional; id_map in the result) |
 | Reusable part (component): make, place, change an instance, reset, detach, edit the definition | make_component, place_instance, set_instance, reset_instance, detach_instance, update_component, remove_component; list_doc_components, get_doc_component (get_guide "design-guide" Reuse) |
 | Group ("Wrap in frame", ⌘G) | wrap_in_frame |
@@ -996,7 +996,7 @@ Every property and action a person can reach in the editor, and the tool that ch
 | Exact camera: pan, zoom, centre a point | set_viewport, get_viewport |
 | Stop a running export or video render | cancel_export |
 | Export every page / several pages as PNG/JPG | export_image { scope: "all" } or { page_ids } |
-| Hand-off prompt for one agent kind; save the hand-off folder | get_handoff { agent }, export_handoff |
+| Hand-off prompt for one agent kind and stack (front end or full app); save the hand-off folder | get_handoff { agent, stack }, export_handoff |
 | Put a PNG, the prompt, layers or text on the person's clipboard (only when asked) | copy_to_clipboard |
 | Import an existing image (logo, photo); delete or cancel images; default image model | import_image (base64), delete_assets, cancel_image_jobs, set_default_image_model, list_image_models { refresh } |
 | The rendered colour at a point (eyedropper) | sample_color |
@@ -1044,7 +1044,7 @@ Whenever you build two or more screens that belong together (a website's pages s
 
 Take exact values from get_computed_styles, get_node, export_html and export_react (React + Tailwind v4), never from screenshots; screenshots are for visual review only. A document with a theme exports its tokens as a Tailwind v4 @theme block / CSS variables.
 
-Asked to implement the design? Call get_handoff({ files: "code" }) first (screens, flows, design system, code and registry inline), then get_screenshot per screen, install the registry with shadcn, adapt code/, get_links. Never save_export or export_design_system for a handoff: they open a save dialog.
+Asked to implement the design? Call get_handoff({ files: "code" }) first (screens, flows, design system, code and registry inline), then get_screenshot per screen, install the registry with shadcn, adapt code/, get_links. Never save_export or export_design_system for a handoff: they open a save dialog. For a working app with forms, sign-in or data, pass stack: "full-app" to get_handoff.
 `;
 
 const GUIDE_BODIES: Record<string, string> = {

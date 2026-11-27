@@ -26,4 +26,10 @@ describe('renderText', () => {
     expect(html('- one\n- two\nThat is all', true)).toBe(`<ul><li>one</li><li>two</li></ul><p>That is all${CARET}</p>`);
     expect(html('- one\n- two', true)).toBe(`<ul><li>one</li><li>two${CARET}</li></ul>`);
   });
+
+  it('while streaming, a half-typed marker on the last line waits for its text; finished, it shows', () => {
+    expect(html('Plan:\n-', true)).toBe(`<p>Plan:${CARET}</p>`);
+    expect(html('1. Swap the photo\n2', true)).toBe(`<ol><li>Swap the photo${CARET}</li></ol>`);
+    expect(html('The answer is\n2')).toBe('<p>The answer is 2</p>');
+  });
 });

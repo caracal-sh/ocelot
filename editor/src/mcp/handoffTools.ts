@@ -4,23 +4,25 @@
 
 import { ExportError } from '../export/fileExport';
 import { AGENT_KINDS, type AgentKind } from '../editor/mcpClients';
-import { HANDOFF_SCOPES, HandoffError, buildHandoff, describeHandoff, type Handoff, type HandoffScope } from '../export/handoff';
+import { HANDOFF_SCOPES, HANDOFF_STACKS, HandoffError, buildHandoff, describeHandoff, type Handoff, type HandoffScope } from '../export/handoff';
 import { resolveHandoffAgent, saveHandoffFolder } from '../export/handoffActions';
 import { buildHandoffFolder } from '../export/handoffFiles';
 import { NODE_IDS, ToolError, agentLabel, enumArg, ids, str, type Args, type ToolContext, type ToolDef, type ToolResult } from './toolkit';
 
 export const HANDOFF_AGENT = { type: 'string', enum: [...AGENT_KINDS], description: 'The agent the prompt is for, as the Export menu\'s agent picker: "claude", "codex", "cursor" or "other". When that kind of agent is not connected yet the prompt ends with the command that connects it. Default: no connect section.' };
+export const HANDOFF_STACK = { type: 'string', enum: [...HANDOFF_STACKS], description: 'What to build. "frontend" (default): the screens and routes in a Vite + React app. "full-app": a TanStack Start app, and the brief lists the parts that need a server (forms, sign-in, data lists).' };
 
-/** The brief for `scope`/`node_ids`/`page_id` (+ `agent`), exactly what the Export menu's popover builds. Default agent: none. */
+/** The brief for `scope`/`node_ids`/`page_id` (+ `agent`, `stack`), exactly what the Export menu's popover builds. Default agent: none; default stack: frontend. */
 export async function buildHandoffFor(ctx: ToolContext, args: Args, defaultAgent?: AgentKind): Promise<Handoff> {
   const nodeIds = args['node_ids'] === undefined ? undefined : ids(args, 'node_ids');
   const pageId = str(args, 'page_id', { optional: true });
   const selection = ctx.editor.selection.ids;
   const scope: HandoffScope = enumArg(args, 'scope', HANDOFF_SCOPES) ?? (nodeIds ? 'selection' : pageId ? 'page' : selection.length ? 'selection' : 'document');
   const kind = enumArg(args, 'agent', AGENT_KINDS) ?? defaultAgent;
+  const stack = enumArg(args, 'stack', HANDOFF_STACKS);
   const agent = kind ? await resolveHandoffAgent(ctx.editor, ctx.host, kind) : undefined;
   try {
-    return buildHandoff({ doc: ctx.editor.doc, selection, currentPageId: ctx.editor.currentPageId }, { scope, ...(nodeIds ? { nodeIds } : {}), ...(pageId ? { pageId } : {}), ...(agent ? { agent } : {}) });
+    return buildHandoff({ doc: ctx.editor.doc, selection, currentPageId: ctx.editor.currentPageId }, { scope, ...(nodeIds ? { nodeIds } : {}), ...(pageId ? { pageId } : {}), ...(agent ? { agent } : {}), ...(stack ? { stack } : {}) });
   } catch (err) {
     if (err instanceof HandoffError) throw new ToolError(err.message);
     throw err;
@@ -38,6 +40,7 @@ export const HANDOFF_TOOLS: ToolDef[] = [
       'how many images and which bundled fonts the screens use, the `components` (document components the screens use: name, props with types and defaults, instance count; build each once, the exported screens import it as <Name … />), what was left out, the ordered Ocelot tool calls to make and the constraints. A second block is the same brief as a prompt; with motion it ends with "Implementing the motion" (how to build transitions, press, popovers, enter and exit and reduced motion in code). ' +
       'scope: "selection" (node_ids, else the person\'s selection), "page" (page_id, default the page they are viewing) or "document" (every screen page). Default: node_ids → selection, page_id → page, else the selection if there is one, else the document. ' +
       'agent ("claude", "codex", "cursor", "other") is the agent picker of the Export menu: the prompt then ends with the command that connects that agent, unless it is connected already (use it to brief ANOTHER agent; you are connected). ' +
+      'stack: "frontend" (default) hands off screens and routes for a Vite + React app; "full-app" a TanStack Start app, and the JSON `server_parts` (and the prompt) list what needs a server: forms, sign-in, data lists, by screen and layer. Pass "full-app" when the person wants a working app, not just the screens. ' +
       'Decks and videos are not screens and are left out; so is the design system page. files returns the handoff folder inline, so you can write it into your own repo without any dialog for the person: "code" (what the handoff prompt asks for; the smallest) is HANDOFF.md, README.md, flows.json, code/ (React + Tailwind, code/components/ with the document components the screens use, public/assets, public/fonts) and design-system/r/<name>.json (the one shadcn bundle, with only the components the screens use); "all" (or true) is the whole folder a person saves: screens/*.png at 2× as base64, prototype/ and the full registry, which is what `ocelot handoff --out` writes. Each file is { path, text } or { path, base64 }. ' +
       'Next: get_screenshot per screen (small, instead of the base64 PNGs), install design-system/ with shadcn, adapt code/, get_links. To put the folder on disk for the person (or an agent elsewhere) without base64 in the conversation call export_handoff; to put the prompt on their pasteboard call copy_to_clipboard.',
     inputSchema: {
@@ -47,6 +50,7 @@ export const HANDOFF_TOOLS: ToolDef[] = [
         node_ids: { ...NODE_IDS, description: 'Artboards or layers (a layer hands off its artboard and is listed under focus). Implies scope "selection".' },
         page_id: { type: 'string', description: 'A page (list_pages). Implies scope "page".' },
         agent: HANDOFF_AGENT,
+        stack: HANDOFF_STACK,
         files: { type: ['string', 'boolean'], enum: ['code', 'all', true, false], description: 'Also return the handoff folder\'s files inline: "code" without the screenshots (smaller, faster), "all" or true with them (renders every screen). Default: none.' },
       },
       additionalProperties: false,
@@ -76,7 +80,7 @@ export const HANDOFF_TOOLS: ToolDef[] = [
       'Writes the handoff folder to disk, like "Save handoff folder…" in the Export menu\'s "Hand off to an agent…": HANDOFF.md, README.md, flows.json, screens/*.png at 2×, code/ (React + Tailwind, assets, fonts), prototype/ and design-system/ (the shadcn registry). ' +
       'Use it when the person asks for the folder (to open it in an agent elsewhere, or to keep it); the files are written by the host, never returned as base64, so it is the cheap way to hand them over. To read the files yourself use get_handoff with files. ' +
       'You cannot choose the path. In the headless host the folder is <project>/exports/<project>-handoff/; in the Ocelot app the person picks the destination in a folder dialog, so tell them to expect it (if they cancel, saved is false: ask where to put it and call again). ' +
-      'Same brief arguments as get_handoff (scope, node_ids, page_id, agent). files "all" (default) is the whole folder (renders every screen); "code" is the smaller one get_handoff files "code" returns: no screenshots or prototype, only the shadcn bundle the screens use. ' +
+      'Same brief arguments as get_handoff (scope, node_ids, page_id, agent, stack: "frontend" or "full-app", which adds the server parts to HANDOFF.md). files "all" (default) is the whole folder (renders every screen); "code" is the smaller one get_handoff files "code" returns: no screenshots or prototype, only the shadcn bundle the screens use. ' +
       'Result: the folder path, every file written (path, bytes for text files) and warnings. The person sees a toast.',
     inputSchema: {
       type: 'object',
@@ -85,6 +89,7 @@ export const HANDOFF_TOOLS: ToolDef[] = [
         node_ids: { ...NODE_IDS, description: 'Artboards or layers. Implies scope "selection".' },
         page_id: { type: 'string', description: 'A page (list_pages). Implies scope "page".' },
         agent: HANDOFF_AGENT,
+        stack: HANDOFF_STACK,
         files: { type: 'string', enum: ['all', 'code'], default: 'all', description: '"all": the folder a person saves (with screenshots, prototype and the full registry). "code": no screenshots or prototype.' },
       },
       additionalProperties: false,

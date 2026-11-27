@@ -253,6 +253,15 @@ describe('reuse: components', () => {
     expect(design).toContain('get_guide({ topic: "tool-map" })');
   });
 
+  it('the tool map lists the shader layer picture and the hand-off stack, and the product guide points at the canvas-guide for links', () => {
+    const map = readGuide('tool-map');
+    expect(map).toMatch(/\| Shader layer \([^|]*\): add, kind, colours, parameters, image \([^|]*\), blend[^|]*\| create_shader_layer and update_shader \{ image \}/);
+    expect(map).toMatch(/\| Hand-off prompt for one agent kind and stack[^|]*\| get_handoff \{ agent, stack \}, export_handoff \|/);
+    const product = readGuide('product-guide');
+    expect(product).toContain('(canvas-guide, Prototypes and links)');
+    expect(product).not.toContain('design-guide, Prototypes and links');
+  });
+
   it('the design-system-guide tells agents not to wrap a design-system component again', () => {
     const g = readGuide('design-system-guide');
     expect(g).toContain('never wrap one alone in make_component');

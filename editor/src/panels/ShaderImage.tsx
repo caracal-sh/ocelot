@@ -12,9 +12,7 @@ import { useAssetsState } from './assetHooks';
 import { assetSize, assetTitle, kindLabel } from './assetLogic';
 import { AssetThumb } from './AssetThumb';
 import { MenuButton } from './fields';
-
-/** A shader prints raster pictures; a vector asset cannot be sampled into a texture. */
-const printable = (mime: string): boolean => mime.startsWith('image/') && mime !== 'image/svg+xml';
+import { isPrintableMime } from '../shader/spec';
 
 export function ShaderImageRow({ node }: { node: NodeData }) {
   const editor = useEditor();
@@ -29,7 +27,7 @@ export function ShaderImageRow({ node }: { node: NodeData }) {
   const upload = async (files: FileList | null) => {
     const [stored] = await importImageFiles(editor, files ?? []);
     if (!stored) return;
-    if (printable(stored.mime)) set(stored.id);
+    if (isPrintableMime(stored.mime)) set(stored.id);
     else editor.ui.toast('That file is stored in the Assets tab, but a shader prints raster pictures (PNG, JPEG, WebP). Upload a raster version.', 'warn');
   };
 
@@ -39,7 +37,7 @@ export function ShaderImageRow({ node }: { node: NodeData }) {
   ];
   if (id) items.push({ id: 'shader-image-clear', testId: 'shader-image-clear', label: 'Remove picture', separatorBefore: true, danger: true, onSelect: () => set(null) });
 
-  const choices = assets.filter((a) => printable(a.mime));
+  const choices = assets.filter((a) => isPrintableMime(a.mime));
   return (
     <>
       <div className="at-currentimage" data-testid="shader-image" data-tip="Print this picture instead of the generated field">

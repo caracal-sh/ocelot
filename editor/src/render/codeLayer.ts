@@ -13,7 +13,7 @@
 import { CODE_FRAME_BOOTSTRAP } from './codeFrameBootstrap';
 import { frameSeed } from './exportRuntime';
 import type { CodeData, CodeLibrary } from '../model/types';
-import { assetIdOf } from '../assets/refs';
+import { shaderImageId } from '../assets/refs';
 import { sameShader } from '../shader/spec';
 import { shaderRuntimeKey } from '../shader/source';
 import { varNamesIn } from './customProps';
@@ -361,16 +361,18 @@ export class CodeLayerHost {
   /** The pictures a layer's spec already has (what its frame is born with); starts loading the one that is missing. */
   #knownPictures(code: CodeData): Record<string, string> {
     const ref = code.shader?.image;
-    const url = ref ? this.#pictureFor(ref) : undefined;
+    const url = this.#pictureFor(code);
     return ref && url !== undefined ? { [ref]: url } : {};
   }
 
-  /** A picture's data: URL; '' when it cannot be had (not in the store, unreadable, or no store attached); undefined while it loads. */
-  #pictureFor(ref: string): string | undefined {
+  /** The data: URL of the picture `code`'s shader prints; '' when it cannot be had (not in the store, unreadable, or no store attached); undefined while it loads or when there is none. */
+  #pictureFor(code: CodeData): string | undefined {
+    const ref = code.shader?.image;
+    if (!ref) return undefined;
     const known = this.#pictures.get(ref);
     if (known !== undefined) return known;
     const images = this.#images;
-    const id = assetIdOf(ref);
+    const id = shaderImageId({ code });
     if (!images || !id) return '';
     const hit = images.cached(id);
     if (hit) {
@@ -403,7 +405,7 @@ export class CodeLayerHost {
     const spec = JSON.stringify(m.code.shader ?? null);
     const specChanged = force ? m.code.shader !== undefined : spec !== m.spec;
     const ref = m.code.shader?.image;
-    const picture = ref ? this.#pictureFor(ref) : undefined;
+    const picture = this.#pictureFor(m.code);
     const send = ref !== undefined && picture !== undefined && m.images.get(ref) !== picture ? { ref, picture } : null;
     if (!specChanged && !send && Object.keys(changedVars).length === 0) return;
     m.vars = vars;

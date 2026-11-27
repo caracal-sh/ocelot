@@ -2,7 +2,8 @@
 import { describe, expect, it } from 'vitest';
 import { createDesignSystem } from '../designsystem/apply';
 import { Editor } from '../editor/Editor';
-import { HandoffError, buildHandoff, flowsJson, folderMarkdown, folderReadme, type Handoff } from './handoff';
+import { addButton, newDoc } from './componentsFixture';
+import { HandoffError, buildHandoff, describeHandoff, flowsJson, folderMarkdown, folderReadme, type Handoff } from './handoff';
 
 /** Home (nav → Pricing, logo → website), Pricing (back → Home, buy → Signup), Signup; Signup is not linked from anywhere else. */
 function flow() {
@@ -297,5 +298,227 @@ describe('the handoff folder text', () => {
     expect(md).toContain(`get_screenshot ${h.screens[0]!.id}`);
     expect(md).not.toContain('screens/home@2x.png');
     expect(md).toContain('(not exported)');
+  });
+});
+
+/** `flow()` plus: a contact form with a password on Sign up, a table and three plan cards on Pricing. */
+function serverDesign() {
+  const f = flow();
+  const { editor, signup, pricing } = f;
+  const tr = { type: 'frame', tag: 'tr' } as const;
+  editor.human.insertNodes(signup, [
+    {
+      type: 'frame',
+      name: 'Form',
+      children: [
+        { type: 'frame', tag: 'input', name: 'Name', attrs: { type: 'text' } },
+        { type: 'frame', tag: 'input', name: 'Input', attrs: { type: 'email', placeholder: 'Work email' } },
+        { type: 'frame', tag: 'input', name: 'Password', attrs: { type: 'password' } },
+        { type: 'frame', tag: 'input', name: 'Remember me', attrs: { type: 'checkbox' } },
+        { type: 'frame', tag: 'button', name: 'Submit' },
+      ],
+    },
+  ]);
+  editor.human.insertNodes(pricing, [
+    { type: 'frame', tag: 'table', name: 'Orders table', children: [{ type: 'frame', tag: 'thead', children: [tr] }, { type: 'frame', tag: 'tbody', children: [tr, tr, tr] }] },
+    { type: 'frame', name: 'Plans', children: [1, 2, 3].map((n) => ({ type: 'frame' as const, name: `Plan ${n}`, attrs: { 'data-ds': 'card' } })) },
+  ]);
+  return f;
+}
+
+describe('buildHandoff: the stack', () => {
+  it('front end is the default: no server parts, the Vite steps, nothing about a server', () => {
+    const { editor } = serverDesign();
+    for (const h of [buildHandoff(src(editor), { scope: 'document' }), buildHandoff(src(editor), { scope: 'document', stack: 'frontend' })]) {
+      expect(h.stack).toBe('frontend');
+      expect(h.server_parts).toEqual([]);
+      expect(h.steps.find((s) => s.startsWith('Adapt'))).toContain('src/pages/');
+      expect(h.steps[0]).not.toContain('"stack"');
+      expect(h.prompt).not.toMatch(/Server parts|createServerFn|TanStack/);
+      expect(folderMarkdown(h, { code: [], hasRegistry: false, hasPrototype: false, hasScreenshots: false })).not.toMatch(/Server parts|createServerFn|TanStack/);
+      expect(h.constraints.join(' ')).not.toContain('server');
+    }
+  });
+
+  it('full app finds the forms, the sign-in and the data lists, per screen in screen order', () => {
+    const { editor, pricing, signup } = serverDesign();
+    const h = buildHandoff(src(editor), { scope: 'document', stack: 'full-app' });
+    expect(h.stack).toBe('full-app');
+    expect(h.server_parts).toEqual([
+      { screen_id: pricing, screen: 'Pricing — Desktop', kind: 'data', layer: 'Orders table', detail: 'table, 3 rows' },
+      { screen_id: pricing, screen: 'Pricing — Desktop', kind: 'data', layer: 'Plans', detail: '3 × card, a list if its content is records' },
+      { screen_id: signup, screen: 'Sign up', kind: 'form', layer: 'Name', detail: 'fields: Name, Work email, Password' },
+      { screen_id: signup, screen: 'Sign up', kind: 'sign-in', layer: 'Password', detail: 'password field' },
+    ]);
+    expect(JSON.parse(JSON.stringify(h))).toEqual(h);
+  });
+
+  it('detects design-system fields and skips hidden layers, checkboxes and buttons', () => {
+    const { editor, home } = flow();
+    createDesignSystem(editor.doc, editor.agent, { name: 'Acme' });
+    editor.human.insertNodes(home, [
+      { type: 'frame', name: 'Search', attrs: { 'data-ds': 'input', placeholder: 'Find an order' } },
+      { type: 'frame', name: 'Hidden field', tag: 'textarea', hidden: true },
+      { type: 'frame', name: 'Agree', attrs: { 'data-ds': 'checkbox' } },
+      { type: 'frame', name: 'Go', attrs: { 'data-ds': 'button' } },
+      { type: 'frame', name: 'Actions', children: [1, 2, 3].map((n) => ({ type: 'frame' as const, name: `Go ${n}`, attrs: { 'data-ds': 'button' } })) },
+    ]);
+    expect(buildHandoff(src(editor), { scope: 'document', stack: 'full-app' }).server_parts).toEqual([{ screen_id: home, screen: 'Home', kind: 'form', layer: 'Search', detail: 'fields: Search' }]);
+  });
+
+  it('names at most 8 fields of a form and at most 12 parts in a brief', () => {
+    const { editor, home, pricing, signup } = flow();
+    editor.human.insertNodes(home, Array.from({ length: 10 }, (_, i) => ({ type: 'frame' as const, tag: 'input', name: `Field ${i + 1}` })));
+    const h = buildHandoff(src(editor), { scope: 'document', stack: 'full-app' });
+    expect(h.server_parts[0]!.detail).toBe('fields: Field 1, Field 2, Field 3, Field 4, Field 5, Field 6, Field 7, Field 8, and 2 more');
+    for (const id of [pricing, signup]) editor.human.insertNodes(id, Array.from({ length: 8 }, (_, i) => ({ type: 'frame' as const, tag: 'table', name: `T${i}` })));
+    expect(buildHandoff(src(editor), { scope: 'document', stack: 'full-app' }).server_parts).toHaveLength(12);
+  });
+
+  it('a list of document-component instances is a data part named after the component', () => {
+    const s = newDoc();
+    const lib = s.ops.createArtboard({ name: 'Library', width: 400, height: 300 });
+    addButton(s.doc, s.ops, lib);
+    const [orders] = s.ops.insertNodes(s.ab, [{ type: 'frame', name: 'Orders' }]);
+    for (let i = 0; i < 3; i++) s.ops.placeInstance('Button', orders!, { name: `Row ${i}` });
+    const h = buildHandoff({ doc: s.doc, selection: [], currentPageId: s.doc.firstPageId() }, { scope: 'selection', nodeIds: [s.ab], stack: 'full-app' });
+    expect(h.server_parts).toEqual([{ screen_id: s.ab, screen: 'Page', kind: 'data', layer: 'Orders', detail: '3 × Button, a list if its content is records' }]);
+  });
+
+  it('instances that link somewhere, or sit in a nav, header, footer or aside, are navigation and not a list; a table still is', () => {
+    const s = newDoc();
+    const lib = s.ops.createArtboard({ name: 'Library', width: 400, height: 300 });
+    addButton(s.doc, s.ops, lib);
+    const row = (parent: string, name: string) => s.ops.placeInstance('Button', parent, { name });
+    const kinds = (): string[] => buildHandoff({ doc: s.doc, selection: [], currentPageId: s.doc.firstPageId() }, { scope: 'selection', nodeIds: [s.ab], stack: 'full-app' }).server_parts.map((p) => `${p.layer}`);
+    const [features, bar, top, foot, side, named, links, orders] = s.ops.insertNodes(s.ab, [
+      { type: 'frame', name: 'Features' },
+      { type: 'frame', name: 'Bar', tag: 'nav' },
+      { type: 'frame', name: 'Top', tag: 'header' },
+      { type: 'frame', name: 'Bottom', tag: 'footer' },
+      { type: 'frame', name: 'Side', tag: 'aside' },
+      { type: 'frame', name: 'Sidebar menu' },
+      { type: 'frame', name: 'Cards' },
+      { type: 'frame', name: 'Orders' },
+    ]);
+    for (const parent of [bar!, top!, foot!, side!, named!]) for (let i = 0; i < 4; i++) row(parent, `Item ${i}`);
+    // Linked instances: a card row that opens pages is not records, whether the link is a screen, a URL or an href.
+    const linked = [0, 1, 2].map((i) => row(links!, `Card ${i}`));
+    s.ops.setLink(linked[0]!, { artboard: s.ab });
+    s.ops.setLink(linked[1]!, { url: 'https://example.com/' });
+    s.ops.setAttrs(linked[2]!, { href: '/docs' });
+    expect(kinds()).toEqual([]);
+    // Nested chrome: a list inside a nav stays navigation however deep it is.
+    const [inner] = s.ops.insertNodes(bar!, [{ type: 'frame', name: 'Links' }]);
+    for (let i = 0; i < 3; i++) row(inner!, `Deep ${i}`);
+    expect(kinds()).toEqual([]);
+    // The same instances outside any chrome and without a link are a list, and a table inside a nav is kept.
+    for (let i = 0; i < 3; i++) row(features!, `Row ${i}`);
+    s.ops.insertNodes(bar!, [{ type: 'frame', name: 'Nav table', tag: 'table' }]);
+    s.ops.insertNodes(orders!, [{ type: 'frame', name: 'Orders table', tag: 'table' }]);
+    expect(kinds()).toEqual(['Features', 'Nav table', 'Orders table']);
+  });
+
+  it('a screen named like a nav is still read: the name test applies to the layers inside it', () => {
+    const s = newDoc();
+    s.ops.rename(s.ab, 'Menu — Desktop');
+    const lib = s.ops.createArtboard({ name: 'Library', width: 400, height: 300 });
+    addButton(s.doc, s.ops, lib);
+    const [orders] = s.ops.insertNodes(s.ab, [{ type: 'frame', name: 'Orders' }]);
+    for (let i = 0; i < 3; i++) s.ops.placeInstance('Button', orders!, { name: `Row ${i}` });
+    const h = buildHandoff({ doc: s.doc, selection: [], currentPageId: s.doc.firstPageId() }, { scope: 'selection', nodeIds: [s.ab], stack: 'full-app' });
+    expect(h.server_parts.map((p) => p.layer)).toEqual(['Orders']);
+  });
+
+  it('the full-app steps and prompt: TanStack Start, file routes, the server parts and their rules', () => {
+    const { editor } = serverDesign();
+    const h = buildHandoff(src(editor), { scope: 'document', stack: 'full-app' });
+    expect(h.steps[0]).toContain('{ "scope": "document", "stack": "full-app", "files": "code" }');
+    expect(h.steps.map((s) => s.split(/[ :]/)[0])).toEqual(['get_handoff', 'get_screenshot', 'Create', 'Adapt', 'Build', 'get_links']);
+    const adapt = h.steps.find((s) => s.startsWith('Adapt'))!;
+    expect(adapt).toContain('src/screens/');
+    expect(adapt).not.toContain('src/pages/');
+    expect(adapt).toContain("createFileRoute('/<slug>')({ component: <Screen> })");
+    expect(adapt).toContain('src/routes/');
+    expect(adapt).toContain('src/styles.css');
+    expect(h.steps.find((s) => s.startsWith('Create'))).toContain('bunx @tanstack/cli create <name> -y');
+    // The step points at the server rules in the brief instead of repeating them.
+    const build = h.steps.find((s) => s.startsWith('Build'))!;
+    expect(build).toContain('follow the server rules listed under Server parts');
+    expect(build).not.toContain('createServerFn');
+    const p = h.prompt;
+    expect(p).toContain('Server parts (4;');
+    expect(p).toContain('- Sign up \u2192 form: Name (fields: Name, Work email, Password)');
+    expect(p).toContain('- Sign up \u2192 sign-in: Password (password field)');
+    expect(p).toContain('- Pricing \u2014 Desktop \u2192 data: Orders table (table, 3 rows)');
+    expect(p).toContain("createServerFn({ method: 'POST' })");
+    expect(p).toContain('`loader`');
+    expect(p).toContain('http-only cookie');
+    expect(p).toContain('replace it with server data and keep the layout');
+    expect(p.indexOf('Server parts (')).toBeLessThan(p.indexOf('Call these Ocelot MCP tools'));
+    expect(h.constraints.join(' ')).toContain('server functions or server routes');
+    // The sample-content rule is said once: under Server parts, not again as a constraint.
+    expect(h.constraints.join(' ')).not.toContain('sample content');
+    expect(p.split('sample content').length - 1).toBe(1);
+  });
+
+  it('with a design system the new app comes from shadcn init --template start', () => {
+    const { editor } = serverDesign();
+    createDesignSystem(editor.doc, editor.agent, { name: 'Acme' });
+    const h = buildHandoff(src(editor), { scope: 'document', stack: 'full-app' });
+    expect(h.steps.map((s) => s.split(/[ :]/)[0])).toEqual(['get_handoff', 'get_screenshot', 'Install', 'Adapt', 'Build', 'get_links']);
+    expect(h.steps.find((s) => s.startsWith('Install'))).toContain('--base base --template start');
+    expect(h.prompt).toContain('--template start');
+    expect(h.prompt).not.toContain('--template vite');
+  });
+
+  it('HANDOFF.md has the Server parts section, the routes and the full-app way to run it', () => {
+    const { editor } = serverDesign();
+    const plain = buildHandoff(src(editor), { scope: 'document', stack: 'full-app' });
+    const layout = { code: [], hasRegistry: false, hasPrototype: false, hasScreenshots: false };
+    const md = folderMarkdown(plain, layout);
+    expect(md).toContain('## Server parts');
+    expect(md).toContain('- Sign up \u2192 sign-in: Password (password field)');
+    expect(md).toContain('createServerFn');
+    expect(md).toContain('src/routes/');
+    expect(md).toContain('src/screens/');
+    expect(md).toContain('bunx @tanstack/cli create <name> -y');
+    expect(md).not.toContain('src/pages/');
+    expect(md.indexOf('## Server parts')).toBeLessThan(md.indexOf('## How to run it'));
+
+    createDesignSystem(editor.doc, editor.agent, { name: 'Acme' });
+    const withDs = buildHandoff(src(editor), { scope: 'document', stack: 'full-app' });
+    const dsMd = folderMarkdown(withDs, { ...layout, hasRegistry: true });
+    expect(dsMd).toContain('# a new full app (TanStack Start + Tailwind v4)');
+    expect(dsMd).toContain('./design-system/r/acme.json --base base --template start');
+    expect(dsMd).not.toContain('--template vite');
+    expect(dsMd).not.toContain('bunx @tanstack/cli create');
+  });
+
+  it('a design without forms, sign-in or lists says so, and still builds the routes', () => {
+    const { editor } = flow();
+    const h = buildHandoff(src(editor), { scope: 'document', stack: 'full-app' });
+    expect(h.server_parts).toEqual([]);
+    expect(h.prompt).toContain('The design shows no forms, sign-in or data lists, so the app is the screens and their routes.');
+    expect(h.prompt).not.toContain('Server parts (');
+    expect(h.steps.some((s) => s.startsWith('Build'))).toBe(false);
+    const md = folderMarkdown(h, { code: [], hasRegistry: false, hasPrototype: false, hasScreenshots: false });
+    expect(md).toContain('## Server parts\n\nThe design shows no forms, sign-in or data lists');
+    // With nothing for a server, nothing says to replace the design's sample content with server data.
+    expect(h.constraints.join(' ')).not.toContain('sample content');
+    expect(h.prompt).not.toMatch(/sample content|server data/);
+    expect(md).not.toMatch(/sample content|server data/);
+    expect(md).toContain('src/routes/');
+  });
+
+  it('flows.json and the summary name the stack', () => {
+    const { editor } = flow();
+    const frontend = buildHandoff(src(editor), { scope: 'document' });
+    const full = buildHandoff(src(editor), { scope: 'document', stack: 'full-app' });
+    const layout = { code: [], hasRegistry: false, hasPrototype: false, hasScreenshots: false };
+    expect(JSON.parse(flowsJson(frontend, layout)).stack).toBe('frontend');
+    expect(JSON.parse(flowsJson(full, layout)).stack).toBe('full-app');
+    expect(describeHandoff(frontend)).not.toContain('full app');
+    expect(describeHandoff(full)).toMatch(/ · full app$/);
   });
 });

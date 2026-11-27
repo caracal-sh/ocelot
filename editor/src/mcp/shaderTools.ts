@@ -5,7 +5,7 @@
 import { assetIdOfNode } from '../assets/place';
 import { normalizeCode } from '../model/code';
 import { definedNamesAt } from '../render/customProps';
-import { IMAGE_KINDS, SHADER_DEFS, SHADER_KINDS, acceptsImage, applyShaderPatch, defaultColors, normalizeShader, type ShaderInput, type ShaderKindDef, type ShaderParam, type ShaderSpec } from '../shader/spec';
+import { IMAGE_KINDS, SHADER_DEFS, SHADER_KINDS, acceptsImage, applyShaderPatch, defaultColors, isPrintableMime, normalizeShader, type ShaderInput, type ShaderKindDef, type ShaderParam, type ShaderSpec } from '../shader/spec';
 import { normalizeStyles } from './editTools';
 import { nodeLine } from './format';
 import { SCREENSHOT_NOTE, report, settle } from './codeTools';
@@ -29,8 +29,8 @@ function kindLine(def: ShaderKindDef): string {
 const IMAGE_NOTE =
   `${IMAGE_KINDS.join(' and ')} can print a picture instead of a generated field: image: "asset://<id>" (an id from list_assets; import_image with the file as base64 or generate_image add one) or the id of an image layer. ` +
   'The picture is cover-fitted to the layer (focus_x / focus_y choose the part that stays in view), its luminance is the tone (contrast, invert and the cell size shape the print; the colours are the ink and the paper), ' +
-  'and the dots or dither cells stay on the device-pixel grid. Screenshots and exports show it; the HTML and React exports embed it in the file. image is a separate field next to params (it references a stored asset), null removes it. ' +
-  'A picture that is missing or cannot be read is refused here; if it goes missing later the layer prints its generated field.';
+  'and the dots or dither cells stay on the device-pixel grid. Screenshots and exports show it; save_export embeds it in an HTML file and copies it to public/assets for a React export. image is a separate field next to params (it references a stored asset), null removes it. ' +
+  'Checked here: the asset must exist and be a raster image (PNG, JPEG, WebP, GIF, AVIF), otherwise the call is refused. A picture that later fails to load (the file is unreadable, or the asset was deleted) prints the generated field and logs a console error, visible in get_code_errors.';
 
 /**
  * The stored image an `image` argument names, as `asset://<64 hex>`: a full asset id or `asset://` reference, a unique prefix of at least 8
@@ -56,7 +56,7 @@ function resolveImage(ctx: ToolContext, value: unknown, what: string): string | 
     }
   }
   const mime = ctx.editor.assets.get(id)?.mime ?? '';
-  if (!mime.startsWith('image/') || mime === 'image/svg+xml') {
+  if (!isPrintableMime(mime)) {
     throw new ToolError(`${what}: asset ${id.slice(0, 8)} is ${mime || 'not an image'}; a shader prints a raster picture (PNG, JPEG, WebP). Pick another asset from list_assets, or import a raster version.`);
   }
   return `asset://${id}`;

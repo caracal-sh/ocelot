@@ -108,7 +108,7 @@ describe('React export', () => {
   it('emits useEffect-mounted components with npm imports, cleanup and isolated module scopes', () => {
     const { doc, ab } = setup();
     const { code } = exportReact(doc, ab);
-    expect(code.startsWith("import { useEffect, useRef } from 'react';")).toBe(true);
+    expect(code).toContain("\nimport { useEffect, useRef } from 'react';");
     expect(code).toContain("import * as THREE from 'three';");
     expect(code.match(/import \* as THREE from 'three';/g)).toHaveLength(1); // deduplicated
     expect(code).toContain("import { OrbitControls } from 'three/addons/controls/OrbitControls.js';");
@@ -134,6 +134,23 @@ describe('React export', () => {
     const doc = new OcelotDocument({ idGenerator: () => `n${++n}` });
     const ab = doc.ops(ORIGIN.human).createArtboard({ name: 'Plain' });
     expect(exportReact(doc, ab).code.startsWith('export default function Plain()')).toBe(true);
+  });
+
+  it('starts a file with code layers with // @ts-nocheck and why (the layers are plain JavaScript), and no other file', () => {
+    const { doc, ab } = setup();
+    const lines = exportReact(doc, ab).code.split('\n');
+    expect(lines[0]).toBe('// @ts-nocheck');
+    expect(lines[1]).toBe('// Its code layers are plain JavaScript; the rest of the file is generated.');
+    expect(lines[2]).toMatch(/^import /);
+    // No code layer, no header; a hidden layer is not exported, so it earns none either.
+    let n = 0;
+    const plain = new OcelotDocument({ idGenerator: () => `p${++n}` });
+    const ops = plain.ops(ORIGIN.human);
+    const pab = ops.createArtboard({ name: 'Plain' });
+    expect(exportReact(plain, pab).code).not.toContain('ts-nocheck');
+    const [layer] = ops.insertNodes(pab, [{ type: 'code', code: { source: 'export default () => {}', libraries: [] } }]);
+    ops.setHidden(layer!, true);
+    expect(exportReact(plain, pab).code).not.toContain('ts-nocheck');
   });
 
   it('produces syntactically valid JS for the code parts', () => {

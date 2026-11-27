@@ -398,7 +398,11 @@ export class AgentGateway {
       });
     }
     await this.#flush();
-    this.#port = await freePort(this.#port);
+    const previousPort = this.#port;
+    this.#port = await freePort(previousPort);
+    if (previousPort && this.#port !== previousPort) {
+      this.#log(`agent gateway could not reuse port ${previousPort} and moved to ${this.#port}; running agents keep the old address, so chats in progress will fail: start a new chat`);
+    }
     const brokerPort = await freePort();
     const brokerUrl = `http://127.0.0.1:${brokerPort}`;
     const base = { ...process.env };

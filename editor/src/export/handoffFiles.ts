@@ -15,7 +15,7 @@ import { loadStyle } from '../designsystem/snapshot';
 import { defaultVendorBase } from '../render/codeLayer';
 import { artboardDocumentHtml } from '../render/serialize';
 import { FONT_BASE } from '../themes/fonts';
-import { exportFiles, exportNode, exportScreensHtml, preloadPictures, reactOptions, screensFiles } from './assets';
+import { exportFiles, exportNodeToFiles, exportScreensHtmlToFiles, reactOptions, screensFiles } from './assets';
 import { slugify } from './links';
 import { MAX_EXPORT_PIXELS, ExportError, assertCodeLayersHealthy } from './fileExport';
 import { HANDOFF_SCALE, flowsJson, folderMarkdown, folderReadme, type FolderLayout, type Handoff } from './handoff';
@@ -70,8 +70,7 @@ async function codeFiles(editor: Editor, h: Handoff): Promise<{ files: ExportFil
   const warnings: string[] = [];
   const names = new Set<string>();
   for (const s of h.screens) {
-    await preloadPictures(doc, s.id, editor.assets);
-    const result = exportNode(doc, s.id, 'react', editor.assets, options, { embedPictures: true });
+    const result = await exportNodeToFiles(doc, s.id, 'react', editor.assets, options);
     const base = result.componentName ?? slugify(s.name);
     let name = base;
     for (let n = 2; names.has(name); n++) name = `${base}${n}`;
@@ -90,6 +89,8 @@ async function codeFiles(editor: Editor, h: Handoff): Promise<{ files: ExportFil
     for (const w of result.ui?.warnings ?? []) warnings.push(`${s.name}: ${w}`);
     for (const fb of result.ui?.fallbacks ?? []) warnings.push(`${s.name}: ${fb.name} stayed inline (${fb.reason}).`);
     if (result.assets.missing.length) warnings.push(`${result.assets.missing.length} image${result.assets.missing.length === 1 ? '' : 's'} in “${s.name}” ${result.assets.missing.length === 1 ? 'is' : 'are'} missing from the asset store and keep their asset:// reference.`);
+    const lost = result.assets.pictures.missing.length;
+    if (lost) warnings.push(`${lost} shader picture${lost === 1 ? '' : 's'} in “${s.name}” ${lost === 1 ? 'is' : 'are'} missing from the asset store: the layer prints its generated field. Set another image with update_shader { image }, then hand off again.`);
   }
   return { files: [...files.values()], code, components: [...components.values()].sort((a, b) => a.name.localeCompare(b.name)), warnings };
 }
@@ -142,8 +143,7 @@ export async function buildHandoffFolder(editor: Editor, host: Host, h: Handoff,
   const registry = await registryFiles(editor, h, opts.compact ? 'used' : 'all');
   if (registry) warnings.push(...registry.warnings);
   const screenIds = h.screens.map((s) => s.id);
-  if (!opts.compact) await preloadPictures(editor.doc, screenIds, editor.assets);
-  const prototype = opts.compact ? [] : screensFiles(exportScreensHtml(editor.doc, screenIds, editor.assets, { embedPictures: true })).map((f) => ({ ...f, path: `prototype/${f.path}` }));
+  const prototype = opts.compact ? [] : screensFiles(await exportScreensHtmlToFiles(editor.doc, screenIds, editor.assets)).map((f) => ({ ...f, path: `prototype/${f.path}` }));
   const layout: FolderLayout = { code: code.code, hasRegistry: registry !== null, hasPrototype: prototype.length > 0, hasScreenshots: withShots, ...(code.components.length ? { components: code.components } : {}) };
   let files: ExportFile[] = [
     { path: 'HANDOFF.md', text: folderMarkdown(h, layout) },

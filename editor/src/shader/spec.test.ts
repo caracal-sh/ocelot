@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { ModelError } from '../model/types';
-import { IMAGE_KINDS, SHADER_DEFS, SHADER_KINDS, acceptsImage, applyShaderPatch, cloneShader, colorProblem, colorVarNames, convertShader, defaultColors, isShaderImageRef, normalizeShader, readShaderSpec, sameShader } from './spec';
+import { IMAGE_KINDS, SHADER_DEFS, SHADER_KINDS, acceptsImage, applyShaderPatch, cloneShader, colorProblem, colorVarNames, convertShader, defaultColors, isPrintableMime, isShaderImageRef, normalizeShader, readShaderSpec, sameShader } from './spec';
 
 const IMAGE = `asset://${'ab12'.repeat(16)}`;
 
@@ -22,6 +22,11 @@ describe('shader picture', () => {
     expect(normalizeShader({ kind: 'halftone', image: `  ${IMAGE}  ` }).image).toBe(IMAGE);
     for (const kind of SHADER_KINDS) expect('image' in normalizeShader({ kind }), kind).toBe(false);
     expect(isShaderImageRef(IMAGE)).toBe(true);
+  });
+
+  it('prints raster pictures only: image/* except SVG', () => {
+    for (const mime of ['image/png', 'image/jpeg', 'image/webp', 'image/gif', 'image/avif']) expect(isPrintableMime(mime), mime).toBe(true);
+    for (const mime of ['image/svg+xml', 'application/pdf', 'font/woff2', '']) expect(isPrintableMime(mime), mime).toBe(false);
   });
 
   it('refuses the other kinds, and says which kinds and what to do instead', () => {

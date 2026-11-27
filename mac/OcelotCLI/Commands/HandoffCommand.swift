@@ -6,29 +6,33 @@ enum HandoffCommand: Subcommand {
     static let name = "handoff"
     static let summary = "Print the prompt that hands the design to a coding agent, or write the handoff folder"
     static let usage = """
-    Usage: ocelot handoff [--project <id|name> | --window <id>] [--scope selection|page|document] [--page <id>] [--node <id>]... [--out <dir>] [--json]
+    Usage: ocelot handoff [--project <id|name> | --window <id>] [--scope selection|page|document] [--stack frontend|full-app] [--page <id>] [--node <id>]... [--out <dir>] [--json]
 
     Prints the prompt for a coding agent: the screens (ids, sizes, routes), the flows, the design system, the Ocelot tools to call in order
     and the constraints. Paste it into Claude Code, Codex or Cursor, or pipe it: `ocelot handoff --project pricing | pbcopy`.
     --scope     selection, page or document. Default: --node ids mean selection, --page means page, else the selection in the app, else the document.
+    --stack     frontend (default): the screens and routes in a Vite + React app. full-app: a TanStack Start app; the brief also lists the parts
+                that need a server (forms, sign-in, data lists).
     --node      an artboard or layer id; repeat it, or separate ids with commas.
     --out <dir> writes the handoff folder instead: HANDOFF.md, README.md, flows.json, screens/*.png (2x), code/ (React + Tailwind),
                 prototype/ (linked HTML) and design-system/ (the shadcn registry, with a design system). Files at the same paths are replaced.
-    --json      prints the brief as JSON (screens, flows, design_system, steps, constraints) instead of the prompt.
+    --json      prints the brief as JSON (screens, flows, design_system, server_parts, steps, constraints) instead of the prompt.
     Examples:
       ocelot handoff --project pricing --scope document
+      ocelot handoff --project pricing --stack full-app
       ocelot handoff --project pricing --node n_abc --out ./handoff
     """
 
     static let scopes = ["selection", "page", "document"]
+    static let stacks = ["frontend", "full-app"]
 
     static func run(_ args: [String]) throws -> Int32 {
-        let parsed = try Args(args, valueOptions: Target.valueOptions.union(["--scope", "--page", "--node", "--out"]), flags: ["--json"])
+        let parsed = try Args(args, valueOptions: Target.valueOptions.union(["--scope", "--stack", "--page", "--node", "--out"]), flags: ["--json"])
         guard parsed.positionals.isEmpty else {
             throw CLIError(message: "ocelot handoff takes options only (got \"\(parsed.positionals[0])\"). Run `ocelot handoff --help`.", code: 2)
         }
         let out = parsed.value("--out").map { ($0 as NSString).expandingTildeInPath }
-        let arguments = try toolArguments(scope: parsed.value("--scope"), page: parsed.value("--page"), nodes: parsed.all("--node"), files: out != nil)
+        let arguments = try toolArguments(scope: parsed.value("--scope"), stack: parsed.value("--stack"), page: parsed.value("--page"), nodes: parsed.all("--node"), files: out != nil)
 
         let target = Target(parsed)
         let resolver = Resolver()
@@ -58,13 +62,19 @@ enum HandoffCommand: Subcommand {
     }
 
     /// The `get_handoff` arguments for the command-line options.
-    static func toolArguments(scope: String?, page: String?, nodes: [String], files: Bool) throws -> [String: Any] {
+    static func toolArguments(scope: String?, stack: String?, page: String?, nodes: [String], files: Bool) throws -> [String: Any] {
         var arguments: [String: Any] = [:]
         if let scope {
             guard scopes.contains(scope) else {
                 throw CLIError(message: "--scope must be one of \(scopes.joined(separator: ", ")), got \"\(scope)\".", code: 2)
             }
             arguments["scope"] = scope
+        }
+        if let stack {
+            guard stacks.contains(stack) else {
+                throw CLIError(message: "--stack must be one of \(stacks.joined(separator: ", ")), got \"\(stack)\". Use --stack frontend for a Vite + React app or --stack full-app for a TanStack Start app.", code: 2)
+            }
+            arguments["stack"] = stack
         }
         if let page { arguments["page_id"] = page }
         let ids = nodes.flatMap { $0.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) } }.filter { !$0.isEmpty }

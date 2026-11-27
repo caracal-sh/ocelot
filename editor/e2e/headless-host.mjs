@@ -85,8 +85,18 @@ export async function startHeadlessHost(opts = {}) {
   }
 
   const shotContexts = new Map();
+  /**
+   * Renders one page at a time. Two pages of the same context rendering at once make `page.screenshot` fail with "Clipped area is
+   * either empty or outside the resulting image" (an agent sending two get_screenshot calls in parallel), so captures queue up.
+   */
+  let captureQueue = Promise.resolve();
+  function capture(args) {
+    const run = captureQueue.then(() => captureNow(args));
+    captureQueue = run.catch(() => {});
+    return run;
+  }
   /** Renders one page at `scale` and crops to a node: shared by screenshots and file export. */
-  async function capture({ html, width, height, scale, nodeId, transparent = false, type = 'png' }) {
+  async function captureNow({ html, width, height, scale, nodeId, transparent = false, type = 'png' }) {
     let ctx = shotContexts.get(scale);
     if (!ctx) {
       ctx = await browser.newContext({ deviceScaleFactor: scale, viewport: { width: 100, height: 100 } });

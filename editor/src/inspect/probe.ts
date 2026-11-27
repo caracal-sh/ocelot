@@ -467,10 +467,12 @@ export function probeSlop(opts: ProbeOptions): ProbeResult {
       if (content.length) {
         const bottom = Math.max(...content.map((b) => Math.min(H, b.y + b.h)));
         const gap = H - bottom;
+        const top = Math.max(0, Math.min(...content.map((b) => b.y)));
         const limit = Math.max(160, 0.15 * H);
-        if (gap >= limit) {
+        // A vertically centred card (sign-in, empty state) leaves balanced space above and below; only content that starts near the top and stops early is a void.
+        if (gap >= limit && gap > 2 * top) {
           const last = content.reduce((a, b) => (b.y + b.h > a.y + a.h ? b : a));
-          add('trailing-void', last.el, `the content ends at y=${round(bottom)}, ${round(gap)}px above the bottom of a ${round(H)}px screen`, `under ${round(limit)}px of empty ground below the last content`);
+          add('trailing-void', last.el, `the content ends at y=${round(bottom)}, ${round(gap)}px above the bottom of a ${round(H)}px screen (${round(top)}px of space above it)`, `under ${round(limit)}px of empty ground below the last content, or no more than twice the ${round(top)}px above it`);
         }
       }
     }

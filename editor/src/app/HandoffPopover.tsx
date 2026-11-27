@@ -4,7 +4,7 @@ import { errorMessage } from '../bridge/rpc';
 import { useEditor, useLocks } from '../editor/context';
 import { AGENT_KINDS, AGENT_NAMES, type AgentKind } from '../editor/mcpClients';
 import { settingsKey, storage } from '../export/fileExport';
-import { HANDOFF_SCOPES, buildHandoff, describeHandoff, type HandoffScope } from '../export/handoff';
+import { HANDOFF_SCOPES, HANDOFF_STACKS, buildHandoff, describeHandoff, type HandoffScope, type HandoffStack } from '../export/handoff';
 import { copyHandoffPrompt, saveHandoffFolder } from '../export/handoffActions';
 import type { Host } from '../host/host';
 import { SwapIcon } from './Crossfade';
@@ -15,12 +15,15 @@ import { useExitGhost } from './exitGhost';
 export interface HandoffSettings {
   scope: HandoffScope;
   agent: AgentKind;
+  stack: HandoffStack;
 }
 
-export const DEFAULT_HANDOFF_SETTINGS: HandoffSettings = { scope: 'selection', agent: 'claude' };
+export const DEFAULT_HANDOFF_SETTINGS: HandoffSettings = { scope: 'selection', agent: 'claude', stack: 'frontend' };
 
 const SCOPE_LABEL: Record<HandoffScope, string> = { selection: 'Selection', page: 'This page', document: 'Document' };
 const AGENT_LABEL: Record<AgentKind, string> = { claude: 'Claude', codex: 'Codex', cursor: 'Cursor', other: 'Other' };
+const STACK_LABEL: Record<HandoffStack, string> = { frontend: 'Front end only', 'full-app': 'Full app' };
+const STACK_HINT: Record<HandoffStack, string> = { frontend: 'Vite + React', 'full-app': 'TanStack Start, with server parts' };
 /** How long "Copy prompt" shows its check. */
 const COPIED_MS = 1800;
 
@@ -31,6 +34,7 @@ export function loadHandoffSettings(doc: Parameters<typeof settingsKey>[0]): Han
     return {
       scope: HANDOFF_SCOPES.includes(v.scope as HandoffScope) ? (v.scope as HandoffScope) : DEFAULT_HANDOFF_SETTINGS.scope,
       agent: AGENT_KINDS.includes(v.agent as AgentKind) ? (v.agent as AgentKind) : DEFAULT_HANDOFF_SETTINGS.agent,
+      stack: HANDOFF_STACKS.includes(v.stack as HandoffStack) ? (v.stack as HandoffStack) : DEFAULT_HANDOFF_SETTINGS.stack,
     };
   } catch {
     return { ...DEFAULT_HANDOFF_SETTINGS };
@@ -114,12 +118,12 @@ export function HandoffPopover({ host, anchor, onClose }: { host: Host; anchor: 
   // `stamp` changes with the document, the page, the selection and the agents: the brief is rebuilt then, not on every clock tick.
   const built = useMemo(() => {
     try {
-      return { brief: buildHandoff({ doc: editor.doc, selection: editor.selection.ids, currentPageId: editor.currentPageId }, { scope, agent: { kind: settings.agent, connected: presence.connected, connect: connectText } }), error: null };
+      return { brief: buildHandoff({ doc: editor.doc, selection: editor.selection.ids, currentPageId: editor.currentPageId }, { scope, stack: settings.stack, agent: { kind: settings.agent, connected: presence.connected, connect: connectText } }), error: null };
     } catch (err) {
       return { brief: null, error: errorMessage(err) };
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [editor, stamp, scope, settings.agent, presence.connected, connectText]);
+  }, [editor, stamp, scope, settings.agent, settings.stack, presence.connected, connectText]);
   const { brief, error: briefError } = built;
 
   const update = (patch: Partial<HandoffSettings>) => {
@@ -192,6 +196,7 @@ export function HandoffPopover({ host, anchor, onClose }: { host: Host; anchor: 
     ...(s === 'selection' && !hasSelection ? { title: 'Select screens or layers on the canvas first' } : {}),
   }));
   const agentOptions = AGENT_KINDS.map((a) => ({ value: a, label: AGENT_LABEL[a] }));
+  const stackOptions = HANDOFF_STACKS.map((s) => ({ value: s, label: STACK_LABEL[s], title: STACK_HINT[s] }));
 
   // What agents are doing right now: the person sees it before handing the design to one.
   const workingNow = editor.mcpClients.working(now)[0];
@@ -221,6 +226,13 @@ export function HandoffPopover({ host, anchor, onClose }: { host: Host; anchor: 
         <span className="at-export__label">Scope</span>
         <Seg label="What to hand off" value={scope} options={scopeOptions} onChange={(v: HandoffScope) => update({ scope: v })} disabled={busy !== null} testId="handoff-scope" />
       </div>
+      <div className="at-export__row">
+        <span className="at-export__label">Build</span>
+        <Seg label="What to build" value={settings.stack} options={stackOptions} onChange={(v: HandoffStack) => update({ stack: v })} disabled={busy !== null} testId="handoff-stack" />
+      </div>
+      <p className="at-hint" data-testid="handoff-stack-hint">
+        {STACK_HINT[settings.stack]}
+      </p>
       <div className="at-export__row">
         <span className="at-export__label">Agent</span>
         <Seg label="Which agent" value={settings.agent} options={agentOptions} onChange={(v: AgentKind) => update({ agent: v })} disabled={busy !== null} testId="handoff-agent" />

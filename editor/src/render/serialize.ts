@@ -2,7 +2,7 @@
 // render never depends on what the user has scrolled into view.
 
 import type { OcelotDocument } from '../model/document';
-import { assetIdOf, replaceAssetRefs } from '../assets/refs';
+import { replaceAssetRefs, shaderImageId } from '../assets/refs';
 import type { NodeData, StateName } from '../model/types';
 import { styleMapToText } from '../model/styles';
 import { ARTBOARD_BASE_CSS } from './frameDocument';
@@ -141,7 +141,7 @@ export function artboardDocumentHtml(doc: OcelotDocument, artboardId: string, op
 function codeFrameIframe(nodeId: string, code: CodeData, vendorBase: string, opts: SerializeOptions, vars: Record<string, string>): string {
   // A shader layer's picture rides in the frame's config: the frame loads only data: images, and a page that is written from the model has no host to ask.
   const ref = code.shader?.image;
-  const id = ref ? assetIdOf(ref) : null;
+  const id = shaderImageId({ code });
   const url = id ? (opts.imageUrl ?? opts.assetUrl)?.(id) : undefined;
   const images = ref ? { [ref]: url?.startsWith('data:image/') ? url : '' } : undefined;
   const frameOpts: CodeFrameOptions = opts.exportRuntime

@@ -8,7 +8,7 @@ import { copyHandoffPrompt } from '../export/handoffActions';
 import { copyNodesAsPng, copyScale } from '../export/exportActions';
 import { ExportError, type ExportScale } from '../export/fileExport';
 import { errorMessage } from '../bridge/rpc';
-import { buildHandoffFor, HANDOFF_AGENT } from './handoffTools';
+import { buildHandoffFor, HANDOFF_AGENT, HANDOFF_STACK } from './handoffTools';
 import { NODE_IDS, ToolError, agentLabel, enumArg, ids, json, num, str, type ToolDef } from './toolkit';
 import { HANDOFF_SCOPES } from '../export/handoff';
 
@@ -25,7 +25,7 @@ export const CLIPBOARD_TOOLS: ToolDef[] = [
       'Puts something on the PERSON\'s pasteboard, like their ⌘C / ⇧⌘C / "Copy prompt". The pasteboard is theirs and this REPLACES what they had copied: use it only when they asked ("copy that to my clipboard", "give me the prompt to paste"), never to pass data to yourself or between your own steps. ' +
       'They see the same toast as when they copy it themselves. what: ' +
       '"png" copies ONE layer or artboard as a PNG image (node_id, or artboard_id for an artboard; scale 1, 2 or 3, default the scale they last exported at), ready to paste into a chat, another app or a doc. Needs the Ocelot app or headless host. ' +
-      '"prompt" copies the handoff prompt for a coding agent (scope, node_ids, page_id, agent: as get_handoff; agent defaults to "claude"; the prompt includes the connect command when that agent is not connected). ' +
+      '"prompt" copies the handoff prompt for a coding agent (scope, node_ids, page_id, agent, stack: as get_handoff; agent defaults to "claude"; the prompt includes the connect command when that agent is not connected). ' +
       '"layers" copies the layers node_ids as HTML text (artboards copy their children), so pasting in Ocelot recreates them (⌘V adds them next to the selection) and other apps get the HTML. ' +
       '"text" copies text exactly as given. ' +
       'Nothing in the document changes. Does not return the clipboard contents (you cannot read the clipboard).',
@@ -40,6 +40,7 @@ export const CLIPBOARD_TOOLS: ToolDef[] = [
         node_ids: { ...NODE_IDS, description: 'what "layers": the layers or artboards to copy. what "prompt": artboards or layers to hand off (implies scope "selection").' },
         page_id: { type: 'string', description: 'what "prompt": a page to hand off (implies scope "page").' },
         agent: HANDOFF_AGENT,
+        stack: HANDOFF_STACK,
         text: { type: 'string', description: 'what "text": the text to copy.' },
       },
       required: ['what'],

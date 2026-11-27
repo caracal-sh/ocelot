@@ -54,7 +54,7 @@ export function nodeAssetIds(n: NodeData): string[] {
 }
 
 /** The stored image a shader layer (halftone, dither) prints, as an asset id. It is not an attribute or a style, so it is scanned apart from them. */
-export function shaderImageId(n: NodeData): string | null {
+export function shaderImageId(n: Pick<NodeData, 'code'>): string | null {
   const ref = n.code?.shader?.image;
   return ref ? assetIdOf(ref) : null;
 }

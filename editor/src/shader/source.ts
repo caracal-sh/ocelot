@@ -93,7 +93,7 @@ export default function mount(el, ctx) {
   let count = 0;
 
   // A picture (halftone, dither): the host hands the frame the image's pixels as a data: URL, by asset reference, in ctx.images ('' when the asset
-  // is missing or unreadable); an exported page carries the data: URL in spec.image itself. States: none, pending (the host has not answered yet:
+  // is missing or unreadable); an exported page carries the picture in spec.image itself (a data: URL, or /assets/<file> in a React export). States: none, pending (the host has not answered yet:
   // nothing is drawn, so the generated field never flashes), ready, failed (the generated field is printed and the console says why).
   let tex = null;
   let blank = null;
@@ -195,7 +195,8 @@ export default function mount(el, ctx) {
     console.error('The shader image ' + (ref.slice(0, 5) === 'data:' ? '(embedded)' : ref.slice(0, 22) + '…') + ' ' + why + ', so the layer prints its generated field instead. Choose an image that is in the document assets (list_assets shows them; update_shader { image } or the Shader section sets it).');
   }
   function pictureSource(ref) {
-    if (ref.slice(0, 11) === 'data:image/') return ref;
+    // An exported page has no host to ask: the spec carries the picture itself, as a data: URL (HTML) or a path under the site root (React: /assets/<file>).
+    if (ref.slice(0, 11) === 'data:image/' || (ref.charAt(0) === '/' && ref.charAt(1) !== '/')) return ref;
     const map = ctx.images;
     return map ? (ref in map ? map[ref] : undefined) : '';
   }

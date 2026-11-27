@@ -138,6 +138,26 @@ describe('get_handoff', () => {
     expect(blocks(connected)[1]).not.toContain('codex mcp add ocelot');
     expect((await call('get_handoff', { agent: 'vim' })).isError).toBe(true);
   });
+
+  it('stack: "frontend" by default; "full-app" reaches the brief, its first tool call and the prompt; unknown values name the choices', async () => {
+    const { call, editor, home } = linked();
+    editor.human.insertNodes(home, [{ type: 'frame', tag: 'input', name: 'Email', attrs: { type: 'email' } }]);
+    const plain = await briefOf(call, { scope: 'document' });
+    expect(plain.stack).toBe('frontend');
+    expect(plain.server_parts).toEqual([]);
+    const r = await call('get_handoff', { scope: 'document', stack: 'full-app' });
+    const brief = JSON.parse(blocks(r)[0]!);
+    expect(brief.stack).toBe('full-app');
+    expect(brief.server_parts).toEqual([{ screen_id: home, screen: 'Home', kind: 'form', layer: 'Email', detail: 'fields: Email' }]);
+    expect(brief.steps[0]).toContain('"stack": "full-app"');
+    expect(blocks(r)[1]).toContain('Server parts');
+    const bad = await call('get_handoff', { stack: 'ssr' });
+    expect(bad.isError).toBe(true);
+    expect(blocks(bad).join('')).toContain('frontend, full-app');
+    for (const name of ['get_handoff', 'export_handoff', 'copy_to_clipboard']) {
+      expect(JSON.stringify(TOOLS.find((x) => x.name === name)!.inputSchema)).toContain('"full-app"');
+    }
+  });
 });
 
 describe('export_handoff', () => {
@@ -178,6 +198,15 @@ describe('export_handoff', () => {
     expect(blocks(r).join('')).not.toMatch(/base64|"text"/);
     expect(editor.ui.toasts.at(-1)).toMatchObject({ kind: 'agent' });
     expect(editor.ui.toasts.at(-1)!.message).toContain('saved the handoff folder');
+  });
+
+  it('stack "full-app" writes a HANDOFF.md for a TanStack Start app and flows.json names the stack', async () => {
+    const { call, saves } = withSave();
+    await call('export_handoff', { scope: 'document', stack: 'full-app', files: 'code' });
+    const text = (path: string) => saves[0]!.files.find((f) => f.path === path)!.text!;
+    expect(text('HANDOFF.md')).toContain('src/routes/');
+    expect(JSON.parse(text('flows.json')).stack).toBe('full-app');
+    expect((await call('export_handoff', { stack: 'ssr' })).isError).toBe(true);
   });
 
   it('files "code" leaves out screenshots and the prototype; a cancelled dialog is reported, not an error', async () => {

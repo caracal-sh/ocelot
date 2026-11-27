@@ -5,6 +5,7 @@ import { assetRef } from '../assets/refs';
 import { bytesToBase64 } from '../assets/sniff';
 import { fakePng } from '../assets/testing';
 import { createDesignSystem } from '../designsystem/apply';
+import { normalizeCode } from '../model/code';
 import { setupMcp } from '../mcp/testSetup';
 import { buildHandoff } from './handoff';
 import { buildHandoffFolder } from './handoffFiles';
@@ -56,6 +57,33 @@ describe('buildHandoffFolder', () => {
     expect(files.get('HANDOFF.md')!.text).toContain('| Home | 1440×900 | `screens/home@2x.png` | `code/Home.tsx` | `/home` |');
     expect(JSON.parse(files.get('flows.json')!.text!).flows).toHaveLength(2);
     expect(new Set(folder.files.map((f) => f.path)).size).toBe(folder.files.length);
+  });
+
+  it('a shader layer’s picture is a file in code/public/assets and a URL in the component, never a data: URL; the prototype embeds it', async () => {
+    const p = await project({ designSystem: false });
+    const pic = await p.editor.assets.importBase64(bytesToBase64(fakePng(10, 8, 9)), { name: 'plate', kind: 'upload' });
+    p.editor.human.insertNodes(p.home, [{ type: 'code', name: 'Print', code: normalizeCode({ shader: { kind: 'halftone', image: assetRef(pic.id) } }) }]);
+    const folder = await buildHandoffFolder(p.editor, p.host, p.brief());
+    const files = byPath(folder.files);
+    const tsx = files.get('code/Home.tsx')!.text!;
+    expect(tsx).toContain(`"image":"/assets/${pic.id}.${pic.ext}"`);
+    expect(tsx).not.toMatch(/;base64,|asset:\/\//);
+    expect(files.get(`code/public/assets/${pic.id}.${pic.ext}`)).toMatchObject({ assetId: pic.id });
+    expect(files.get('prototype/home.html')!.text).toContain('"image":"data:image/png;base64,');
+    expect(files.has(`prototype/assets/${pic.id}.${pic.ext}`)).toBe(false);
+    expect(tsx.startsWith('// @ts-nocheck\n')).toBe(true);
+    expect(files.get('code/Pricing.tsx')!.text).not.toContain('ts-nocheck');
+    expect(folder.warnings.filter((w) => w.includes('shader picture'))).toEqual([]);
+  });
+
+  it('warns about a shader picture the asset store lost, like a missing image', async () => {
+    const p = await project({ designSystem: false });
+    const pic = await p.editor.assets.importBase64(bytesToBase64(fakePng(10, 8, 9)), { name: 'plate', kind: 'upload' });
+    p.editor.human.insertNodes(p.home, [{ type: 'code', name: 'Print', code: normalizeCode({ shader: { kind: 'dither', image: assetRef(pic.id) } }) }]);
+    await p.editor.assets.delete([pic.id]);
+    const folder = await buildHandoffFolder(p.editor, p.host, p.brief());
+    expect(folder.warnings).toContain('1 shader picture in “Home” is missing from the asset store: the layer prints its generated field. Set another image with update_shader { image }, then hand off again.');
+    expect(byPath(folder.files).get('code/Home.tsx')!.text).toContain(`"image":"${assetRef(pic.id)}"`);
   });
 
   it('asks the host for 2× renders of the screen HTML', async () => {

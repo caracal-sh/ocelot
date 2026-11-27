@@ -22,7 +22,11 @@ function inline(text: string): ReactNode[] {
 export function renderText(text: string, caret = false): ReactNode {
   const blocks: Block[] = [];
   let last: Block | undefined;
-  for (const line of text.trim().split('\n')) {
+  const lines = text.trim().split('\n');
+  // While streaming, a last line that is only the start of a list marker ("-", "2", "2.") is not text yet: showing it
+  // would print "Plan: -" or a stray paragraph "2" until the next chunk turns it into a list item.
+  if (caret && lines.length > 1 && /^\s*(?:[-*•]|\d{1,2}[.)]?)$/.test(lines[lines.length - 1]!)) lines.pop();
+  for (const line of lines) {
     if (!line.trim()) {
       if (last?.kind === 'p') last = undefined;
       continue;

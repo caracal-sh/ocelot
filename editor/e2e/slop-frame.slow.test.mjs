@@ -158,6 +158,11 @@ describe('frame rules', () => {
     expect(ids(await inspect(screen(14), 1440, 900))).not.toContain('trailing-void');
   });
 
+  it('trailing-void: a card centred vertically on a 900px screen leaves balanced space and does not ask', async () => {
+    const centred = doc(`<div style="display:flex;align-items:center;justify-content:center;width:1440px;height:900px;background:#f4f1ea"><div style="width:420px;height:400px;box-sizing:border-box;padding:32px;background:#fff;border:1px solid #ddd">${H('Sign in', 'font-size:32px')}${P('Use the email you gave the bakery.', 'margin-top:16px')}</div></div>`);
+    expect(ids(await inspect(centred, 1440, 900))).not.toContain('trailing-void');
+  });
+
   it('hollow-column: a half-width heading column beside a 700px list asks; a third-width label column, balanced columns and a full-height picture do not', async () => {
     const steps = (n, label = 'Step') => Array.from({ length: n }, (_, i) => `<div style="height:116px;box-sizing:border-box;padding-top:20px;border-bottom:1px solid #ddd">${P(`${label} ${i + 1}: ${['Brief', 'Sketch', 'Prototype', 'Review', 'Build', 'Ship'][i % 6]}`, 'font-size:22px')}</div>`).join('');
     const intro = `${H('Process intro', 'font-size:48px;line-height:1.1')}${P(BODY, 'margin-top:24px')}`;

@@ -11,7 +11,7 @@ import { componentName, jsxAttr, jsxAttrName, jsxStyle, jsxStyleEntries, jsxStyl
 import { stylesToTailwind } from './tailwind';
 import { NO_THEME_UTILITIES, THEME_CLASS, reactThemeCss, splitThemeStyles, themeUtilities, usedBundledFonts, type ReactThemeFile, type ThemeUtilities } from './themeCss';
 import { MOTION_ROOT_CLASS, createMotionExport, stateClasses, styleBlockJsx, type MotionExport } from './motion';
-import { addCodeLayer, createCodeExport, reactCodePrelude, type CodeExport, type PictureUrl } from './code';
+import { addCodeLayer, createCodeExport, reactCodePrelude, CODE_LAYERS_NOCHECK, type CodeExport, type PictureUrl } from './code';
 import { artboardSlugs, exportedLink, reactLinkTargets, type LinkTargets } from './links';
 import {
   COMPONENT_IMPORT,
@@ -68,7 +68,7 @@ export interface ReactExportOptions {
    */
   components?: 'ui' | 'inline';
   ui?: UiComponents;
-  /** The `data:` URL of a stored image whose pixels are loaded: shader layers that print a picture embed it in their module. */
+  /** Where the exported page finds the picture of a stored image a shader layer prints (its `/assets/<file>` URL); the layer keeps its `asset://` reference without it. */
   pictureUrl?: PictureUrl;
 }
 
@@ -144,6 +144,7 @@ export function exportReact(doc: OcelotDocument, id: string, opts: ReactExportOp
   files.sort((a, b) => a.name.localeCompare(b.name));
 
   const prelude = codeExport.layers.length ? reactCodePrelude(codeExport) : '';
+  const nocheck = codeExport.layers.length ? CODE_LAYERS_NOCHECK : '';
   // The exported function must not shadow a component it imports (exporting a Button layer: `Button` -> `ButtonDesign`).
   const imported = new Set([...(uiOut ? importedNames(uiOut) : []), ...[...links.imports].map((c) => docs.plans.get(c)!.name)]);
   const name = imported.has(baseName) ? `${baseName}Design` : baseName;
@@ -151,7 +152,7 @@ export function exportReact(doc: OcelotDocument, id: string, opts: ReactExportOp
   const themeCss = reactThemeCss(name, theme, usedBundledFonts(doc, roots, theme), themed && doc.theme() ? `Theme: ${doc.theme()!.id}` : undefined);
   const css = ds ? { path: `${name}.css`, text: `${designSystemCss(ds)}\n${themeCss?.text ?? ''}` } : themeCss;
   const cssNote = css ? `// Needs ./${css.path}: @import it in your Tailwind stylesheet after @import "tailwindcss" (${ds ? `the "${ds.name}" design system tokens, theme aliases, ` : 'theme variables, '}@theme, @font-face).\n` : '';
-  const code = `${uiOut ? importLines(uiOut) : ''}${docImportLines(links.imports, docs)}${prelude}${cssNote}${uiOut ? uiNote(ds!.name, uiOut) : ''}${links.usedInternal ? REACT_ROUTES_NOTE : ''}${uiOut ? helperLines(uiOut) : ''}export default function ${name}() {\n  return (\n${screen.body}  );\n}\n`;
+  const code = `${nocheck}${uiOut ? importLines(uiOut) : ''}${docImportLines(links.imports, docs)}${prelude}${cssNote}${uiOut ? uiNote(ds!.name, uiOut) : ''}${links.usedInternal ? REACT_ROUTES_NOTE : ''}${uiOut ? helperLines(uiOut) : ''}export default function ${name}() {\n  return (\n${screen.body}  );\n}\n`;
   return {
     componentName: name,
     code,
@@ -247,9 +248,10 @@ function componentFile(sh: Shared, plan: ComponentPlan, screenUi: UiExport | nul
   const tables = links.tables!;
   const react = `import type { ComponentPropsWithoutRef${tables.usesStyle ? ', CSSProperties' : ''} } from "react";\n`;
   const prelude = codeExport.layers.length ? reactCodePrelude(codeExport) : '';
+  const nocheck = codeExport.layers.length ? CODE_LAYERS_NOCHECK : '';
   const note = `// The “${plan.def.name}” component of the Ocelot document: write it once, use <${plan.name} … /> for every instance (props below; className and style place it).\n`;
   const code =
-    `${react}${uiOut ? importLines(uiOut) : ''}${docImportLines(links.imports, docs)}${prelude}${note}${uiOut ? uiNote(sh.ds!.name, uiOut) : ''}${links.usedInternal ? REACT_ROUTES_NOTE : ''}${uiOut ? helperLines(uiOut) : ''}\n` +
+    `${nocheck}${react}${uiOut ? importLines(uiOut) : ''}${docImportLines(links.imports, docs)}${prelude}${note}${uiOut ? uiNote(sh.ds!.name, uiOut) : ''}${links.usedInternal ? REACT_ROUTES_NOTE : ''}${uiOut ? helperLines(uiOut) : ''}\n` +
     `${propsDeclaration(plan)}\n${tables.lines.length ? `${tables.lines.join('\n\n')}\n\n` : ''}` +
     `export function ${plan.name}(${propsParams(plan)}) {\n  return (\n${body}  );\n}\n`;
   return { id: plan.def.id, name: plan.name, path: plan.file, code, props: plan.def.props.map((p) => propSummary(doc, p)) };

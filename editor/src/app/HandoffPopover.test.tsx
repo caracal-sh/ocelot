@@ -10,6 +10,7 @@ import { createBrowserHost, type Host } from '../host/host';
 import { fakePng } from '../assets/testing';
 import { bytesToBase64 } from '../assets/sniff';
 import { HandoffPopover, loadHandoffSettings } from './HandoffPopover';
+import { settingsKey } from '../export/fileExport';
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
@@ -119,6 +120,9 @@ describe('HandoffPopover', () => {
     expect(q('handoff-summary').textContent).toBe('2 screens · 1 flow');
     expect([...document.querySelectorAll('[data-testid="handoff-scope"] button')].map((b) => b.textContent)).toEqual(['Selection', 'This page', 'Document']);
     expect([...document.querySelectorAll('[data-testid="handoff-agent"] button')].map((b) => b.textContent)).toEqual(['Claude', 'Codex', 'Cursor', 'Other']);
+    expect([...document.querySelectorAll('[data-testid="handoff-stack"] button')].map((b) => b.textContent)).toEqual(['Front end only', 'Full app']);
+    expect(seg('handoff-stack', 'frontend').getAttribute('aria-checked')).toBe('true');
+    expect(q('handoff-stack-hint').textContent).toBe('Vite + React');
     expect(q('handoff-popover').getAttribute('aria-label')).toBe('Hand off to an agent');
   });
 
@@ -217,6 +221,38 @@ describe('HandoffPopover', () => {
       expect(q('handoff-status').textContent).toContain('The MCP server is not running');
       await clickAsync(q('handoff-copy'));
       expect(f.copied[0]).not.toContain('to Ocelot first');
+    });
+  });
+
+  describe('build', () => {
+    it('Front end only is the default; unknown stored values fall back to it', () => {
+      const f = open();
+      expect(loadHandoffSettings(f.editor.doc).stack).toBe('frontend');
+      localStorage.setItem(settingsKey(f.editor.doc, 'handoff.'), JSON.stringify({ stack: 'ssr' }));
+      expect(loadHandoffSettings(f.editor.doc).stack).toBe('frontend');
+    });
+
+    it('Full app is remembered and reaches Copy prompt and the saved folder', async () => {
+      const f = open();
+      await flush();
+      click(seg('handoff-stack', 'full-app'));
+      expect(seg('handoff-stack', 'full-app').getAttribute('aria-checked')).toBe('true');
+      expect(q('handoff-stack-hint').textContent).toBe('TanStack Start, with server parts');
+      expect(q('handoff-summary').textContent).toBe('2 screens · 1 flow · full app');
+      expect(loadHandoffSettings(f.editor.doc).stack).toBe('full-app');
+      await clickAsync(q('handoff-copy'));
+      expect(f.copied[0]).toContain('TanStack Start');
+      expect(f.copied[0]).toContain('src/routes/');
+      expect(f.copied[0]).toContain('"stack": "full-app"');
+      click(seg('handoff-stack', 'frontend'));
+      await clickAsync(q('handoff-copy'));
+      expect(f.copied[1]).not.toContain('TanStack Start');
+      click(seg('handoff-stack', 'full-app'));
+      await clickAsync(q('handoff-save'));
+      await flush();
+      const md = f.saves[0]!.files.find((x) => x.path === 'HANDOFF.md')!.text!;
+      expect(md).toContain('## Server parts');
+      expect(md).toContain('src/routes/');
     });
   });
 

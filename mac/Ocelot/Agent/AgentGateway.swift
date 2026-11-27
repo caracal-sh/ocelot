@@ -218,7 +218,11 @@ final class AuthGateway {
         try FileManager.default.createDirectory(at: home, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
         GatewayClientFiles.removeStale(in: home)
         try await flush()
+        let previousPort = port
         port = try Http.freePort(preferring: port) // a restarted gateway keeps its address: running agents were configured with it
+        if previousPort > 0, port != previousPort {
+            log.error("agent gateway could not reuse port \(previousPort, privacy: .public) and moved to \(self.port, privacy: .public); running agents keep the old address, so chats in progress will fail: start a new chat")
+        }
         let brokerPort = try Http.freePort()
         let brokerURL = "http://127.0.0.1:\(brokerPort)"
 
@@ -500,6 +504,14 @@ enum Http {
         let fd = socket(AF_INET, SOCK_STREAM, 0)
         guard fd >= 0 else { throw BridgeFailure(.internal, "Could not open a socket to pick a gateway port.") }
         defer { close(fd) }
+        if requested > 0 {
+            // A gateway that died with agents connected leaves its port in TIME_WAIT for ~30 s: without SO_REUSEADDR the restart could not
+            // take it back and would move to a port the running agents cannot reach. It still fails while another socket listens on the port.
+            var reuse: Int32 = 1
+            guard setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &reuse, socklen_t(MemoryLayout<Int32>.size)) == 0 else {
+                throw BridgeFailure(.internal, "Could not set address reuse on the probe socket for the agent gateway port.")
+            }
+        }
         var address = sockaddr_in()
         address.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
         address.sin_family = sa_family_t(AF_INET)
