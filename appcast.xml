@@ -6,6 +6,17 @@
     <description>Ocelot updates</description>
     <language>en</language>
     <item>
+      <title>Ocelot 0.3.18</title>
+      <pubDate>Sat, 28 Nov 2026 11:06:14 +0000</pubDate>
+      <sparkle:version>1029</sparkle:version>
+      <sparkle:shortVersionString>0.3.18</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <description><![CDATA[<ul>
+<li>Attach PDFs to a message in the Agent sidebar and on Home, by the paperclip, by dropping them or by pasting. The agent reads the text of every page and looks at pictures of the first pages, so a brand concept or a brief comes across with its colours, type and layout as well as its words. PDFs up to 50 MB; a password-protected PDF says how to make a copy it can read.</li>
+</ul>]]></description>
+      <enclosure url="https://github.com/caracal-sh/ocelot/releases/download/v0.3.18/Ocelot-0.3.18.dmg" length="17693692" type="application/octet-stream" sparkle:edSignature="57vOPlztk2FfoEt5vG1D6Oft06QKhwqyfJLe9BPoDRl+FReQV3PtktF72sbvR/pg//49D3h9cgb7FdgTlRyiDw=="/>
+    </item>
+    <item>
       <title>Ocelot 0.3.16</title>
       <pubDate>Fri, 27 Nov 2026 17:08:57 +0000</pubDate>
       <sparkle:version>1027</sparkle:version>
