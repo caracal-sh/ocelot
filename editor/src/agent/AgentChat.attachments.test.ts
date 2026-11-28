@@ -6,7 +6,8 @@ import { Editor } from '../editor/Editor';
 import { registerCoreEditorMethods } from '../host/editorMethods';
 import { editorEndpoint, type Host } from '../host/host';
 import { AgentChat } from './AgentChat';
-import { textAttachment, type Attachment, type ImageCodec } from './attachments';
+import { samplePdfContent } from './agentTestHost';
+import { ingestFile, textAttachment, type Attachment, type ImageCodec } from './attachments';
 
 const cleanup: Array<() => void> = [];
 afterEach(() => cleanup.splice(0).forEach((fn) => fn()));
@@ -20,10 +21,11 @@ const png = (width: number, height: number): ImageCodec => async () => ({
 });
 
 /** A host with a working agent process (answers the handshake and `get_state`) and an asset store that remembers imports. */
-function setup(opts: { loggedIn?: boolean; codec?: ImageCodec; failAssets?: boolean } = {}) {
+function setup(opts: { loggedIn?: boolean; codec?: ImageCodec; failAssets?: boolean; pdfError?: string } = {}) {
   const state = { loggedIn: opts.loggedIn ?? true };
   const commands: Array<Record<string, unknown>> = [];
   const imports: Array<Record<string, unknown>> = [];
+  const pdfCalls: Array<Record<string, unknown>> = [];
   const emit = (processId: string, frames: unknown[]) =>
     editorEndpoint.dispatch(JSON.stringify({ v: 1, id: `e-${Math.random()}`, method: 'editor.agentEvent', params: { processId, lines: frames.map((f) => JSON.stringify(f)), done: false } satisfies AgentEventParams }));
   const host = {
@@ -43,6 +45,11 @@ function setup(opts: { loggedIn?: boolean; codec?: ImageCodec; failAssets?: bool
         }
         return {};
       }
+      if (method === 'host.readPdf') {
+        pdfCalls.push(p);
+        if (opts.pdfError) throw new Error(opts.pdfError);
+        return samplePdfContent();
+      }
       if (method === 'host.assetsImport') {
         if (opts.failAssets) throw new Error('store unavailable');
         imports.push(p);
@@ -57,7 +64,7 @@ function setup(opts: { loggedIn?: boolean; codec?: ImageCodec; failAssets?: bool
   const chat = new AgentChat(editor, host, opts.codec ?? png(1600, 1200));
   cleanup.push(() => chat.dispose());
   const prompts = () => commands.filter((c) => c['type'] === 'prompt');
-  return { chat, editor, host, imports, prompts, state };
+  return { chat, editor, host, imports, pdfCalls, prompts, state };
 }
 
 const image = (): Attachment => ({
@@ -187,14 +194,14 @@ describe('editor.startWithPrompt through the bridge', () => {
     await call({
       prompt: 'Go',
       attachments: [
-        { kind: 'text', name: 'spec.pdf', mimeType: 'application/pdf', dataBase64: 'AAAA' },
+        { kind: 'text', name: 'spec.zip', mimeType: 'application/zip', dataBase64: 'AAAA' },
         { kind: 'text', name: 'big.txt', mimeType: 'text/plain', text: 'x'.repeat(200_001) },
       ],
     });
     expect(prompts()[0]).toMatchObject({ message: 'Go' });
     const notices = chat.snapshot.items.filter((i) => i.kind === 'notice');
     expect(notices.map((n) => n.text)).toEqual([
-      expect.stringMatching(/^Left out of your first message: “spec\.pdf” cannot be attached\..*PNG, JPEG/),
+      expect.stringMatching(/^Left out of your first message: “spec\.zip” cannot be attached\..*PNG, JPEG/),
       expect.stringMatching(/^Left out of your first message: “big\.txt” has 200,001 characters.*Split it into parts or shorten it/),
     ]);
   });
@@ -250,5 +257,69 @@ describe('editor.startWithPrompt through the bridge', () => {
     await chat.refreshStatus();
     await vi.waitFor(() => expect(prompts()).toHaveLength(1));
     expect(prompts()[0]!['message']).toBe('[Plan first]\n\nLater');
+  });
+});
+
+describe('PDFs', () => {
+  const call = async (params: unknown) => JSON.parse(await editorEndpoint.dispatch(JSON.stringify({ v: 1, id: 'c1', method: 'editor.startWithPrompt', params }))) as BridgeResponse;
+  const pdfFile = () => new File([new Uint8Array([37, 80, 68, 70])], 'brand.pdf', { type: 'application/pdf' });
+
+  it('reads a picked PDF through the host and sends its text and page pictures, none of them stored as assets', async () => {
+    const { chat, imports, pdfCalls, prompts } = setup();
+    await chat.refreshStatus();
+    const chip = await ingestFile(pdfFile(), undefined, chat.pdfReader);
+    expect(pdfCalls).toEqual([{ dataBase64: 'JVBERg==', maxPictures: 8, maxEdge: 1600 }]);
+    expect(chip).toMatchObject({ kind: 'pdf', name: 'brand.pdf', pdf: { pageCount: 3 } });
+    expect(await chat.send('Build from the brief', [image(), chip])).toBe(true);
+
+    expect(imports).toHaveLength(1); // the person's image only
+    const [prompt] = prompts();
+    expect(prompt!['images']).toEqual(['iVBORw==', 'AQIDBA==', 'AQIDBA==', 'AQIDBA=='].map((data) => ({ type: 'image', mimeType: expect.any(String), data })));
+    const message = prompt!['message'] as string;
+    expect(message).toContain('[Image 1: "moodboard.png", 1600×1200, stored as asset://asset-1');
+    expect(message).toContain('[Image 2: page 1 of "brand.pdf", 1200×1600, a picture of the page to look at; it is not stored as an asset]');
+    expect(message).toContain('<attachment name="brand.pdf" kind="pdf" pages="3" pictures="1-3">\n[Page 1]\nBrix Editions\nPrimary colour #1F3A5F\n\n[Page 2: no text, see its picture]\n\n[Page 3]\nType: Geist Serif, 12/18\n</attachment>');
+
+    const user = chat.snapshot.items.find((i) => i.kind === 'user');
+    const attachments = user?.kind === 'user' ? user.attachments : undefined;
+    expect(attachments?.map((a) => a.kind)).toEqual(['image', 'pdf']);
+    expect(attachments?.[1]?.image?.assetId).toBeUndefined();
+  });
+
+  it('refuses to send a PDF whose chip failed, with the reader\'s message', async () => {
+    const { chat, prompts } = setup({ pdfError: 'This PDF is password-protected. Remove the password and attach it again.' });
+    await chat.refreshStatus();
+    const chip = await ingestFile(pdfFile(), undefined, chat.pdfReader);
+    expect(chip.error).toBe('Could not read “brand.pdf”: This PDF is password-protected. Remove the password and attach it again.');
+    expect(await chat.send('hi', [chip])).toBe(false);
+    expect(prompts()).toHaveLength(0);
+  });
+
+  it('ingests a PDF an external agent attached (ingestFiles) with the same reader', async () => {
+    const { chat, pdfCalls } = setup();
+    const [a] = await chat.ingestFiles([{ kind: 'pdf', name: 'brand.pdf', mimeType: 'application/pdf', dataBase64: 'JVBERg==' }]);
+    expect(a).toMatchObject({ kind: 'pdf', pdf: { pageCount: 3 } });
+    expect(pdfCalls).toHaveLength(1);
+  });
+
+  it('reads a PDF from the Home window\'s first message and sends it with the prompt', async () => {
+    const { chat, editor, host, imports, pdfCalls, prompts } = setup();
+    cleanup.push(registerCoreEditorMethods(editor, host, undefined, chat));
+    const response = await call({ prompt: 'Design from this brief', attachments: [{ kind: 'pdf', name: 'brand.pdf', mimeType: 'application/pdf', dataBase64: 'JVBERg==' }] });
+    expect(response).toMatchObject({ ok: true, result: { started: true } });
+    expect(pdfCalls).toEqual([{ dataBase64: 'JVBERg==', maxPictures: 8, maxEdge: 1600 }]);
+    expect(imports).toEqual([]);
+    const prompt = prompts()[0]!;
+    expect(prompt['images']).toHaveLength(3);
+    expect(prompt['message']).toMatch(/^Design from this brief\n\n\[Image 1: page 1 of "brand\.pdf"/);
+    expect(prompt['message']).toContain('<attachment name="brand.pdf" kind="pdf" pages="3" pictures="1-3">');
+  });
+
+  it('leaves a PDF the host could not read out of the first message and names it in the chat', async () => {
+    const { chat, editor, host, prompts } = setup({ pdfError: 'brand.pdf is not a PDF or is damaged. Export it again and attach the new file.' });
+    cleanup.push(registerCoreEditorMethods(editor, host, undefined, chat));
+    await call({ prompt: 'Go', attachments: [{ kind: 'pdf', name: 'brand.pdf', mimeType: 'application/pdf', dataBase64: 'JVBERg==' }] });
+    expect(prompts()[0]).toMatchObject({ message: 'Go' });
+    expect(chat.snapshot.items.filter((i) => i.kind === 'notice').map((n) => n.text)).toEqual([expect.stringMatching(/^Left out of your first message: Could not read “brand\.pdf”: brand\.pdf is not a PDF/)]);
   });
 });

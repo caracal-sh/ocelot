@@ -2,11 +2,12 @@ import AppKit
 import Foundation
 import UniformTypeIdentifiers
 
-/// An image or a text attached to the Home prompt. The model, the accepted types and the limits mirror the editor's
+/// An image, a PDF or a text attached to the Home prompt. The model, the accepted types and the limits mirror the editor's
 /// `agent/attachments.ts`, which normalizes whatever Start hands over (this side only shows chips and errors early).
-/// Files are read when Start is pressed (images) or when they are added (texts, for the line count and the limits).
+/// Files are read when Start is pressed (images, PDFs) or when they are added (texts, for the line count and the limits;
+/// PDFs also for their page count and to refuse a locked or damaged one early).
 struct HomeAttachment: Identifiable, Equatable {
-    enum Kind: String, Equatable { case image, text }
+    enum Kind: String, Equatable { case image, text, pdf }
     enum Content: Equatable {
         case file(URL)
         case imageData(Data)
@@ -20,6 +21,8 @@ struct HomeAttachment: Identifiable, Equatable {
     /// Bytes of the file, the pasted image or the text (UTF-8).
     var size: Int
     var content: Content
+    /// Pages of a PDF (0 for the others).
+    var pages = 0
     /// A long paste that became a chip automatically.
     var pasted = false
     /// Why this one cannot be sent.
@@ -31,24 +34,27 @@ struct HomeAttachment: Identifiable, Equatable {
     static let maxTextCharacters = 200_000
     static let maxTotalTextCharacters = 400_000
     static let maxSourceImageBytes = 50 * 1024 * 1024
+    static let maxPdfBytes = 50 * 1024 * 1024
     /// Pasted text beyond either threshold becomes a chip.
     static let pasteMinCharacters = 1500
     static let pasteMinLines = 30
     /// What the message says when there are attachments and no words.
     static let defaultPrompt = "Design from the attached files."
-    static let supported = "Images (PNG, JPEG, WebP, GIF, HEIC) and text files (.txt, .md, .csv, .json, .html, .css, .svg)"
+    static let supported = "Images (PNG, JPEG, WebP, GIF, HEIC), PDFs and text files (.txt, .md, .csv, .json, .html, .css, .svg)"
 
     private static let imageMimes = ["png": "image/png", "jpg": "image/jpeg", "jpeg": "image/jpeg", "webp": "image/webp", "gif": "image/gif", "heic": "image/heic", "heif": "image/heif"]
     private static let textMimes = ["txt": "text/plain", "md": "text/markdown", "csv": "text/csv", "json": "application/json", "html": "text/html", "css": "text/css", "svg": "image/svg+xml"]
+    private static let pdfMime = "application/pdf"
 
     /// File types for the open panel.
     static var openPanelTypes: [UTType] {
-        (Array(imageMimes.keys) + Array(textMimes.keys)).compactMap { UTType(filenameExtension: $0) }
+        (Array(imageMimes.keys) + Array(textMimes.keys) + ["pdf"]).compactMap { UTType(filenameExtension: $0) }
     }
 
     static func classify(name: String) -> (kind: Kind, mimeType: String)? {
         let ext = (name as NSString).pathExtension.lowercased()
         if let mime = imageMimes[ext] { return (.image, mime) }
+        if ext == "pdf" { return (.pdf, pdfMime) }
         if let mime = textMimes[ext] { return (.text, mime) }
         return nil
     }
@@ -62,6 +68,18 @@ struct HomeAttachment: Identifiable, Equatable {
             return refused(name, size: size, "“\(name)” cannot be attached. \(supported) are supported.")
         }
         switch kind {
+        case .pdf:
+            if size > maxPdfBytes {
+                return refused(name, size: size, "“\(name)” is \(formatBytes(size)); PDFs up to 50 MB can be attached. Export the pages you need as a smaller PDF.")
+            }
+            do {
+                let pages = try PdfReader.pageCount(of: url)
+                var item = HomeAttachment(id: UUID(), kind: .pdf, name: name, mimeType: mime, size: size, content: .file(url))
+                item.pages = pages
+                return item
+            } catch {
+                return refused(name, size: size, error.localizedDescription)
+            }
         case .image:
             if size > maxSourceImageBytes {
                 return refused(name, size: size, "“\(name)” is \(formatBytes(size)); images up to \(formatBytes(maxSourceImageBytes)) can be attached. Export a smaller copy and try again.")
@@ -124,6 +142,7 @@ struct HomeAttachment: Identifiable, Equatable {
     /// The chip's second line: "1600 KB" for an image, "412 lines" for a text.
     var meta: String {
         if kind == .text, text != nil { return lines == 1 ? "1 line" : "\(lines) lines" }
+        if kind == .pdf, pages > 0 { return pages == 1 ? "1 page" : "\(pages) pages" }
         return Self.formatBytes(size)
     }
 
@@ -156,6 +175,7 @@ struct HomeAttachment: Identifiable, Equatable {
                 out[a.id] = error
                 continue
             }
+            if a.kind == .pdf { continue }
             if a.kind == .image {
                 images += 1
                 if images > maxImages { out[a.id] = "Only \(maxImages) images fit in one message. Remove this one and send it in the next message." }

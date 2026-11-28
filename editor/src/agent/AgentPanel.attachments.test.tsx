@@ -8,7 +8,8 @@ import type { Host } from '../host/host';
 import { AgentChat } from './AgentChat';
 import { AgentChatContext, AgentPanel } from './AgentPanel';
 import { AttachmentChips } from './AttachmentChips';
-import { MAX_TEXT_CHARS, textAttachment } from './attachments';
+import { samplePdfContent } from './agentTestHost';
+import { MAX_TEXT_CHARS, pdfAttachment, textAttachment, type Attachment } from './attachments';
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
@@ -25,10 +26,17 @@ afterEach(() => {
 });
 
 /** The panel with a ready agent; `send` is replaced so the test sees what the composer hands over. */
-async function mount() {
+async function mount(opts: { pdfError?: string } = {}) {
   const host: Host = {
     kind: 'browser',
-    call: (async (method: string) => (method === 'host.agentStatus' ? { available: true, loggedIn: true } : {})) as Host['call'],
+    call: (async (method: string) => {
+      if (method === 'host.agentStatus') return { available: true, loggedIn: true };
+      if (method === 'host.readPdf') {
+        if (opts.pdfError) throw new Error(opts.pdfError);
+        return samplePdfContent();
+      }
+      return {};
+    }) as Host['call'],
   };
   const editor = new Editor();
   const chat = new AgentChat(editor, host);
@@ -134,7 +142,7 @@ describe('composer attachments: drop, errors, keyboard, send', () => {
 
   it('refuses an unsupported file with a chip that says what is supported, and blocks Send until it is removed', async () => {
     const { el, send } = await mount();
-    drop(q(el, 'agent-panel')!, 'drop', [new File(['%PDF'], 'spec.pdf', { type: 'application/pdf' })]);
+    drop(q(el, 'agent-panel')!, 'drop', [new File(['PK'], 'spec.zip', { type: 'application/zip' })]);
     await settle();
     expect(q(el, 'attachment-chip')!.textContent).toMatch(/cannot be attached.*PNG, JPEG, WebP, GIF, HEIC.*\.txt, \.md/);
     type(el, 'hello');
@@ -224,6 +232,80 @@ describe('chip preview', () => {
     const dialog = q(document.body, 'attachment-preview')!;
     expect(dialog.querySelector('img')?.getAttribute('src')).toBe('data:image/png;base64,AAAA');
     expect(dialog.textContent).toContain('moodboard.png · 1600×1200');
+  });
+
+  it('shows a PDF chip with page 1 as its thumbnail and the page count, and opens page 1 in the lightbox', () => {
+    const root = document.createElement('div');
+    document.body.append(root);
+    const r = createRoot(root);
+    mounted.push({ root: r, el: root, chat: new AgentChat(new Editor(), {} as Host) });
+    const brand = pdfAttachment('brand.pdf', 5000, samplePdfContent());
+    const single = pdfAttachment('one.pdf', 100, { pageCount: 1, pages: ['x'], pictures: [] });
+    act(() => r.render(<AttachmentChips items={[brand, single]} onCopy={onCopy} sent />));
+    const [first, second] = [...root.querySelectorAll<HTMLElement>('[data-testid="attachment-chip"]')];
+    expect(first!.getAttribute('data-kind')).toBe('pdf');
+    expect(first!.textContent).toContain('brand.pdf');
+    expect(first!.textContent).toContain('3 pages');
+    expect(first!.classList.contains('at-chip--tile')).toBe(false); // a PDF keeps its name and page count beside the thumbnail
+    expect(first!.querySelector('img')?.getAttribute('src')).toBe('data:image/jpeg;base64,AQIDBA==');
+    expect(first!.querySelector('.at-chip__main')!.getAttribute('aria-label')).toBe('Preview brand.pdf, a PDF with 3 pages');
+    expect(second!.textContent).toContain('1 page');
+    expect(second!.textContent).not.toContain('1 pages');
+    expect(second!.querySelector('img')).toBeNull();
+    expect(second!.querySelector<HTMLButtonElement>('.at-chip__main')!.disabled).toBe(true); // nothing to open without a picture
+    act(() => first!.querySelector<HTMLButtonElement>('.at-chip__main')!.click());
+    const dialog = q(document.body, 'attachment-preview')!;
+    expect(dialog.querySelector('img')?.getAttribute('src')).toBe('data:image/jpeg;base64,AQIDBA==');
+    expect(dialog.textContent).toContain('brand.pdf · PDF, 3 pages · page 1');
+  });
+
+  it('shows a PDF read back from the history by its page count and thumbnail', () => {
+    const root = document.createElement('div');
+    document.body.append(root);
+    const r = createRoot(root);
+    mounted.push({ root: r, el: root, chat: new AgentChat(new Editor(), {} as Host) });
+    const restored: Attachment = { id: 'p', kind: 'pdf', name: 'brand.pdf', size: 5000, mimeType: 'application/pdf', pdf: { pageCount: 12, pages: [], pictures: [] }, image: { width: 640, height: 853, dataBase64: 'CQgH', mimeType: 'image/jpeg' } };
+    act(() => r.render(<AttachmentChips items={[restored]} onCopy={onCopy} sent />));
+    expect(root.textContent).toContain('12 pages');
+    expect(root.querySelector('img')?.getAttribute('src')).toBe('data:image/jpeg;base64,CQgH');
+  });
+});
+
+describe('composer attachments: PDFs', () => {
+  const pdfFile = () => new File([new Uint8Array([37, 80, 68, 70])], 'brand.pdf', { type: 'application/pdf' });
+
+  it('offers PDFs in the file picker', async () => {
+    const { el } = await mount();
+    const accept = el.querySelector<HTMLInputElement>('input[type="file"]')!.accept;
+    expect(accept).toContain('application/pdf');
+    expect(accept).toContain('.pdf');
+  });
+
+  it('turns a dropped PDF into a chip and sends it with the message', async () => {
+    const { el, send } = await mount();
+    drop(q(el, 'agent-panel')!, 'drop', [pdfFile()]);
+    await settle();
+    const chip = q(el, 'attachment-chip')!;
+    expect(chip.getAttribute('data-kind')).toBe('pdf');
+    expect(chip.textContent).toContain('brand.pdf');
+    expect(chip.textContent).toContain('3 pages');
+    expect(chip.querySelector('img')?.getAttribute('src')).toBe('data:image/jpeg;base64,AQIDBA==');
+    type(el, 'Use the brief');
+    await act(async () => q(el, 'agent-send')!.click());
+    expect(send.mock.calls[0]![0]).toBe('Use the brief');
+    expect(send.mock.calls[0]![1]).toEqual([expect.objectContaining({ kind: 'pdf', name: 'brand.pdf', pdf: expect.objectContaining({ pageCount: 3 }) })]);
+  });
+
+  it('says why a PDF could not be read on its chip, and blocks Send until it is removed', async () => {
+    const { el, send } = await mount({ pdfError: 'This PDF is password-protected. Remove the password and attach it again.' });
+    drop(q(el, 'agent-panel')!, 'drop', [pdfFile()]);
+    await settle();
+    expect(q(el, 'attachment-chip')!.textContent).toContain('Could not read “brand.pdf”: This PDF is password-protected. Remove the password and attach it again.');
+    type(el, 'hello');
+    expect((q(el, 'agent-send') as HTMLButtonElement).disabled).toBe(true);
+    act(() => q(el, 'attachment-remove')!.click());
+    expect((q(el, 'agent-send') as HTMLButtonElement).disabled).toBe(false);
+    expect(send).not.toHaveBeenCalled();
   });
 });
 

@@ -8,7 +8,7 @@
 
 import type { StartAttachment } from '../bridge/schema.gen';
 import type { AgentChat } from '../agent/AgentChat';
-import { attachmentErrors, MAX_IMAGES, MAX_TEXT_CHARS, MAX_TOTAL_TEXT_CHARS, SUPPORTED_FILES, type Attachment } from '../agent/attachments';
+import { attachmentErrors, classifyAttachment, MAX_IMAGES, MAX_PDF_BYTES, MAX_TEXT_CHARS, MAX_TOTAL_TEXT_CHARS, SUPPORTED_FILES, type Attachment } from '../agent/attachments';
 import { answerText } from '../agent/answers';
 import { sidebarAgentOf } from '../agent/sidebarAgentRegistry';
 import type { QueueName, QueuedItem } from '../agent/queue';
@@ -64,21 +64,22 @@ function clip(text: string, max = TEXT_CLIP): string {
 
 const isRecord = (v: unknown): v is Args => typeof v === 'object' && v !== null && !Array.isArray(v);
 
-/** The `attachments` argument: [{ name, text } | { name, data_base64, mime_type? }], the Home prompt's files. */
+/** The `attachments` argument: [{ name, text } | { name, data_base64, mime_type? }] (images and PDFs go as base64), the Home prompt's files. */
 function parseAttachments(args: Args): StartAttachment[] {
   const raw = args['attachments'];
   if (raw === undefined || raw === null) return [];
-  if (!Array.isArray(raw)) throw new ToolError('"attachments" must be an array of { "name": "brief.md", "text": "…" } or { "name": "ref.png", "data_base64": "…", "mime_type": "image/png" }.');
+  if (!Array.isArray(raw)) throw new ToolError('"attachments" must be an array of { "name": "brief.md", "text": "…" }, { "name": "ref.png", "data_base64": "…", "mime_type": "image/png" } or { "name": "brief.pdf", "data_base64": "…", "mime_type": "application/pdf" }.');
   if (raw.length > MAX_ATTACHMENTS) throw new ToolError(`At most ${MAX_ATTACHMENTS} attachments per message; send the rest in another message.`);
   return raw.map((a, i): StartAttachment => {
     if (!isRecord(a)) throw new ToolError(`attachments[${i}] must be an object like { "name": "brief.md", "text": "…" }.`);
     const name = str(a, 'name', { optional: true });
-    if (!name) throw new ToolError(`attachments[${i}] needs a "name" with the file extension (e.g. "brief.md", "ref.png"): the extension tells text from image.`);
+    if (!name) throw new ToolError(`attachments[${i}] needs a "name" with the file extension (e.g. "brief.md", "ref.png", "brief.pdf"): the extension tells text, image and PDF apart.`);
     const text = typeof a['text'] === 'string' ? a['text'] : undefined;
     const data = typeof a['data_base64'] === 'string' && a['data_base64'] ? a['data_base64'] : undefined;
-    if ((text === undefined) === (data === undefined)) throw new ToolError(`attachments[${i}] ("${name}") needs exactly one of "text" (text files) or "data_base64" (images).`);
+    if ((text === undefined) === (data === undefined)) throw new ToolError(`attachments[${i}] ("${name}") needs exactly one of "text" (text files) or "data_base64" (images and PDFs).`);
     const mimeType = typeof a['mime_type'] === 'string' ? a['mime_type'] : '';
-    return { kind: text !== undefined ? 'text' : 'image', name, mimeType, ...(text !== undefined ? { text } : { dataBase64: data! }) };
+    const kind = text !== undefined ? 'text' : classifyAttachment(name, mimeType) === 'pdf' ? 'pdf' : 'image';
+    return { kind, name, mimeType, ...(text !== undefined ? { text } : { dataBase64: data! }) };
   });
 }
 
@@ -88,7 +89,7 @@ async function ingest(chat: AgentChat, files: StartAttachment[]): Promise<Attach
   const list = await chat.ingestFiles(files);
   const errors = attachmentErrors(list);
   if (errors.size) {
-    throw new ToolError(`Nothing was sent. ${[...errors.values()].join(' ')} Supported: ${SUPPORTED_FILES}; at most ${MAX_IMAGES} images, ${MAX_TEXT_CHARS.toLocaleString('en-US')} characters per text file, ${MAX_TOTAL_TEXT_CHARS.toLocaleString('en-US')} together.`);
+    throw new ToolError(`Nothing was sent. ${[...errors.values()].join(' ')} Supported: ${SUPPORTED_FILES}; at most ${MAX_IMAGES} images, PDFs up to ${MAX_PDF_BYTES / 1024 / 1024} MB, ${MAX_TEXT_CHARS.toLocaleString('en-US')} characters per text file or PDF, ${MAX_TOTAL_TEXT_CHARS.toLocaleString('en-US')} together.`);
   }
   return list;
 }
@@ -243,7 +244,7 @@ export const SIDEBAR_AGENT_TOOLS: ToolDef[] = [
       '"compact" (the Compact button, between turns: a summary replaces the older messages and screenshots; use it when the conversation got too large instead of new_chat), ' +
       '"promote_queued" (queue "follow_up", index: deliver it at the next step instead of after the turn), "send_now_queued" (queue, index: the person\'s "Send now": stops the running step, edits stay, and the message starts the next turn at once; the rest stays queued), "remove_queued" (queue "steering"|"follow_up", index; the queue may hold the person\'s own messages: remove yours, not theirs). ' +
       'Your message appears in the sidebar as "From <you>" and the in-app agent is told it comes from another agent, not the person; it does not get the person\'s canvas selection, so name layers explicitly. ' +
-      'It does not wait for the turn: call get_sidebar_agent to follow progress. Attachments take the same limits as the person\'s: text files as {name, text}, images as {name, data_base64, mime_type} (max 10 images). ' +
+      'It does not wait for the turn: call get_sidebar_agent to follow progress. Attachments take the same limits as the person\'s: text files as {name, text}, images as {name, data_base64, mime_type} (max 10 images), PDFs as {name, data_base64, mime_type: "application/pdf"} (up to 50 MB; the in-app agent gets the text of every page and a picture of the first pages, at most 8, within the message\'s 10 images). ' +
       'If the in-app agent is not installed or signed in you get a message saying so: only the person can set it up, so these tools never do. Not for the in-app agent itself.',
     inputSchema: {
       type: 'object',
@@ -257,10 +258,10 @@ export const SIDEBAR_AGENT_TOOLS: ToolDef[] = [
           items: {
             type: 'object',
             properties: {
-              name: { type: 'string', description: 'File name with extension, e.g. "brief.md" or "reference.png".' },
+              name: { type: 'string', description: 'File name with extension, e.g. "brief.md", "reference.png" or "brief.pdf".' },
               text: { type: 'string', description: 'Content of a text file (.txt .md .csv .json .html .css .svg).' },
-              data_base64: { type: 'string', description: 'Content of an image (PNG, JPEG, WebP, GIF, HEIC), base64 without a data: prefix.' },
-              mime_type: { type: 'string', description: 'Optional for images when the name has the right extension, e.g. "image/png".' },
+              data_base64: { type: 'string', description: 'Content of an image (PNG, JPEG, WebP, GIF, HEIC) or a PDF, base64 without a data: prefix.' },
+              mime_type: { type: 'string', description: 'Optional when the name has the right extension, e.g. "image/png" or "application/pdf".' },
             },
             required: ['name'],
             additionalProperties: false,

@@ -235,6 +235,23 @@
       "folder": "string?",
       "files": "AgentCommandFile[]"
     },
+    "ReadPdfParams": {
+      "dataBase64": "string",
+      "maxPictures": "integer",
+      "maxEdge": "integer"
+    },
+    "PdfPicture": {
+      "page": "integer",
+      "width": "integer",
+      "height": "integer",
+      "mimeType": "string",
+      "dataBase64": "string"
+    },
+    "PdfContent": {
+      "pageCount": "integer",
+      "pages": "string[]",
+      "pictures": "PdfPicture[]"
+    },
     "AgentSendParams": {
       "processId": "string",
       "command": "json"
@@ -575,6 +592,10 @@
     "host.agentCommandsReveal": {
       "params": "Empty",
       "result": "Empty"
+    },
+    "host.readPdf": {
+      "params": "ReadPdfParams",
+      "result": "PdfContent"
     },
     "host.assetsList": {
       "params": "Empty",

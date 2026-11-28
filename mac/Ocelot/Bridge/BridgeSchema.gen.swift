@@ -283,6 +283,26 @@ struct AgentCommandFiles: Codable, Sendable, Equatable {
     var files: [AgentCommandFile]
 }
 
+struct ReadPdfParams: Codable, Sendable, Equatable {
+    var dataBase64: String
+    var maxPictures: Int
+    var maxEdge: Int
+}
+
+struct PdfPicture: Codable, Sendable, Equatable {
+    var page: Int
+    var width: Int
+    var height: Int
+    var mimeType: String
+    var dataBase64: String
+}
+
+struct PdfContent: Codable, Sendable, Equatable {
+    var pageCount: Int
+    var pages: [String]
+    var pictures: [PdfPicture]
+}
+
 struct AgentSendParams: Codable, Sendable, Equatable {
     var processId: String
     var command: JSONValue
@@ -691,6 +711,11 @@ enum HostMethods {
         typealias Result = Empty
         static let name = "host.agentCommandsReveal"
     }
+    enum ReadPdf: BridgeMethod {
+        typealias Params = ReadPdfParams
+        typealias Result = PdfContent
+        static let name = "host.readPdf"
+    }
     enum AssetsList: BridgeMethod {
         typealias Params = Empty
         typealias Result = AssetList
@@ -766,7 +791,7 @@ enum HostMethods {
         typealias Result = Empty
         static let name = "host.exportVideoCancel"
     }
-    static let allNames: [String] = ["host.ping","host.getInfo","host.log","host.documentChanged","host.renderSnapshot","host.listFonts","host.getMcpStatus","host.getMcpClientConfig","host.copyText","host.openURL","host.windowToggleFullScreen","host.presenterListScreens","host.presenterOpenAudience","host.presenterPush","host.presenterClose","host.windowDrag","host.windowTitlebarDoubleClick","host.agentStatus","host.agentLogin","host.agentInstall","host.agentStart","host.agentSend","host.agentStop","host.agentHistoryList","host.agentHistoryRead","host.agentHistoryWrite","host.agentHistoryDelete","host.agentCommands","host.agentCommandsReveal","host.assetsList","host.assetsRead","host.assetsImport","host.assetsDelete","host.imageProviders","host.imageGenerate","host.imageCancel","host.imageSetKey","host.imageSetDefault","host.exportSave","host.exportRun","host.exportWriteFile","host.exportCancel","host.exportVideoRun","host.exportVideoCancel"]
+    static let allNames: [String] = ["host.ping","host.getInfo","host.log","host.documentChanged","host.renderSnapshot","host.listFonts","host.getMcpStatus","host.getMcpClientConfig","host.copyText","host.openURL","host.windowToggleFullScreen","host.presenterListScreens","host.presenterOpenAudience","host.presenterPush","host.presenterClose","host.windowDrag","host.windowTitlebarDoubleClick","host.agentStatus","host.agentLogin","host.agentInstall","host.agentStart","host.agentSend","host.agentStop","host.agentHistoryList","host.agentHistoryRead","host.agentHistoryWrite","host.agentHistoryDelete","host.agentCommands","host.agentCommandsReveal","host.readPdf","host.assetsList","host.assetsRead","host.assetsImport","host.assetsDelete","host.imageProviders","host.imageGenerate","host.imageCancel","host.imageSetKey","host.imageSetDefault","host.exportSave","host.exportRun","host.exportWriteFile","host.exportCancel","host.exportVideoRun","host.exportVideoCancel"]
 }
 
 /// Methods implemented by the editor, called by the Swift host.

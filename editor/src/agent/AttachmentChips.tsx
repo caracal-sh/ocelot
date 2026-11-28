@@ -6,7 +6,7 @@ import { createPortal } from 'react-dom';
 import { Icon } from '../app/Icon';
 import { SwapIcon } from '../app/Crossfade';
 import { formatBytes } from '../panels/assetLogic';
-import { attachmentErrors, imageUrl, ingestFile, isLongPaste, lineCount, pastedTextAttachment, type Attachment } from './attachments';
+import { attachmentErrors, imageUrl, ingestFile, isLongPaste, lineCount, pastedTextAttachment, type Attachment, type PdfReader } from './attachments';
 
 /** The composer's attachments: what is attached, what is still being read, and what keeps the set from being sent. */
 export interface AttachmentSet {
@@ -23,7 +23,7 @@ export interface AttachmentSet {
   clear(): void;
 }
 
-export function useAttachments(): AttachmentSet {
+export function useAttachments(readPdf?: PdfReader): AttachmentSet {
   const [items, setItems] = useState<Attachment[]>([]);
   const [pending, setPending] = useState(0);
   const errors = useMemo(() => attachmentErrors(items), [items]);
@@ -33,12 +33,12 @@ export function useAttachments(): AttachmentSet {
     if (!files.length) return;
     setPending((n) => n + files.length);
     try {
-      const made = await Promise.all(files.map((f) => ingestFile(f)));
+      const made = await Promise.all(files.map((f) => ingestFile(f, undefined, readPdf)));
       setItems((cur) => [...cur, ...made]);
     } finally {
       setPending((n) => n - files.length);
     }
-  }, []);
+  }, [readPdf]);
   const addPasted = useCallback((text: string) => setItems((cur) => [...cur, pastedTextAttachment(text, cur)]), []);
   const remove = useCallback((id: string) => setItems((cur) => cur.filter((a) => a.id !== id)), []);
   const restore = useCallback((list: readonly Attachment[]) => setItems((cur) => [...list, ...cur]), []);
@@ -85,14 +85,17 @@ export function AttachmentChips({ items, errors, onRemove, onPasteAsText, onCopy
   );
 }
 
+const pagesLabel = (n: number): string => `${n} ${n === 1 ? 'page' : 'pages'}`;
+
 function Chip({ a, error, sent, onRemove, onPasteAsText, onPreview }: { a: Attachment; error: string | undefined; sent: boolean | undefined; onRemove?: (id: string) => void; onPasteAsText?: (a: Attachment) => void; onPreview: () => void }) {
-  const isImage = a.kind === 'image' && !!a.image && !error;
-  const meta = isImage ? `${a.image!.width}×${a.image!.height}` : a.kind === 'text' && a.text !== undefined ? `${lineCount(a.text)} ${lineCount(a.text) === 1 ? 'line' : 'lines'}` : formatBytes(a.size);
-  const tile = sent && isImage;
+  const thumb = (a.kind === 'image' || a.kind === 'pdf') && !!a.image && !error;
+  const pages = a.kind === 'pdf' && a.pdf ? pagesLabel(a.pdf.pageCount) : null;
+  const meta = pages ?? (thumb ? `${a.image!.width}×${a.image!.height}` : a.kind === 'text' && a.text !== undefined ? `${lineCount(a.text)} ${lineCount(a.text) === 1 ? 'line' : 'lines'}` : formatBytes(a.size));
+  const tile = sent && thumb && a.kind === 'image';
   return (
     <div className={`at-chip${error ? ' at-chip--error' : ''}${tile ? ' at-chip--tile' : ''}${onRemove ? ' at-chip--enter' : ''}`} role="listitem" data-kind={a.kind} data-testid="attachment-chip">
-      <button type="button" className="at-chip__main" onClick={onPreview} disabled={!!error} title={error ?? `${a.name}: ${meta}`} aria-label={`Preview ${a.name}`}>
-        {isImage ? (
+      <button type="button" className="at-chip__main" onClick={onPreview} disabled={!!error || (a.kind === 'pdf' && !a.image)} title={error ?? `${a.name}: ${meta}`} aria-label={pages ? `Preview ${a.name}, a PDF with ${pages}` : `Preview ${a.name}`}>
+        {thumb ? (
           <img className="at-chip__thumb" src={imageUrl(a)} alt="" draggable={false} />
         ) : (
           <span className="at-chip__icon">
@@ -144,13 +147,13 @@ export function AttachmentPreview({ a, onClose, onCopy }: { a: Attachment; onClo
     }
   };
 
-  if (a.kind === 'image' && a.image) {
+  if ((a.kind === 'image' || a.kind === 'pdf') && a.image) {
     return createPortal(
       <div className="at-modal at-modal--lightbox" onMouseDown={onClose}>
         <div ref={ref} className="at-lightbox" role="dialog" aria-modal="true" aria-label={a.name} tabIndex={-1} onKeyDown={key} data-testid="attachment-preview">
           <img className="at-lightbox__img" src={imageUrl(a)} alt={a.name} />
           <p className="at-lightbox__caption">
-            {a.name} · {a.image.width}×{a.image.height}
+            {a.kind === 'pdf' ? `${a.name} · PDF, ${a.pdf ? pagesLabel(a.pdf.pageCount) : 'page 1'} · page 1` : `${a.name} · ${a.image.width}×${a.image.height}`}
             {a.image.assetId ? ' · in Assets' : ''}
           </p>
         </div>

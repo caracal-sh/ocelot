@@ -1,7 +1,7 @@
 // A host with a working agent process for tests: it answers the handshake and `get_state`, records every command the
 // sidebar sends, answers request commands (`q-…` ids) from `replies`, and lets a test emit omp frames.
 
-import type { AgentCommandFile, AgentEventParams } from '../bridge/schema.gen';
+import type { AgentCommandFile, AgentEventParams, PdfContent, ReadPdfParams } from '../bridge/schema.gen';
 import { Editor } from '../editor/Editor';
 import { editorEndpoint, type Host } from '../host/host';
 import { AgentChat } from './AgentChat';
@@ -42,6 +42,14 @@ export interface AgentTestHost {
   reveals: { count: number };
   /** The models `host.agentStatus` reports (omp's `models --json` entries); fill before `chat.refreshStatus()`. */
   modelCatalog: unknown[];
+  /** What `host.readPdf` answers: every call is recorded; `content` is the answer (default: `samplePdfContent()`), `failWith` makes the read throw that message. */
+  pdf: { calls: ReadPdfParams[]; content: PdfContent; failWith: string | null };
+}
+
+/** A 3-page PDF as the Mac host reads it: page 2 has no text, every page has a picture. */
+export function samplePdfContent(): PdfContent {
+  const picture = (page: number) => ({ page, width: 1200, height: 1600, mimeType: 'image/jpeg', dataBase64: 'AQIDBA==' });
+  return { pageCount: 3, pages: ['Brix Editions\nPrimary colour #1F3A5F', '', 'Type: Geist Serif, 12/18'], pictures: [picture(1), picture(2), picture(3)] };
 }
 
 export function createAgentTestHost(opts: { codec?: ImageCodec } = {}): AgentTestHost {
@@ -54,6 +62,7 @@ export function createAgentTestHost(opts: { codec?: ImageCodec } = {}): AgentTes
   const commandFiles: AgentTestHost['commandFiles'] = { files: [], failWith: null, listed: 0 };
   const reveals = { count: 0 };
   const modelCatalog: unknown[] = [];
+  const pdf: AgentTestHost['pdf'] = { calls: [], content: samplePdfContent(), failWith: null };
   let processId = '';
   const emitFor = (id: string, frames: unknown[]) =>
     editorEndpoint.dispatch(JSON.stringify({ v: 1, id: `e-${Math.random()}`, method: 'editor.agentEvent', params: { processId: id, lines: frames.map((f) => JSON.stringify(f)), done: false } satisfies AgentEventParams }));
@@ -69,6 +78,11 @@ export function createAgentTestHost(opts: { codec?: ImageCodec } = {}): AgentTes
       if (method === 'host.agentCommandsReveal') {
         reveals.count += 1;
         return {};
+      }
+      if (method === 'host.readPdf') {
+        pdf.calls.push(p as unknown as ReadPdfParams);
+        if (pdf.failWith) throw new Error(pdf.failWith);
+        return pdf.content;
       }
       if (method === 'host.agentStatus') return { available: true, loggedIn: true, ...(modelCatalog.length ? { models: { models: modelCatalog } } : {}) };
       if (method === 'host.agentStop') {
@@ -130,6 +144,7 @@ export function createAgentTestHost(opts: { codec?: ImageCodec } = {}): AgentTes
     emitFor,
     commandFiles,
     modelCatalog,
+    pdf,
     reveals,
     exit: (id) => editorEndpoint.dispatch(JSON.stringify({ v: 1, id: `e-${Math.random()}`, method: 'editor.agentEvent', params: { processId: id, lines: [], done: true, exitCode: 0 } satisfies AgentEventParams })),
     starts,

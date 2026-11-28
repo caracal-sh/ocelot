@@ -98,7 +98,7 @@ private struct AttachmentChip: View {
                 Rectangle().fill(Color.primary.opacity(0.06))
             }
         } else {
-            Image(systemName: error == nil ? "doc.text" : "exclamationmark.triangle")
+            Image(systemName: error != nil ? "exclamationmark.triangle" : item.kind == .pdf ? "doc.richtext" : "doc.text")
                 .font(.system(size: 12))
                 .foregroundStyle(error == nil ? Color.secondary : Color(nsColor: .systemRed))
         }
@@ -154,7 +154,7 @@ extension View {
     func imageOutline(radius: CGFloat, enabled: Bool = true) -> some View { modifier(ImageOutline(radius: radius, enabled: enabled)) }
 }
 
-/// The paperclip beside the prompt's hint: opens a panel for images and text files.
+/// The paperclip beside the prompt's hint: opens a panel for images, PDFs and text files.
 struct AttachButton: View {
     let action: () -> Void
     @State private var hovering = false
@@ -172,8 +172,8 @@ struct AttachButton: View {
         .focusable(false)
         .onHover { hovering = $0 }
         .animation(.easeOut(duration: 0.12), value: hovering)
-        .help("Attach images or text files. You can also drop or paste them.")
-        .accessibilityLabel("Attach images or text files")
+        .help("Attach images, PDFs or text files. You can also drop or paste them.")
+        .accessibilityLabel("Attach images, PDFs or text files")
     }
 }
 

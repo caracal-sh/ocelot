@@ -148,7 +148,7 @@ extension EditorWebController: WKNavigationDelegate {
 
 extension EditorWebController: WKUIDelegate {
     /// `<input type="file">` (the image tool, the agent composer's paperclip): WebKit shows nothing unless the host provides a panel.
-    /// The page cannot say what it accepts, so the panel offers images and the text files the agent can take; each caller refuses
+    /// The page cannot say what it accepts, so the panel offers images, PDFs and the text files the agent can take; each caller refuses
     /// what it cannot use with a message that names what is supported.
     func webView(_ webView: WKWebView, runOpenPanelWith parameters: WKOpenPanelParameters, initiatedByFrame frame: WKFrameInfo) async -> [URL]? {
         let panel = NSOpenPanel()

@@ -275,6 +275,26 @@ export interface AgentCommandFiles {
   files: AgentCommandFile[];
 }
 
+export interface ReadPdfParams {
+  dataBase64: string;
+  maxPictures: number;
+  maxEdge: number;
+}
+
+export interface PdfPicture {
+  page: number;
+  width: number;
+  height: number;
+  mimeType: string;
+  dataBase64: string;
+}
+
+export interface PdfContent {
+  pageCount: number;
+  pages: string[];
+  pictures: PdfPicture[];
+}
+
 export interface AgentSendParams {
   processId: string;
   command: JsonValue;
@@ -559,6 +579,7 @@ export interface HostMethods {
   'host.agentHistoryDelete': { params: AgentHistoryKey; result: Empty };
   'host.agentCommands': { params: Empty; result: AgentCommandFiles };
   'host.agentCommandsReveal': { params: Empty; result: Empty };
+  'host.readPdf': { params: ReadPdfParams; result: PdfContent };
   'host.assetsList': { params: Empty; result: AssetList };
   'host.assetsRead': { params: AssetIdParams; result: AssetData };
   'host.assetsImport': { params: AssetImportParams; result: AssetRecord };
@@ -576,7 +597,7 @@ export interface HostMethods {
   'host.exportVideoCancel': { params: ExportCancelParams; result: Empty };
 }
 
-export const HOST_METHOD_NAMES = ["host.ping","host.getInfo","host.log","host.documentChanged","host.renderSnapshot","host.listFonts","host.getMcpStatus","host.getMcpClientConfig","host.copyText","host.openURL","host.windowToggleFullScreen","host.presenterListScreens","host.presenterOpenAudience","host.presenterPush","host.presenterClose","host.windowDrag","host.windowTitlebarDoubleClick","host.agentStatus","host.agentLogin","host.agentInstall","host.agentStart","host.agentSend","host.agentStop","host.agentHistoryList","host.agentHistoryRead","host.agentHistoryWrite","host.agentHistoryDelete","host.agentCommands","host.agentCommandsReveal","host.assetsList","host.assetsRead","host.assetsImport","host.assetsDelete","host.imageProviders","host.imageGenerate","host.imageCancel","host.imageSetKey","host.imageSetDefault","host.exportSave","host.exportRun","host.exportWriteFile","host.exportCancel","host.exportVideoRun","host.exportVideoCancel"] as const;
+export const HOST_METHOD_NAMES = ["host.ping","host.getInfo","host.log","host.documentChanged","host.renderSnapshot","host.listFonts","host.getMcpStatus","host.getMcpClientConfig","host.copyText","host.openURL","host.windowToggleFullScreen","host.presenterListScreens","host.presenterOpenAudience","host.presenterPush","host.presenterClose","host.windowDrag","host.windowTitlebarDoubleClick","host.agentStatus","host.agentLogin","host.agentInstall","host.agentStart","host.agentSend","host.agentStop","host.agentHistoryList","host.agentHistoryRead","host.agentHistoryWrite","host.agentHistoryDelete","host.agentCommands","host.agentCommandsReveal","host.readPdf","host.assetsList","host.assetsRead","host.assetsImport","host.assetsDelete","host.imageProviders","host.imageGenerate","host.imageCancel","host.imageSetKey","host.imageSetDefault","host.exportSave","host.exportRun","host.exportWriteFile","host.exportCancel","host.exportVideoRun","host.exportVideoCancel"] as const;
 
 export interface EditorMethods {
   'editor.ping': { params: PingParams; result: PingResult };

@@ -11,7 +11,7 @@ import type { Editor } from '../editor/Editor';
 import { referencesLead, referencesPrompt, type LayerReference } from '../editor/layerReferences';
 import { isOmpClient, type QuestionRecord } from '../editor/questions';
 import { editorEndpoint, type Host } from '../host/host';
-import { attachmentErrors, browserImageCodec, buildMessage, DEFAULT_ATTACHMENT_PROMPT, firstAttachmentError, ingestPayload, type Attachment, type ImageCodec } from './attachments';
+import { attachmentErrors, browserImageCodec, buildMessage, DEFAULT_ATTACHMENT_PROMPT, firstAttachmentError, hostPdfReader, ingestPayload, type Attachment, type ImageCodec, type PdfReader } from './attachments';
 import { modelShortName } from './agentName';
 import { newConversationId, parseMeta, parseTranscript, newTranscriptFiles, packTranscript, serializeMeta, sortConversations, titleFromPrompt, upsertConversation, type ConversationMeta, type TranscriptFiles } from './conversations';
 import { FrameDecoder } from './frames';
@@ -211,11 +211,15 @@ export class AgentChat {
   /** A shake or a compaction in flight: the next prompt waits for it (omp handles one thing at a time). */
   #upkeep: Promise<void> = Promise.resolve();
 
+  /** Reads the PDFs the person attaches (the composer's chips and the Home window's first message): the host does it. */
+  readonly pdfReader: PdfReader;
+
   constructor(
     private readonly editor: Editor,
     private readonly host: Host,
     private readonly imageCodec: ImageCodec = browserImageCodec,
   ) {
+    this.pdfReader = hostPdfReader(host);
     this.#snapshot = {
       availability: { kind: 'checking' },
       items: [],
@@ -349,7 +353,8 @@ export class AgentChat {
 
   /**
    * Sends one message. Returns false when it could not start. Attachments go along with it: images as omp `images`
-   * (and into the document's asset store, so the agent can place them), texts as `<attachment>` blocks in the message.
+   * (and into the document's asset store, so the agent can place them), texts as `<attachment>` blocks in the message, a PDF as
+   * such a block with every page's text plus pictures of its first pages (as images, not stored as assets).
    * The transcript keeps what the person attached, never the envelope text. `from` names an external agent that sends the
    * message through the sidebar_agent tool: the bubble says so, the agent is told the person did not type it, and the
    * person's canvas selection is not attached (it would not be what that agent means).
@@ -565,7 +570,7 @@ export class AgentChat {
     const lead = startLead(options);
     const early = prompt && !this.#snapshot.turn && (kind === 'checking' || kind === 'ready') ? this.#beginTurn(prompt, [], undefined, [], lead) : null;
     if (early) this.#showPlanning();
-    const ingested = await Promise.all(files.map((f) => ingestPayload(f, this.imageCodec)));
+    const ingested = await Promise.all(files.map((f) => ingestPayload(f, this.imageCodec, this.pdfReader)));
     const errors = attachmentErrors(ingested);
     const attachments = ingested.filter((a) => !errors.has(a.id));
     const skipped = ingested.flatMap((a) => (errors.has(a.id) ? [`Left out of your first message: ${errors.get(a.id)}`] : []));
@@ -662,7 +667,7 @@ export class AgentChat {
 
   /** Normalizes files an external agent attached (sidebar_agent) with the composer's own code and limits; a file that cannot be used comes back with an `error`. */
   ingestFiles(files: readonly StartAttachment[]): Promise<Attachment[]> {
-    return Promise.all(files.map((f) => ingestPayload(f, this.imageCodec)));
+    return Promise.all(files.map((f) => ingestPayload(f, this.imageCodec, this.pdfReader)));
   }
 
   /** Hands words back to the composer (a queued message of the person's that an external agent removed keeps their text). */

@@ -1,12 +1,15 @@
 // Files attached to an agent message: images (the model sees them, and each is stored as an asset the agent can
-// place) and text files / long pasted text (sent as explicit <attachment> blocks). Pure model + normalization;
-// the composer UI, AgentChat and the host's Home window prompt all go through these functions.
+// place), PDFs (the host reads their text and renders the first pages as pictures; the agent gets both, and the
+// pictures are not stored as assets) and text files / long pasted text (sent as explicit <attachment> blocks). Pure
+// model + normalization; the composer UI, AgentChat and the host's Home window prompt all go through these functions.
 
-import type { StartAttachment } from '../bridge/schema.gen';
+import type { PdfContent, PdfPicture, StartAttachment } from '../bridge/schema.gen';
 import { base64ToBytes, bytesToBase64 } from '../assets/sniff';
+import type { Host } from '../host/host';
 import { formatBytes } from '../panels/assetLogic';
 
-export type AttachmentKind = 'image' | 'text';
+export type { PdfContent, PdfPicture };
+export type AttachmentKind = 'image' | 'text' | 'pdf';
 
 export interface Attachment {
   id: string;
@@ -15,8 +18,10 @@ export interface Attachment {
   /** Size of the original file (or of the pasted text in UTF-8 bytes). */
   size: number;
   mimeType: string;
-  /** Normalized image (long edge ≤ 2048, PNG or JPEG); `assetId` is set once it is stored in the document. */
-  image?: { width: number; height: number; dataBase64: string; assetId?: string };
+  /** Normalized image (long edge ≤ 2048, PNG or JPEG); `assetId` is set once it is stored in the document. For a PDF it is page 1's picture, never stored as an asset, and `mimeType` is the picture's own. */
+  image?: { width: number; height: number; dataBase64: string; assetId?: string; mimeType?: string };
+  /** A PDF as the host read it. A conversation read back from disk keeps only `pageCount`: pages and pictures are not stored. */
+  pdf?: { pageCount: number; pages: string[]; pictures: PdfPicture[] };
   text?: string;
   /** A long paste that became a chip automatically: it can go back into the input ("Paste as text"). */
   pasted?: boolean;
@@ -38,7 +43,12 @@ export const JPEG_QUALITY = 0.9;
 /** What a message says when the person attached files and wrote nothing. */
 export const DEFAULT_ATTACHMENT_PROMPT = 'Design from the attached files.';
 
-export const SUPPORTED_FILES = 'Images (PNG, JPEG, WebP, GIF, HEIC) and text files (.txt, .md, .csv, .json, .html, .css, .svg)';
+export const SUPPORTED_FILES = 'Images (PNG, JPEG, WebP, GIF, HEIC), PDFs and text files (.txt, .md, .csv, .json, .html, .css, .svg)';
+/** PDFs larger than this are refused before they are read. */
+export const MAX_PDF_BYTES = 50 * 1024 * 1024;
+/** Page pictures per PDF (its first pages) and their long edge. They share the message's MAX_IMAGES with the person's own images, which come first. */
+export const MAX_PDF_PICTURES = 8;
+export const PDF_PICTURE_EDGE = 1600;
 
 const IMAGE_MIMES: Record<string, string> = {
   png: 'image/png',
@@ -70,9 +80,11 @@ export function classifyAttachment(name: string, mimeType: string): AttachmentKi
   const ext = extensionOf(name);
   if (IMAGE_MIMES[ext]) return 'image';
   if (TEXT_MIMES[ext]) return 'text';
+  if (ext === 'pdf') return 'pdf';
   const mime = mimeType.toLowerCase().split(';')[0]!.trim();
   if (IMAGE_MIME_SET.has(mime)) return 'image';
   if (TEXT_MIME_SET.has(mime)) return 'text';
+  if (mime === 'application/pdf') return 'pdf';
   return null;
 }
 
@@ -234,22 +246,71 @@ function textFromBytes(name: string, mimeType: string, bytes: Uint8Array): Attac
   }
 }
 
+// ---------- PDFs ----------
+
+/** The text and the first page pictures of a PDF. The Mac app reads it (PDFKit); a host without that throws a message that says what to do. */
+export type PdfReader = (bytes: Uint8Array) => Promise<PdfContent>;
+
+export const PDF_NEEDS_MAC_APP = 'Reading a PDF needs the Ocelot Mac app. Attach its pages as images, or its text as a .txt file.';
+
+/** For callers that have no host (the pure model's tests): every PDF becomes a chip that says what to do. */
+export const noPdfReader: PdfReader = () => Promise.reject(new Error(PDF_NEEDS_MAC_APP));
+
+/** The reader backed by the host's `host.readPdf`. */
+export const hostPdfReader =
+  (host: Pick<Host, 'call'>): PdfReader =>
+  (bytes) =>
+    host.call('host.readPdf', { dataBase64: bytesToBase64(bytes), maxPictures: MAX_PDF_PICTURES, maxEdge: PDF_PICTURE_EDGE }, { timeoutMs: 60_000 });
+
+/** The chip for a PDF the host read: page 1's picture stands in as its `image` (thumbnail, lightbox). */
+export function pdfAttachment(name: string, size: number, content: PdfContent): Attachment {
+  const pictures = [...content.pictures].sort((a, b) => a.page - b.page);
+  const first = pictures[0];
+  return {
+    id: newId(),
+    kind: 'pdf',
+    name,
+    size,
+    mimeType: 'application/pdf',
+    pdf: { pageCount: content.pageCount, pages: content.pages, pictures },
+    ...(first ? { image: { width: first.width, height: first.height, dataBase64: first.dataBase64, mimeType: first.mimeType } } : {}),
+  };
+}
+
+const tooBigPdf = (name: string, size: number): Attachment | null =>
+  size > MAX_PDF_BYTES ? refusedAttachment(name, 'application/pdf', size, `“${name}” is ${formatBytes(size)}; PDFs up to ${MAX_PDF_BYTES / 1024 / 1024} MB can be attached. Export the pages you need as a smaller PDF.`) : null;
+
+async function pdfFromBytes(name: string, bytes: Uint8Array, readPdf: PdfReader): Promise<Attachment> {
+  const refused = tooBigPdf(name, bytes.length);
+  if (refused) return refused;
+  try {
+    return pdfAttachment(name, bytes.length, await readPdf(bytes));
+  } catch (err) {
+    return refusedAttachment(name, 'application/pdf', bytes.length, `Could not read “${name}”: ${messageOf(err)}`);
+  }
+}
+
 /** A chip for a picked, dropped or pasted file. Never throws: a file that cannot be used becomes a chip with an `error`. */
-export async function ingestFile(file: File, codec: ImageCodec = browserImageCodec): Promise<Attachment> {
+export async function ingestFile(file: File, codec: ImageCodec = browserImageCodec, readPdf: PdfReader = noPdfReader): Promise<Attachment> {
   const name = file.name || (file.type.startsWith('image/') ? 'Pasted image' : 'File');
   const kind = classifyAttachment(name, file.type);
   if (!kind) return refusedAttachment(name, file.type, file.size, `“${name}” cannot be attached. ${SUPPORTED_FILES} are supported.`);
+  if (kind === 'pdf') {
+    const refused = tooBigPdf(name, file.size);
+    if (refused) return refused;
+  }
   let bytes: Uint8Array;
   try {
     bytes = await readBytes(file);
   } catch (err) {
     return refusedAttachment(name, file.type, file.size, `Could not read “${name}”: ${messageOf(err)}`);
   }
+  if (kind === 'pdf') return pdfFromBytes(name, bytes, readPdf);
   return kind === 'image' ? imageFromBytes(name, file.type, bytes, codec) : textFromBytes(name, file.type, bytes);
 }
 
-/** A chip for a file the host read (the Home window's prompt): `dataBase64` for images and binary files, `text` for text. */
-export async function ingestPayload(p: StartAttachment, codec: ImageCodec = browserImageCodec): Promise<Attachment> {
+/** A chip for a file the host read (the Home window's prompt): `dataBase64` for images, PDFs and binary files, `text` for text. */
+export async function ingestPayload(p: StartAttachment, codec: ImageCodec = browserImageCodec, readPdf: PdfReader = noPdfReader): Promise<Attachment> {
   const kind = classifyAttachment(p.name, p.mimeType);
   if (!kind) return refusedAttachment(p.name, p.mimeType, 0, `“${p.name}” cannot be attached. ${SUPPORTED_FILES} are supported.`);
   if (p.text !== undefined) {
@@ -257,12 +318,18 @@ export async function ingestPayload(p: StartAttachment, codec: ImageCodec = brow
     return kind === 'text' ? a : refusedAttachment(p.name, p.mimeType, a.size, `“${p.name}” is not a text file. ${SUPPORTED_FILES} can be attached.`);
   }
   if (p.dataBase64 === undefined) return refusedAttachment(p.name, p.mimeType, 0, `“${p.name}” had no content. Attach it again.`);
+  if (kind === 'pdf') {
+    // base64 is 4 characters per 3 bytes: refuse before decoding a huge string.
+    const refused = tooBigPdf(p.name, Math.floor((p.dataBase64.length * 3) / 4));
+    if (refused) return refused;
+  }
   let bytes: Uint8Array;
   try {
     bytes = base64ToBytes(p.dataBase64);
   } catch {
     return refusedAttachment(p.name, p.mimeType, 0, `“${p.name}” could not be read. Attach it again.`);
   }
+  if (kind === 'pdf') return pdfFromBytes(p.name, bytes, readPdf);
   return kind === 'image' ? imageFromBytes(p.name, p.mimeType, bytes, codec) : textFromBytes(p.name, p.mimeType, bytes);
 }
 
@@ -270,7 +337,7 @@ export async function ingestPayload(p: StartAttachment, codec: ImageCodec = brow
 
 const count = (n: number) => n.toLocaleString('en-US');
 
-/** Per-chip problems: the chip's own `error`, then what the whole set exceeds (10 images, 200,000 characters a file, 400,000 in total). Empty map: sendable. */
+/** Per-chip problems: the chip's own `error`, then what the whole set exceeds (10 images, 200,000 characters a file, 400,000 in total; a PDF's page pictures are not images here, its page text counts as text). Empty map: sendable. */
 export function attachmentErrors(list: readonly Attachment[]): Map<string, string> {
   const errors = new Map<string, string>();
   let images = 0;
@@ -284,11 +351,12 @@ export function attachmentErrors(list: readonly Attachment[]): Map<string, strin
       if (++images > MAX_IMAGES) errors.set(a.id, `Only ${MAX_IMAGES} images fit in one message. Remove this one and send it in the next message.`);
       continue;
     }
-    const chars = a.text?.length ?? 0;
+    const pdf = a.kind === 'pdf';
+    const chars = a.pdf ? a.pdf.pages.reduce((n, page) => n + page.length, 0) : (a.text?.length ?? 0);
     if (chars > MAX_TEXT_CHARS) {
-      errors.set(a.id, `“${a.name}” has ${count(chars)} characters; one file can have ${count(MAX_TEXT_CHARS)}. Split it into parts or shorten it.`);
+      errors.set(a.id, pdf ? `“${a.name}” has ${count(chars)} characters of text; one file can have ${count(MAX_TEXT_CHARS)}. Attach only the pages you need: export them as a separate PDF.` : `“${a.name}” has ${count(chars)} characters; one file can have ${count(MAX_TEXT_CHARS)}. Split it into parts or shorten it.`);
     } else if (total + chars > MAX_TOTAL_TEXT_CHARS) {
-      errors.set(a.id, `Text attachments can have ${count(MAX_TOTAL_TEXT_CHARS)} characters together. Remove this one or shorten it.`);
+      errors.set(a.id, pdf ? `Text attachments can have ${count(MAX_TOTAL_TEXT_CHARS)} characters together, and the text of “${a.name}” goes over. Remove another attachment, or attach only the pages you need: export them as a separate PDF.` : `Text attachments can have ${count(MAX_TOTAL_TEXT_CHARS)} characters together. Remove this one or shorten it.`);
     } else total += chars;
   }
   return errors;
@@ -303,10 +371,38 @@ export function firstAttachmentError(list: readonly Attachment[]): string | null
 
 const attr = (s: string): string => s.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/\s+/g, ' ');
 
+/** A closing tag inside the content cannot end the block. */
+const closeSafe = (s: string): string => s.replace(/<\/(attachment)/gi, '<\\/$1');
+
 /** `<attachment name="brief.txt" kind="text" lines="412">…</attachment>`; a closing tag inside the content cannot end the block. */
 export function textEnvelope(a: Attachment): string {
-  const text = (a.text ?? '').replace(/<\/(attachment)/gi, '<\\/$1');
-  return `<attachment name="${attr(a.name)}" kind="text" lines="${lineCount(a.text ?? '')}">\n${text}\n</attachment>`;
+  return `<attachment name="${attr(a.name)}" kind="text" lines="${lineCount(a.text ?? '')}">\n${closeSafe(a.text ?? '')}\n</attachment>`;
+}
+
+const pageRange = (from: number, to: number): string => (from === to ? `${from}` : `${from}-${to}`);
+
+/**
+ * `<attachment name="brief.pdf" kind="pdf" pages="12" pictures="1-8">` with every page's text after a `[Page N]` line; `sent`
+ * are the page pictures that go along with the message, `cut` says some of the PDF's pictures were left out for lack of room
+ * (a line then names the pages that are text only).
+ */
+export function pdfEnvelope(a: Attachment, sent: readonly PdfPicture[], cut = false): string {
+  const pdf = a.pdf;
+  const pageCount = pdf?.pageCount ?? 0;
+  const withPicture = new Set(sent.map((p) => p.page));
+  const first = sent[0]?.page;
+  const last = sent[sent.length - 1]?.page;
+  const sections: string[] = [];
+  if (cut) {
+    const from = (last ?? 0) + 1;
+    sections.push(`[${from === pageCount ? `Page ${from} is` : `Pages ${pageRange(from, pageCount)} are`} text only: a message carries at most ${MAX_IMAGES} images and the others took the room.]`);
+  }
+  for (let n = 1; n <= pageCount; n++) {
+    const page = (pdf?.pages[n - 1] ?? '').trim();
+    sections.push(page ? `[Page ${n}]\n${closeSafe(page)}` : `[Page ${n}: no text${withPicture.has(n) ? ', see its picture' : ''}]`);
+  }
+  const pictures = first === undefined || last === undefined ? 'none' : pageRange(first, last);
+  return `<attachment name="${attr(a.name)}" kind="pdf" pages="${pageCount}" pictures="${pictures}">\n${sections.join('\n\n')}\n</attachment>`;
 }
 
 /** One line per image so the agent knows it can see the image and place it. */
@@ -323,17 +419,38 @@ export interface OmpImage {
   data: string;
 }
 
-/** The text of the message and the images for omp's `prompt` command. The person's text comes first, then the image notes, then the text blocks. */
-export function buildMessage(text: string, attachments: readonly Attachment[]): { message: string; images: OmpImage[] } {
-  const images = attachments.filter((a) => a.kind === 'image' && a.image);
-  const blocks = attachments.filter((a) => a.kind === 'text').map(textEnvelope);
-  const notes = images.map((a, i) => imageNote(i + 1, a));
-  const lead = text.trim() || (attachments.length ? DEFAULT_ATTACHMENT_PROMPT : '');
-  return {
-    message: [lead, ...notes, ...blocks].filter(Boolean).join('\n\n'),
-    images: images.map((a) => ({ type: 'image', mimeType: a.mimeType, data: a.image!.dataBase64 })),
-  };
+/** One line per page picture of a PDF: the agent can look at it, and it is not an asset. */
+export function pdfPictureNote(index: number, a: Attachment, p: PdfPicture): string {
+  return `[Image ${index}: page ${p.page} of "${a.name.replace(/["\r\n]+/g, "'")}", ${p.width}×${p.height}, a picture of the page to look at; it is not stored as an asset]`;
 }
 
-/** `data:` URL of an image attachment (thumbnails, the lightbox). */
-export const imageUrl = (a: Attachment): string => (a.image ? `data:${a.mimeType};base64,${a.image.dataBase64}` : '');
+/**
+ * The text of the message and the images for omp's `prompt` command. The person's text comes first, then the notes of the person's
+ * images, the notes of PDF page pictures, then the text blocks (text files and PDFs, in the order attached). Images are the
+ * person's own, then the PDFs' page pictures, up to MAX_IMAGES in all: pages that no longer fit go as text only, and the block says so.
+ */
+export function buildMessage(text: string, attachments: readonly Attachment[]): { message: string; images: OmpImage[] } {
+  const own = attachments.filter((a) => a.kind === 'image' && a.image);
+  const images: OmpImage[] = own.map((a) => ({ type: 'image', mimeType: a.mimeType, data: a.image!.dataBase64 }));
+  const notes = own.map((a, i) => imageNote(i + 1, a));
+  const pageNotes: string[] = [];
+  const blocks: string[] = [];
+  let room = Math.max(0, MAX_IMAGES - own.length);
+  for (const a of attachments) {
+    if (a.kind === 'text') blocks.push(textEnvelope(a));
+    if (a.kind !== 'pdf' || !a.pdf) continue;
+    const wanted = [...a.pdf.pictures].sort((x, y) => x.page - y.page);
+    const sent = wanted.slice(0, room);
+    room -= sent.length;
+    for (const p of sent) {
+      images.push({ type: 'image', mimeType: p.mimeType, data: p.dataBase64 });
+      pageNotes.push(pdfPictureNote(images.length, a, p));
+    }
+    blocks.push(pdfEnvelope(a, sent, sent.length < wanted.length));
+  }
+  const lead = text.trim() || (attachments.length ? DEFAULT_ATTACHMENT_PROMPT : '');
+  return { message: [lead, ...notes, ...pageNotes, ...blocks].filter(Boolean).join('\n\n'), images };
+}
+
+/** `data:` URL of an image attachment, or of a PDF's first page (thumbnails, the lightbox). */
+export const imageUrl = (a: Attachment): string => (a.image ? `data:${a.image.mimeType ?? a.mimeType};base64,${a.image.dataBase64}` : '');

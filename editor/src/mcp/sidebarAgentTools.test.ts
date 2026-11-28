@@ -287,6 +287,43 @@ describe('sidebar_agent attachments', () => {
     expect((await act(t, 'send', { message: 'x', attachments: [{ text: 'no name' }] })).text).toMatch(/needs a "name"/);
     expect(t.commands).toEqual([]);
   });
+
+  it('sends a PDF as its page text plus page pictures, read by the host', async () => {
+    const t = setup();
+    const r = await act(t, 'send', { message: 'Build from the brand brief', attachments: [{ name: 'brand.pdf', mime_type: 'application/pdf', data_base64: 'JVBERg==' }] });
+    expect(r.isError).toBe(false);
+    expect(t.pdf.calls).toEqual([{ dataBase64: 'JVBERg==', maxPictures: 8, maxEdge: 1600 }]);
+    const prompt = t.commandsOf('prompt')[0]!;
+    expect(prompt['images']).toHaveLength(3);
+    const message = String(prompt['message']);
+    expect(message).toContain('[Image 1: page 1 of "brand.pdf", 1200×1600, a picture of the page to look at; it is not stored as an asset]');
+    expect(message).toContain('<attachment name="brand.pdf" kind="pdf" pages="3" pictures="1-3">\n[Page 1]\nBrix Editions');
+    expect(t.chat.snapshot.items[0]).toMatchObject({ kind: 'user', from: 'Claude Code', attachments: [expect.objectContaining({ name: 'brand.pdf', kind: 'pdf', pdf: expect.objectContaining({ pageCount: 3 }) })] });
+  });
+
+  it('takes a PDF by its extension alone', async () => {
+    const t = setup();
+    expect((await act(t, 'send', { message: 'x', attachments: [{ name: 'brief.PDF', data_base64: 'JVBERg==' }] })).isError).toBe(false);
+    expect(t.pdf.calls).toHaveLength(1);
+  });
+
+  it('stops the whole message when the PDF cannot be read, and says what to do', async () => {
+    const t = setup();
+    t.pdf.failWith = 'This PDF is password-protected. Remove the password and attach it again.';
+    const r = await act(t, 'send', { message: 'x', attachments: [{ name: 'locked.pdf', data_base64: 'JVBERg==' }, { name: 'a.md', text: 'hi' }] });
+    expect(r.isError).toBe(true);
+    expect(r.text).toMatch(/^Nothing was sent\. Could not read “locked\.pdf”: This PDF is password-protected\. Remove the password and attach it again\. Supported: .*PDFs.*; at most 10 images, PDFs up to 50 MB/);
+    expect(t.commands).toEqual([]);
+  });
+
+  it('names PDFs in the argument errors and in the tool description', async () => {
+    const t = setup();
+    expect((await act(t, 'send', { message: 'x', attachments: [{ name: 'a.pdf' }] })).text).toMatch(/needs exactly one of "text" \(text files\) or "data_base64" \(images and PDFs\)/);
+    expect((await act(t, 'send', { message: 'x', attachments: 'brief.pdf' })).text).toMatch(/"name": "brief\.pdf", "data_base64": "…", "mime_type": "application\/pdf"/);
+    const tool = listTools().find((x) => x.name === 'sidebar_agent')!;
+    expect(tool['description']).toMatch(/PDFs as \{name, data_base64, mime_type: "application\/pdf"\} \(up to 50 MB/);
+    expect(JSON.stringify(tool['inputSchema'])).toMatch(/or a PDF, base64/);
+  });
 });
 
 describe('guards and registration', () => {

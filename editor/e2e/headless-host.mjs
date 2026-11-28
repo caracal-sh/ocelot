@@ -360,6 +360,10 @@ export async function startHeadlessHost(opts = {}) {
       await mkdir(opts.commandsDir, { recursive: true, mode: 0o755 });
       return {};
     },
+    // PDFs are read with PDFKit, which only the Mac app has.
+    'host.readPdf': async () => {
+      throw new Error('Reading a PDF needs the Ocelot Mac app. Attach its pages as images, or its text as a .txt file.');
+    },
     ...assetsHost.handlers,
     ...exportHost.handlers,
     ...videoHost.handlers,

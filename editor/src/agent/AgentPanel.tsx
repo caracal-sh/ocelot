@@ -47,7 +47,7 @@ const EFFORT_LABELS: Record<string, string> = {
 
 export function AgentPanel({ composerRef }: { composerRef: React.RefObject<HTMLTextAreaElement | null> }) {
   const [chat, snap] = useAgentChat();
-  const attachments = useAttachments();
+  const attachments = useAttachments(chat.pdfReader);
   const [dragOver, setDragOver] = useState(false);
   const canAttach = snap.availability.kind === 'ready';
   useEffect(() => {
@@ -283,7 +283,7 @@ function Working({ turn, thinking, items }: { turn: NonNullable<AgentSnapshot['t
   );
 }
 
-const ATTACH_ACCEPT = 'image/png,image/jpeg,image/webp,image/gif,image/heic,image/heif,.png,.jpg,.jpeg,.webp,.gif,.heic,.heif,.txt,.md,.csv,.json,.html,.css,.svg';
+const ATTACH_ACCEPT = 'image/png,image/jpeg,image/webp,image/gif,image/heic,image/heif,application/pdf,.png,.jpg,.jpeg,.webp,.gif,.heic,.heif,.pdf,.txt,.md,.csv,.json,.html,.css,.svg';
 
 function Composer({ chat, snap, composerRef, attachments }: { chat: AgentChat; snap: AgentSnapshot; composerRef: React.RefObject<HTMLTextAreaElement | null>; attachments: AttachmentSet }) {
   const editor = useEditor();
@@ -416,7 +416,7 @@ function Composer({ chat, snap, composerRef, attachments }: { chat: AgentChat; s
         data-testid="agent-input"
       />
       <div className="at-composer__bar">
-        <button type="button" className="at-composer__attach" onClick={() => fileRef.current?.click()} disabled={!ready} aria-label="Attach images or text files" data-tip={`Attach files: ${SUPPORTED_FILES}`} data-testid="agent-attach">
+        <button type="button" className="at-composer__attach" onClick={() => fileRef.current?.click()} disabled={!ready} aria-label="Attach images, PDFs or text files" data-tip={`Attach files: ${SUPPORTED_FILES}`} data-testid="agent-attach">
           <Icon name="paperclip" size={16} />
         </button>
         <input

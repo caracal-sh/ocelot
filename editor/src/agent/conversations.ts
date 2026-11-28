@@ -184,22 +184,36 @@ export async function packTranscript(items: readonly ChatItem[], tracked: Transc
       out.push(name ? { ...rest, imageFile: name } : rest);
       continue;
     }
-    if (it.kind === 'user' && it.attachments?.some((a) => a.image?.dataBase64)) {
+    if (it.kind === 'user' && it.attachments?.some((a) => a.image?.dataBase64 || a.pdf)) {
       const attachments: unknown[] = [];
       for (const a of it.attachments) {
+        // A PDF keeps its page count and a thumbnail of page 1 (a file like any attachment image); its pages and pictures are not stored.
+        const { pdf, ...rest } = a;
+        const base = pdf ? { ...rest, pdf: { pageCount: pdf.pageCount } } : rest;
         if (!a.image?.dataBase64) {
-          attachments.push(a);
+          attachments.push(base);
           continue;
         }
-        const { dataBase64, ...image } = a.image;
+        const { dataBase64, mimeType, ...image } = a.image;
         const key = `att:${a.id}`;
         let name = tracked.names.get(key);
+        if (pdf) {
+          if (name === undefined) {
+            const thumb = await thumbnail(`data:${mimeType ?? 'image/jpeg'};base64,${dataBase64}`, codec);
+            name = thumb ? await fileName(thumb.bytes, thumb.mime) : '';
+            if (thumb) keep(name, thumb.bytes);
+            tracked.names.set(key, name);
+          }
+          const { image: _image, ...bare } = base;
+          attachments.push(name ? { ...bare, image: { ...image, file: name } } : bare);
+          continue;
+        }
         if (name === undefined) {
           name = await fileName(base64ToBytes(dataBase64), a.mimeType);
           tracked.names.set(key, name);
         }
         keep(name, base64ToBytes(dataBase64));
-        attachments.push({ ...a, image: { ...image, file: name } });
+        attachments.push({ ...base, image: { ...image, ...(mimeType ? { mimeType } : {}), file: name } });
       }
       out.push({ ...it, attachments });
       continue;
@@ -250,13 +264,15 @@ export function parseTranscript(text: string, files: readonly AgentHistoryFile[]
       continue;
     }
     if (it['kind'] === 'user' && Array.isArray(it['attachments'])) {
-      const attachments = it['attachments'].flatMap((a: unknown): unknown[] => {
+      const attachments = it['attachments'].flatMap((stored: unknown): unknown[] => {
+        // A PDF comes back with its page count only: its text and pictures were not stored.
+        const a = isObj(stored) && isObj(stored['pdf']) ? { ...stored, pdf: { pageCount: typeof stored['pdf']['pageCount'] === 'number' ? stored['pdf']['pageCount'] : 0, pages: [], pictures: [] } } : stored;
         if (!isObj(a) || !isObj(a['image']) || typeof a['image']['file'] !== 'string') return [a];
         const { file, ...image } = a['image'];
         const data = byName.get(file);
         if (typeof a['id'] === 'string') tracked?.names.set(`att:${a['id']}`, file);
         const { image: _image, ...rest } = a;
-        return [data ? { ...rest, image: { ...image, dataBase64: data } } : rest];
+        return [data ? { ...rest, image: { ...image, ...(isObj(a['pdf']) ? { mimeType: mimeOf(file) } : {}), dataBase64: data } } : rest];
       });
       items.push({ ...it, attachments } as ChatItem);
       continue;

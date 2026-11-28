@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { parseMeta, parseTranscript, relativeTime, newTranscriptFiles, packTranscript, serializeMeta, sortConversations, titleFromPrompt, upsertConversation, THUMB_EDGE, TITLE_MAX, type ConversationMeta } from './conversations';
-import type { ImageCodec } from './attachments';
+import type { Attachment, ImageCodec } from './attachments';
 import type { ChatItem } from './transcript';
 
 const meta = (over: Partial<ConversationMeta> = {}): ConversationMeta => ({ id: 'c1', title: 'T', createdAt: 1, updatedAt: 2, turns: 1, ...over });
@@ -164,5 +164,67 @@ describe('transcripts', () => {
     expect(parseTranscript('{"v":9')).toBeNull();
     expect(parseTranscript(JSON.stringify({ v: 3, items: [] }))).toBeNull();
     expect(parseTranscript(JSON.stringify({ v: 2, items: [{ kind: 'user', id: 'u', text: 'x' }, { kind: 'hologram', id: 'h' }, 'junk'] }))).toHaveLength(1);
+  });
+});
+
+describe('transcripts with a PDF attachment', () => {
+  const pdfAttachment: Attachment = {
+    id: 'pdf1',
+    kind: 'pdf',
+    name: 'brand.pdf',
+    size: 123_456,
+    mimeType: 'application/pdf',
+    pdf: { pageCount: 3, pages: ['PAGE-TEXT-SECRET', '', 'more text'], pictures: [{ page: 1, width: 1200, height: 1600, mimeType: 'image/jpeg', dataBase64: 'UElDVDE=' }] },
+    image: { width: 1200, height: 1600, dataBase64: 'UElDVDE=', mimeType: 'image/jpeg' },
+  };
+  const items: ChatItem[] = [{ kind: 'user', id: 'u1', text: 'Build from this', attachments: [pdfAttachment] }];
+  /** A codec whose decoded page is 1200 px wide and renders to 3 fixed bytes (the thumbnail). */
+  const codec: ImageCodec = async () => ({ width: 1200, height: 1600, hasAlpha: () => false, render: async () => new Uint8Array([9, 8, 7]), close: () => {} });
+
+  it('saves the name, size, type, page count and a thumbnail of page 1 as a file; never the pages or the pictures', async () => {
+    const packed = await packTranscript(items, newTranscriptFiles(), codec);
+    expect(packed.text).not.toContain('PAGE-TEXT-SECRET');
+    expect(packed.text).not.toContain('more text');
+    expect(packed.text).not.toContain('UElDVDE=');
+    expect(packed.files).toHaveLength(1);
+    expect(packed.files[0]).toMatchObject({ name: expect.stringMatching(/^[0-9a-f]{64}\.jpg$/), dataBase64: 'CQgH' });
+    const stored = JSON.parse(packed.text).items[0].attachments[0];
+    expect(stored).toMatchObject({ kind: 'pdf', name: 'brand.pdf', size: 123_456, mimeType: 'application/pdf', pdf: { pageCount: 3 }, image: { file: packed.files[0]!.name } });
+    expect(stored.pdf).toEqual({ pageCount: 3 });
+    expect(stored.image).not.toHaveProperty('dataBase64');
+    expect(items[0]).toMatchObject({ attachments: [{ pdf: { pages: ['PAGE-TEXT-SECRET', '', 'more text'] }, image: { dataBase64: 'UElDVDE=' } }] }); // the live item is untouched
+  });
+
+  it('reads it back with the page count and the thumbnail, and saving again writes nothing new', async () => {
+    const packed = await packTranscript(items, newTranscriptFiles(), codec);
+    const tracked = newTranscriptFiles();
+    const back = parseTranscript(packed.text, packed.files, tracked)!;
+    expect(back[0]).toMatchObject({
+      kind: 'user',
+      attachments: [{ kind: 'pdf', name: 'brand.pdf', size: 123_456, mimeType: 'application/pdf', pdf: { pageCount: 3, pages: [], pictures: [] }, image: { dataBase64: 'CQgH', mimeType: 'image/jpeg' } }],
+    });
+    expect(JSON.stringify(back[0])).not.toContain('"file"');
+    expect((await packTranscript(back, tracked, codec)).files).toEqual([]);
+  });
+
+  it('keeps only the page count when the thumbnail cannot be made, or the PDF had no pictures', async () => {
+    const broken: ImageCodec = async () => {
+      throw new Error('cannot decode');
+    };
+    const noPictures: Attachment = { id: 'pdf2', kind: 'pdf', name: 'plain.pdf', size: 10, mimeType: 'application/pdf', pdf: { pageCount: 2, pages: ['a', 'b'], pictures: [] } };
+    const packed = await packTranscript([{ kind: 'user', id: 'u1', text: 'x', attachments: [pdfAttachment, noPictures] }], newTranscriptFiles(), broken);
+    expect(packed.files).toEqual([]);
+    expect(JSON.parse(packed.text).items[0].attachments).toEqual([
+      { id: 'pdf1', kind: 'pdf', name: 'brand.pdf', size: 123_456, mimeType: 'application/pdf', pdf: { pageCount: 3 } },
+      { id: 'pdf2', kind: 'pdf', name: 'plain.pdf', size: 10, mimeType: 'application/pdf', pdf: { pageCount: 2 } },
+    ]);
+    expect(parseTranscript(packed.text, [])![0]).toMatchObject({ attachments: [{ pdf: { pageCount: 3 } }, { pdf: { pageCount: 2 } }] });
+  });
+
+  it('still reads transcripts written before PDFs existed', () => {
+    const old = JSON.stringify({ v: 1, items: [{ kind: 'user', id: 'u', text: 'x', attachments: [{ id: 'a', kind: 'text', name: 'brief.md', size: 3, mimeType: 'text/markdown', text: 'abc' }, { id: 'b', kind: 'image', name: 'a.png', size: 1, mimeType: 'image/png', image: { width: 2, height: 2, file: 'f'.repeat(64) + '.png' } }] }] });
+    const back = parseTranscript(old, [{ name: 'f'.repeat(64) + '.png', dataBase64: 'AQIDBA==' }])!;
+    expect(back[0]).toMatchObject({ attachments: [{ kind: 'text', text: 'abc' }, { kind: 'image', image: { dataBase64: 'AQIDBA==', width: 2 } }] });
+    expect(JSON.stringify(back[0])).not.toContain('"pdf"');
   });
 });

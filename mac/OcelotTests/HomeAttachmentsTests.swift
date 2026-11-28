@@ -31,15 +31,52 @@ final class HomeAttachmentsTests: XCTestCase {
         for name in ["a.txt", "a.md", "a.csv", "a.json", "a.html", "a.css", "a.svg"] {
             XCTAssertEqual(HomeAttachment.classify(name: name)?.kind, .text, name)
         }
-        for name in ["a.pdf", "a.zip", "a.mov", "a"] { XCTAssertNil(HomeAttachment.classify(name: name), name) }
+        XCTAssertEqual(HomeAttachment.classify(name: "a.PDF")?.kind, .pdf)
+        XCTAssertEqual(HomeAttachment.classify(name: "a.pdf")?.mimeType, "application/pdf")
+        for name in ["a.zip", "a.mov", "a"] { XCTAssertNil(HomeAttachment.classify(name: name), name) }
     }
 
     func testAnUnsupportedFileBecomesAChipWithAnErrorThatNamesWhatIsSupported() throws {
-        let item = HomeAttachment.file(try write("spec.pdf", Data("%PDF".utf8)))
+        let item = HomeAttachment.file(try write("spec.zip", Data("PK".utf8)))
         let error = try XCTUnwrap(item.error)
-        XCTAssertTrue(error.contains("“spec.pdf” cannot be attached"), error)
-        XCTAssertTrue(error.contains("PNG, JPEG, WebP, GIF, HEIC"), error)
+        XCTAssertTrue(error.contains("“spec.zip” cannot be attached"), error)
+        XCTAssertTrue(error.contains("PNG, JPEG, WebP, GIF, HEIC), PDFs and text files"), error)
         XCTAssertTrue(error.contains(".txt, .md, .csv, .json, .html, .css, .svg"), error)
+    }
+
+    func testAPDFBecomesAChipWithItsPageCountAndIsHandedToStartAsBase64() throws {
+        let bytes = TestPdf.make(pages: [TestPdf.Page(text: "One"), TestPdf.Page(text: "Two"), TestPdf.Page(text: nil)])
+        let item = HomeAttachment.file(try write("brief.pdf", bytes))
+        XCTAssertNil(item.error)
+        XCTAssertEqual(item.kind, .pdf)
+        XCTAssertEqual(item.pages, 3)
+        XCTAssertEqual(item.meta, "3 pages")
+        XCTAssertTrue(HomeAttachment.errors(for: [item]).isEmpty)
+        let payload = try item.payload()
+        XCTAssertEqual(payload, StartAttachment(kind: "pdf", name: "brief.pdf", mimeType: "application/pdf", dataBase64: bytes.base64EncodedString()))
+        let single = HomeAttachment.file(try write("one.pdf", TestPdf.make(pages: [TestPdf.Page(text: "One")])))
+        XCTAssertEqual(single.meta, "1 page")
+    }
+
+    func testAPDFOver50MBIsRefusedWithoutReadingIt() throws {
+        let item = HomeAttachment.file(try write("huge.pdf", Data(count: 51 * 1024 * 1024)))
+        let error = try XCTUnwrap(item.error)
+        XCTAssertEqual(error, "“huge.pdf” is 51.0 MB; PDFs up to 50 MB can be attached. Export the pages you need as a smaller PDF.")
+        XCTAssertEqual(item.kind, .pdf)
+    }
+
+    func testALockedOrDamagedPDFIsRefusedWhenItIsAdded() throws {
+        let locked = HomeAttachment.file(try write("locked.pdf", TestPdf.make(pages: [TestPdf.Page(text: "Secret")], password: "pw")))
+        XCTAssertEqual(locked.error, PdfReader.locked.message)
+        let damaged = HomeAttachment.file(try write("broken.pdf", Data("not a pdf at all".utf8)))
+        XCTAssertEqual(damaged.error, PdfReader.notAPdf.message)
+        XCTAssertEqual(HomeAttachment.errors(for: [locked, damaged]).count, 2)
+    }
+
+    func testAPDFDoesNotCountAgainstTheImageOrTextLimits() throws {
+        let pdf = HomeAttachment.file(try write("a.pdf", TestPdf.make(pages: [TestPdf.Page(text: "One")])))
+        let images = (0..<HomeAttachment.maxImages).map { _ in HomeAttachment.pastedImage(TestImages.png(), among: []) }
+        XCTAssertTrue(HomeAttachment.errors(for: images + [pdf]).isEmpty)
     }
 
     func testATextFileIsReadForItsLineCount() throws {

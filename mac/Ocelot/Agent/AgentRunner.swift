@@ -110,6 +110,14 @@ final class AgentRunner {
             try AgentCommandFolder.standard().reveal()
             return Empty()
         }
+        // A PDF attached in the sidebar: PDFKit reads its text and draws the first pages (CPU work, off the main actor).
+        host.register(HostMethods.ReadPdf.self) { params in
+            do {
+                return try await Task.detached(priority: .userInitiated) { try PdfReader.read(params) }.value
+            } catch let failure as PdfReader.Failure {
+                throw BridgeFailure(.invalidParams, failure.message)
+            }
+        }
     }
 
     /// Runs file work on the saved conversations off the main actor (transcripts can be megabytes).

@@ -260,7 +260,7 @@ struct HomeView: View {
         panel.allowsMultipleSelection = true
         panel.canChooseDirectories = false
         panel.allowedContentTypes = HomeAttachment.openPanelTypes
-        panel.message = "Attach images or text files"
+        panel.message = "Attach images, PDFs or text files"
         guard panel.runModal() == .OK else { return }
         addFiles(panel.urls)
     }
