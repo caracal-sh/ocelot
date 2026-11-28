@@ -33,14 +33,18 @@ enum PdfReader {
         guard let data = Data(base64Encoded: params.dataBase64) else { throw notBase64 }
         let document = try open(data: data)
         let pageCount = document.pageCount
-        let pages = (0..<pageCount).map { index in
-            autoreleasepool { (document.page(at: index)?.string ?? "").trimmingCharacters(in: .whitespacesAndNewlines) }
+        // Result types spelled out: Xcode 26's Swift cannot infer `autoreleasepool`'s generic result from these closures.
+        let pages: [String] = (0..<pageCount).map { index in
+            autoreleasepool { () -> String in (document.page(at: index)?.string ?? "").trimmingCharacters(in: .whitespacesAndNewlines) }
         }
         let wanted = min(max(params.maxPictures, pictureLimit.lowerBound), pictureLimit.upperBound)
         let edge = min(max(params.maxEdge, edgeLimit.lowerBound), edgeLimit.upperBound)
         var pictures: [PdfPicture] = []
         for index in 0..<min(wanted, pageCount) {
-            let picture = autoreleasepool { document.page(at: index).flatMap { picture(of: $0, number: index + 1, maxEdge: edge) } }
+            let picture: PdfPicture? = autoreleasepool { () -> PdfPicture? in
+                guard let page = document.page(at: index) else { return nil }
+                return Self.picture(of: page, number: index + 1, maxEdge: edge)
+            }
             if let picture { pictures.append(picture) }
         }
         return PdfContent(pageCount: pageCount, pages: pages, pictures: pictures)
